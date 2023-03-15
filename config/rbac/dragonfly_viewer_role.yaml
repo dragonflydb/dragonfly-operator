@@ -1,0 +1,27 @@
+# permissions for end users to view dragonflies.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: dragonfly-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: dragonfly-operator
+    app.kubernetes.io/part-of: dragonfly-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: dragonfly-viewer-role
+rules:
+- apiGroups:
+  - dragonflydb.io
+  resources:
+  - dragonflies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - dragonflydb.io
+  resources:
+  - dragonflies/status
+  verbs:
+  - get
