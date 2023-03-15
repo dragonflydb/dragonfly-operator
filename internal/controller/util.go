@@ -67,13 +67,13 @@ func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace st
 	return false, nil
 }
 
-func findHealthyAndMarkActive(ctx context.Context, c client.Client, db *resourcesv1.Dragonfly) error {
+func configureReplication(ctx context.Context, c client.Client, df *resourcesv1.Dragonfly) error {
 	log := log.FromContext(ctx)
-	log.Info(fmt.Sprintf("Finding healthy and marking active for %s", db.Name))
+	log.Info(fmt.Sprintf("Finding healthy and marking active for %s", df.Name))
 
 	pods := corev1.PodList{}
-	if err := c.List(ctx, &pods, client.InNamespace(db.Namespace), client.MatchingLabels{
-		"app":                              db.Name,
+	if err := c.List(ctx, &pods, client.InNamespace(df.Namespace), client.MatchingLabels{
+		"app":                              df.Name,
 		resources.KubernetesPartOfLabelKey: "dragonfly",
 	},
 	); err != nil {
@@ -87,7 +87,7 @@ func findHealthyAndMarkActive(ctx context.Context, c client.Client, db *resource
 		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels["role"] != "master" {
 			master = pod.Name
 			masterIp = pod.Status.PodIP
-			if err := markMaster(ctx, c, pod); err != nil {
+			if err := configureAsMaster(ctx, c, pod); err != nil {
 				return err
 			}
 			break
@@ -97,7 +97,7 @@ func findHealthyAndMarkActive(ctx context.Context, c client.Client, db *resource
 	// Mark others as replicas
 	for _, pod := range pods.Items {
 		if pod.Name != master {
-			if err := markReplica(ctx, c, pod, masterIp); err != nil {
+			if err := configureAsReplica(ctx, c, pod, masterIp); err != nil {
 				return err
 			}
 		}
@@ -106,7 +106,7 @@ func findHealthyAndMarkActive(ctx context.Context, c client.Client, db *resource
 	return nil
 }
 
-func markReplica(ctx context.Context, client client.Client, pod corev1.Pod, masterIp string) error {
+func configureAsReplica(ctx context.Context, client client.Client, pod corev1.Pod, masterIp string) error {
 	log := log.FromContext(ctx)
 	log.Info(fmt.Sprintf("Marking %s as replica", pod.Name))
 
@@ -131,7 +131,7 @@ func markReplica(ctx context.Context, client client.Client, pod corev1.Pod, mast
 	return nil
 }
 
-func markMaster(ctx context.Context, client client.Client, pod corev1.Pod) error {
+func configureAsMaster(ctx context.Context, client client.Client, pod corev1.Pod) error {
 	log := log.FromContext(ctx)
 	log.Info(fmt.Sprintf("Marking %s as active", pod.Name))
 

@@ -76,7 +76,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// create all resources
 		for _, resource := range resources {
 			if err := r.Create(ctx, resource); err != nil {
-				log.Error(err, "could not create resource")
+				log.Error(err, fmt.Sprintf("could not create resource %s/%s/%s", resource.GetObjectKind(), resource.GetNamespace(), resource.GetName()))
 				return ctrl.Result{}, err
 			}
 		}
@@ -87,7 +87,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return ctrl.Result{}, err
 		}
 
-		if err := findHealthyAndMarkActive(ctx, r.Client, &df); err != nil {
+		if err := configureReplication(ctx, r.Client, &df); err != nil {
 			log.Error(err, "could not find healthy and mark active")
 			return ctrl.Result{}, err
 		}
