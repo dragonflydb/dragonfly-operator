@@ -31,6 +31,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+const (
+	PhaseInitialized string = "initialized"
+
+	PhaseMarking string = "marking"
+
+	PhaseReady string = "ready"
+)
+
 func waitForStatefulSetReady(ctx context.Context, c client.Client, name, namespace string, maxDuration time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, maxDuration)
 	defer cancel()
@@ -62,6 +70,29 @@ func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace st
 
 	if statefulSet.Status.ReadyReplicas == *statefulSet.Spec.Replicas {
 		return true, nil
+	}
+
+	return false, nil
+}
+
+func activeMasterExists(ctx context.Context, c client.Client, df *resourcesv1.Dragonfly) (bool, error) {
+	log := log.FromContext(ctx)
+	log.Info(fmt.Sprintf("Checking if active master exists for %s", df.Name))
+
+	pods := corev1.PodList{}
+	if err := c.List(ctx, &pods, client.InNamespace(df.Namespace), client.MatchingLabels{
+		"app":                              df.Name,
+		resources.KubernetesPartOfLabelKey: "dragonfly",
+	},
+	); err != nil {
+		log.Error(err, "could not list Pods")
+		return false, err
+	}
+
+	for _, pod := range pods.Items {
+		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] == resources.Master {
+			return true, nil
+		}
 	}
 
 	return false, nil
@@ -101,6 +132,37 @@ func configureReplication(ctx context.Context, c client.Client, df *resourcesv1.
 				return err
 			}
 		}
+	}
+
+	return nil
+}
+
+func configureReplicaFromDF(ctx context.Context, c client.Client, replicaPod corev1.Pod, db *resourcesv1.Dragonfly) error {
+	log := log.FromContext(ctx)
+	log.Info(fmt.Sprintf("Marking replica from db for %s", db.Name))
+
+	pods := corev1.PodList{}
+
+	if err := c.List(ctx, &pods, client.InNamespace(db.Namespace), client.MatchingLabels{
+		"app":                              db.Name,
+		resources.KubernetesPartOfLabelKey: "dragonfly",
+	},
+	); err != nil {
+		log.Error(err, "could not list Pods")
+		return err
+	}
+
+	var masterIp string
+	for _, pod := range pods.Items {
+		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] == resources.Master {
+			masterIp = pod.Status.PodIP
+			break
+		}
+	}
+
+	if err := configureAsReplica(ctx, c, replicaPod, masterIp); err != nil {
+		log.Error(err, "could not mark replica")
+		return err
 	}
 
 	return nil
