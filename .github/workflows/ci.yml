@@ -1,0 +1,29 @@
+name: ci
+
+on:
+  # push:
+  # branches: [ main ]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-operator:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - uses: actions/setup-go@v3
+
+      - name: Build Operator
+        run: |
+          make build
+
+      - name: Docker Build
+        run: |
+          export IMG=ghcr.io/dragonflydb/operator:${{ github.sha }}
+          make docker-build
+
