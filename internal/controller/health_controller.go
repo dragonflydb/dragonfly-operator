@@ -70,7 +70,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, nil
 	}
 
-	if df.Status.Phase == "" {
+	if df.df.Status.Phase == "" {
 		// retry after resources are created
 		// Phase should be initialized by the time this is called
 		log.Info("Dragonfly object is not initialized yet")
@@ -78,15 +78,16 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// Given a Pod Update, What do you do?
-	// If it does not have a `resources.Role`, Check with the DragonFly Object Status and do a revamp on those
-	// objects.
-	// It it has a `resources.Role`, Check healthiness of the pod and act if its a master
-	// Pod deletion or unhealthy
+	// If it does not have a `resources.Role`,
+	// - If the Dragonfly Object is in initialization phase, Do a init replication i.e set for first time.
+	// - If the Dragonfly object status is Ready, Then this is a pod restart.
+	// 	- If there is master already, add this as replica
+	//	- If there is no master, find a healthy instance and mark it as master
 	role, ok := pod.Labels[resources.Role]
 	// New pod with No resources.Role
 	if !ok {
 		log.Info("No role found on the pod")
-		if df.Status.Phase == PhaseInitialized {
+		if df.df.Status.Phase == PhaseInitialized {
 			// Make it ready
 			log.Info("DragonFly object is only initialized. Configuring replication for the first time")
 
@@ -95,7 +96,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				return ctrl.Result{}, err
 			}
 
-		} else if df.Status.Phase == PhaseReady {
+		} else if df.df.Status.Phase == PhaseReady {
 			// Probably a pod restart do the needful
 			log.Info("Pod restart from a ready Dragonfly instance")
 
@@ -126,31 +127,8 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 
 	} else {
-		log.Info("Role exists already", "role", role)
-		// Pod already has a role
-		// Check if there was a unhealthy event.
-		// Role is present, Check for healthiness
-		if role == resources.Master {
-			// Master pod event. Check for health and do a failover
-			if pod.Status.Phase != corev1.PodRunning {
-				log.Info("Master pod is not running")
-				// Pod is not running, Check if its a deletion event
-				if err := df.initReplication(ctx); err != nil {
-					log.Error(err, "couldn't find healthy and mark active")
-					return ctrl.Result{}, err
-				}
-			}
-		} else if role == resources.Replica {
-			if pod.Status.Phase != corev1.PodRunning {
-				// Mark it as a replica again
-				if err := df.addReplica(ctx, &pod); err != nil {
-					log.Error(err, "couldn't mark replica")
-					return ctrl.Result{}, err
-				}
-			}
-		} else {
-			log.Error(errors.New("unknown role"), "unknown role")
-		}
+		log.Info("Role exists already", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "role", role)
+		// TODO: What do you do here?
 	}
 
 	return ctrl.Result{}, nil

@@ -34,7 +34,7 @@ import (
 // TODO: Add logging
 type DragonflyInstance struct {
 	// DragonFly is the instance that pod is part of
-	*resourcesv1.Dragonfly
+	df *resourcesv1.Dragonfly
 
 	client client.Client
 }
@@ -56,8 +56,8 @@ func GetDragonFlyInstanceFromPod(ctx context.Context, c client.Client, pod *core
 	}
 
 	return &DragonflyInstance{
-		Dragonfly: &df,
-		client:    c,
+		df:     &df,
+		client: c,
 	}, nil
 }
 
@@ -101,8 +101,8 @@ func (d *DragonflyInstance) initReplication(ctx context.Context) error {
 }
 
 func (d *DragonflyInstance) updateStatus(ctx context.Context, phase string) error {
-	d.Status.Phase = phase
-	if err := d.client.Status().Update(ctx, d); err != nil {
+	d.df.Status.Phase = phase
+	if err := d.client.Status().Update(ctx, d.df); err != nil {
 		return err
 	}
 
@@ -237,8 +237,8 @@ func (d *DragonflyInstance) updateMaster(ctx context.Context, newMaster *corev1.
 
 func (d *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, error) {
 	var pods corev1.PodList
-	if err := d.client.List(ctx, &pods, client.InNamespace(d.Namespace), client.MatchingLabels{
-		"app":                              d.Name,
+	if err := d.client.List(ctx, &pods, client.InNamespace(d.df.Namespace), client.MatchingLabels{
+		"app":                              d.df.Name,
 		resources.KubernetesPartOfLabelKey: "dragonfly",
 	},
 	); err != nil {
