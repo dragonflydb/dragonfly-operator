@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -54,30 +53,19 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	log.Info("Received", "pod", req.NamespacedName)
 	var pod corev1.Pod
 	err := r.Client.Get(ctx, req.NamespacedName, &pod, &client.GetOptions{})
-	if err != nil && strings.HasSuffix(err.Error(), "not found") {
-		// Handle Pod Deletion in a different way
-		// log.Error(err, "some other error")
+	if err != nil {
+		// TODO: Handle Pod Deletion in a different way
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Pod is not ready to be processed yet
 	if pod.Status.PodIP == "" {
 		log.Info("Pod IP is not yet available")
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	dbName, ok := pod.Labels["app"]
-	dbNamespace := pod.Namespace
-	if !ok {
-		log.Error(errors.New("can't find the `app` label"), "expected app label")
-		return ctrl.Result{}, err
-	}
-
-	// Retrieve the relevant
-	var df dfv1alpha1.Dragonfly
-	err = r.Client.Get(ctx, types.NamespacedName{
-		Name:      dbName,
-		Namespace: pod.Namespace,
-	}, &df)
+	// Get the Dragonfly Object
+	df, err := r.GetDFFromPod(ctx, &pod)
 	if err != nil {
 		log.Error(err, "could not get Dragonfly object")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -85,74 +73,52 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	if df.Status.Phase == "" {
 		// retry after resources are created
-		log.Info("Dragonfly object is not yet ready")
+		// Phase should be initialized by the time this is called
+		log.Info("Dragonfly object is not initialized yet")
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	// Given a Pod Update, What do you do?
 	// If it does not have a `resources.Role`, Check with the DragonFly Object Status and do a revamp on those
 	// objects.
-	// It it has a `resources.Role`, Check healthyness of the pod and act if its a master
+	// It it has a `resources.Role`, Check healthiness of the pod and act if its a master
 	// Pod deletion or unhealthy
 	role, ok := pod.Labels[resources.Role]
 	// New pod with No resources.Role
 	if !ok {
-		log.Info("No role found")
-		log.Info("DB Phase", "phase", df.Status.Phase)
+		log.Info("No role found on the pod")
 		if df.Status.Phase == PhaseInitialized {
 			// Make it ready
-			log.Info("Revamp of Dragonfly object")
-			if err := updateStatus(ctx, r.Client, dbName, dbNamespace, PhaseMarking); err != nil {
-				log.Error(err, "could not update phase")
-				return ctrl.Result{}, err
-			}
-
-			if err = configureReplication(ctx, r.Client, &df); err != nil {
+			log.Info("DragonFly object is only initialized. Configuring replication for the first time")
+			if err = configureReplication(ctx, r.Client, df); err != nil {
 				log.Error(err, "couldn't find and mark active during revamp")
-				return ctrl.Result{}, err
-			}
-
-			if err := updateStatus(ctx, r.Client, dbName, dbNamespace, PhaseReady); err != nil {
-				log.Error(err, "could not update phase")
 				return ctrl.Result{}, err
 			}
 
 		} else if df.Status.Phase == PhaseReady {
 			// Probably a pod restart do the needful
-			log.Info("Pod restart from a ready df instance")
+			log.Info("Pod restart from a ready Dragonfly instance")
 
 			// What should this pod be?
 			// If there is no active master, find and mark an healthy instance
 			// if there is an active master, mark it as a replica
-
 			// Check if there is an active master
-			exists, err := activeMasterExists(ctx, r.Client, &df)
+			exists, err := activeMasterExists(ctx, r.Client, df)
 			if err != nil {
 				log.Error(err, "could not check if active master exists")
 				return ctrl.Result{}, err
 			}
 
 			if !exists {
-				// Update status as master does not exist
-				if err := updateStatus(ctx, r.Client, dbName, dbNamespace, PhaseMarking); err != nil {
-					log.Error(err, "could not update phase")
-					return ctrl.Result{}, err
-				}
-
-				log.Info("Master does not exist. Finding healthy and marking active")
-				if err := configureReplication(ctx, r.Client, &df); err != nil {
+				log.Info("Master does not exist. Configuring Replication")
+				if err := configureReplication(ctx, r.Client, df); err != nil {
 					log.Error(err, "couldn't find healthy and mark active")
-					return ctrl.Result{}, err
-				}
-
-				if err := updateStatus(ctx, r.Client, dbName, dbNamespace, PhaseReady); err != nil {
-					log.Error(err, "could not update phase")
 					return ctrl.Result{}, err
 				}
 
 			} else {
 				log.Info(fmt.Sprintf("Master exists. Marking %s as replica", pod.Status.PodIP))
-				if err := configureReplicaFromDF(ctx, r.Client, pod, &df); err != nil {
+				if err := configureReplicaFromDF(ctx, r.Client, pod, df); err != nil {
 					log.Error(err, "could not mark replica from db")
 					return ctrl.Result{}, err
 				}
@@ -170,7 +136,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			if pod.Status.Phase != corev1.PodRunning {
 				log.Info("Master pod is not running")
 				// Pod is not running, Check if its a deletion event
-				if err := configureReplication(ctx, r.Client, &df); err != nil {
+				if err := configureReplication(ctx, r.Client, df); err != nil {
 					log.Error(err, "couldn't find healthy and mark active")
 					return ctrl.Result{}, err
 				}
@@ -178,7 +144,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		} else if role == resources.Replica {
 			if pod.Status.Phase != corev1.PodRunning {
 				// Mark it as a replica again
-				if err := configureReplicaFromDF(ctx, r.Client, pod, &df); err != nil {
+				if err := configureReplicaFromDF(ctx, r.Client, pod, df); err != nil {
 					log.Error(err, "couldn't mark replica")
 					return ctrl.Result{}, err
 				}
@@ -191,23 +157,23 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	return ctrl.Result{}, nil
 }
 
-func updateStatus(ctx context.Context, c client.Client, name, namespace, phase string) error {
-	var db dfv1alpha1.Dragonfly
-	if err := c.Get(ctx, types.NamespacedName{
-		Name:      name,
-		Namespace: namespace,
-	}, &db); err != nil {
-		return err
+func (r *HealthReconciler) GetDFFromPod(ctx context.Context, pod *corev1.Pod) (*dfv1alpha1.Dragonfly, error) {
+	dfName, ok := pod.Labels["app"]
+	if !ok {
+		return nil, errors.New("can't find the `app` label")
 	}
 
-	db.Status.Phase = phase
-	if err := c.Status().Update(ctx, &db); err != nil {
-		return err
+	// Retrieve the relevant Dragonfly object
+	var df dfv1alpha1.Dragonfly
+	err := r.Client.Get(ctx, types.NamespacedName{
+		Name:      dfName,
+		Namespace: pod.Namespace,
+	}, &df)
+	if err != nil {
+		return nil, err
 	}
 
-	log.Log.Info("Updated status")
-
-	return nil
+	return &df, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

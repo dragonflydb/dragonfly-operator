@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/go-redis/redis"
@@ -102,6 +103,11 @@ func configureReplication(ctx context.Context, c client.Client, df *resourcesv1.
 	log := log.FromContext(ctx)
 	log.Info(fmt.Sprintf("Finding healthy and marking active for %s", df.Name))
 
+	if err := updateStatus(ctx, c, df, PhaseMarking); err != nil {
+		log.Error(err, "could not update phase")
+		return err
+	}
+
 	pods := corev1.PodList{}
 	if err := c.List(ctx, &pods, client.InNamespace(df.Namespace), client.MatchingLabels{
 		"app":                              df.Name,
@@ -134,6 +140,21 @@ func configureReplication(ctx context.Context, c client.Client, df *resourcesv1.
 		}
 	}
 
+	if err := updateStatus(ctx, c, df, PhaseReady); err != nil {
+		log.Error(err, "could not update phase")
+		return err
+	}
+
+	return nil
+}
+
+func updateStatus(ctx context.Context, c client.Client, df *dfv1alpha1.Dragonfly, phase string) error {
+	df.Status.Phase = phase
+	if err := c.Status().Update(ctx, df); err != nil {
+		return err
+	}
+
+	log.Log.Info("Updated status to " + phase)
 	return nil
 }
 
