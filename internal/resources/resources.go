@@ -168,7 +168,7 @@ func GetDragonflyResources(ctx context.Context, db *resourcesv1.Dragonfly) ([]cl
 			Selector: map[string]string{
 				"app":                     db.Name,
 				KubernetesAppNameLabelKey: "dragonfly",
-				"role":                    "master",
+				Role:                      Master,
 			},
 			Ports: []corev1.ServicePort{
 				{

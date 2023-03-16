@@ -64,11 +64,10 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	// Get the Dragonfly Object
-	df, err := r.GetDFFromPod(ctx, &pod)
+	df, err := GetDragonFlyInstanceFromPod(ctx, r.Client, &pod)
 	if err != nil {
-		log.Error(err, "could not get Dragonfly object")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		log.Info("Pod does not belong to a Dragonfly instance")
+		return ctrl.Result{}, nil
 	}
 
 	if df.Status.Phase == "" {
@@ -90,8 +89,9 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		if df.Status.Phase == PhaseInitialized {
 			// Make it ready
 			log.Info("DragonFly object is only initialized. Configuring replication for the first time")
-			if err = configureReplication(ctx, r.Client, df); err != nil {
-				log.Error(err, "couldn't find and mark active during revamp")
+
+			if err = df.initReplication(ctx); err != nil {
+				log.Error(err, "could not initialize replication")
 				return ctrl.Result{}, err
 			}
 
@@ -103,7 +103,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			// If there is no active master, find and mark an healthy instance
 			// if there is an active master, mark it as a replica
 			// Check if there is an active master
-			exists, err := activeMasterExists(ctx, r.Client, df)
+			exists, err := df.masterExists(ctx)
 			if err != nil {
 				log.Error(err, "could not check if active master exists")
 				return ctrl.Result{}, err
@@ -111,19 +111,18 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 			if !exists {
 				log.Info("Master does not exist. Configuring Replication")
-				if err := configureReplication(ctx, r.Client, df); err != nil {
+				if err := df.initReplication(ctx); err != nil {
 					log.Error(err, "couldn't find healthy and mark active")
 					return ctrl.Result{}, err
 				}
 
 			} else {
 				log.Info(fmt.Sprintf("Master exists. Marking %s as replica", pod.Status.PodIP))
-				if err := configureReplicaFromDF(ctx, r.Client, pod, df); err != nil {
+				if err := df.addReplica(ctx, &pod); err != nil {
 					log.Error(err, "could not mark replica from db")
 					return ctrl.Result{}, err
 				}
 			}
-
 		}
 
 	} else {
@@ -136,7 +135,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			if pod.Status.Phase != corev1.PodRunning {
 				log.Info("Master pod is not running")
 				// Pod is not running, Check if its a deletion event
-				if err := configureReplication(ctx, r.Client, df); err != nil {
+				if err := df.initReplication(ctx); err != nil {
 					log.Error(err, "couldn't find healthy and mark active")
 					return ctrl.Result{}, err
 				}
@@ -144,7 +143,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		} else if role == resources.Replica {
 			if pod.Status.Phase != corev1.PodRunning {
 				// Mark it as a replica again
-				if err := configureReplicaFromDF(ctx, r.Client, pod, df); err != nil {
+				if err := df.addReplica(ctx, &pod); err != nil {
 					log.Error(err, "couldn't mark replica")
 					return ctrl.Result{}, err
 				}
@@ -157,7 +156,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	return ctrl.Result{}, nil
 }
 
-func (r *HealthReconciler) GetDFFromPod(ctx context.Context, pod *corev1.Pod) (*dfv1alpha1.Dragonfly, error) {
+func (r *HealthReconciler) getDFFromPod(ctx context.Context, pod *corev1.Pod) (*dfv1alpha1.Dragonfly, error) {
 	dfName, ok := pod.Labels["app"]
 	if !ok {
 		return nil, errors.New("can't find the `app` label")
