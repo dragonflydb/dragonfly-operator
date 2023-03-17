@@ -22,6 +22,10 @@ jobs:
         run: |
           make build
 
+      - name: Run tests
+        run: |
+          make test
+
       - name: Docker Build
         run: |
           export IMG=ghcr.io/dragonflydb/operator:${{ github.sha }}
