@@ -24,7 +24,6 @@ import (
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/go-redis/redis"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,7 +39,7 @@ func waitForStatefulSetReady(ctx context.Context, c client.Client, name, namespa
 			return fmt.Errorf("timed out waiting for statefulset to be ready")
 		default:
 			// Check if the statefulset is ready
-			ready, err := isStatefulSetReady(ctx, c, name, namespace)
+			ready, err := isDFInitialised(ctx, c, name, namespace)
 			if err != nil {
 				return err
 			}
@@ -51,16 +50,16 @@ func waitForStatefulSetReady(ctx context.Context, c client.Client, name, namespa
 	}
 }
 
-func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace string) (bool, error) {
-	var statefulSet appsv1.StatefulSet
+func isDFInitialised(ctx context.Context, c client.Client, name, namespace string) (bool, error) {
+	var df resourcesv1.Dragonfly
 	if err := c.Get(ctx, types.NamespacedName{
 		Name:      name,
 		Namespace: namespace,
-	}, &statefulSet); err != nil {
+	}, &df); err != nil {
 		return false, nil
 	}
 
-	if statefulSet.Status.ReadyReplicas == *statefulSet.Spec.Replicas {
+	if df.Status.Created {
 		return true, nil
 	}
 
