@@ -72,21 +72,17 @@ var _ = Describe("Dragonfly Reconciler", func() {
 
 			// Wait until Dragonfly object is marked initialized
 			waitForDFInitialised(ctx, k8sClient, name, namespace, 2*time.Minute)
-
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
-			err = k8sClient.List(ctx, &pods, client.InNamespace("default"), client.MatchingLabels{
-				"app":                              "test-1",
+			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+				"app":                              name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
 
 			Expect(pods.Items).To(HaveLen(4))
-			// Check if an update to replicas is propagated
-
-			// Deletion at the end
 		})
 	})
 })
