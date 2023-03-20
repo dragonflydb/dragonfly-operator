@@ -30,10 +30,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// DragonFlyPod denotes the specific pod part of a Dragonfly instance
+// DragonFlyInstances is an abstraction over the `Dragonfly` CRD
+// and provides methods to handle replication.
 // TODO: Add logging
 type DragonflyInstance struct {
-	// DragonFly is the instance that pod is part of
+	// DragonFly is the relevant Dragonfly CRD that it performs actions over
 	df *resourcesv1.Dragonfly
 
 	client client.Client
