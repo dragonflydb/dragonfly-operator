@@ -22,6 +22,7 @@ import (
 	"time"
 
 	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -41,7 +42,7 @@ var _ = Describe("Dragonfly Reconciler", func() {
 			ctx := context.Background()
 			name := "test-1"
 			namespace := "default"
-			err := k8sClient.Create(context.TODO(), &dragonflydbiov1alpha1.Dragonfly{
+			err := k8sClient.Create(ctx, &dragonflydbiov1alpha1.Dragonfly{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
 					Namespace: namespace,
@@ -53,7 +54,9 @@ var _ = Describe("Dragonfly Reconciler", func() {
 			})
 			Expect(err).To(BeNil())
 
-			time.Sleep(3 * time.Second)
+			// Wait until Dragonfly object is marked initialized
+			waitForDragonflyInitialized(ctx, k8sClient, name, namespace, 2*time.Minute)
+			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
@@ -70,10 +73,6 @@ var _ = Describe("Dragonfly Reconciler", func() {
 			}, &svc)
 			Expect(err).To(BeNil())
 
-			// Wait until Dragonfly object is marked initialized
-			waitForDFInitialised(ctx, k8sClient, name, namespace, 2*time.Minute)
-			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
-
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
@@ -82,12 +81,13 @@ var _ = Describe("Dragonfly Reconciler", func() {
 			})
 			Expect(err).To(BeNil())
 
+			// 4 pod replicas = 1 master + 3 replicas
 			Expect(pods.Items).To(HaveLen(4))
 		})
 	})
 })
 
-func waitForDFInitialised(ctx context.Context, c client.Client, name, namespace string, maxDuration time.Duration) error {
+func waitForDragonflyInitialized(ctx context.Context, c client.Client, name, namespace string, maxDuration time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, maxDuration)
 	defer cancel()
 	for {
@@ -96,7 +96,7 @@ func waitForDFInitialised(ctx context.Context, c client.Client, name, namespace 
 			return fmt.Errorf("timed out waiting for statefulset to be ready")
 		default:
 			// Check if the statefulset is ready
-			ready, err := isStatefulSetReady(ctx, c, name, namespace)
+			ready, err := isDragonflyCreated(ctx, c, name, namespace)
 			if err != nil {
 				return err
 			}
@@ -107,16 +107,16 @@ func waitForDFInitialised(ctx context.Context, c client.Client, name, namespace 
 	}
 }
 
-func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace string) (bool, error) {
-	var statefulSet appsv1.StatefulSet
+func isDragonflyCreated(ctx context.Context, c client.Client, name, namespace string) (bool, error) {
+	var df resourcesv1.Dragonfly
 	if err := c.Get(ctx, types.NamespacedName{
 		Name:      name,
 		Namespace: namespace,
-	}, &statefulSet); err != nil {
+	}, &df); err != nil {
 		return false, nil
 	}
 
-	if statefulSet.Status.ReadyReplicas == *statefulSet.Spec.Replicas {
+	if df.Status.Created {
 		return true, nil
 	}
 
