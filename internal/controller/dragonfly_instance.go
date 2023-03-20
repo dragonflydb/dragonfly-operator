@@ -63,7 +63,7 @@ func GetDragonFlyInstanceFromPod(ctx context.Context, c client.Client, pod *core
 }
 
 func (d *DragonflyInstance) initReplication(ctx context.Context) error {
-	if err := d.updateStatus(ctx, PhaseMarking); err != nil {
+	if err := d.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
 		return err
 	}
 
@@ -207,7 +207,7 @@ func (d *DragonflyInstance) configureAsMaster(ctx context.Context, pod *corev1.P
 
 // Given a  pod, marks it as a master and update all other pods to be replicas
 func (d *DragonflyInstance) updateMaster(ctx context.Context, newMaster *corev1.Pod) error {
-	if err := d.updateStatus(ctx, PhaseMarking); err != nil {
+	if err := d.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
 		return err
 	}
 

@@ -27,9 +27,9 @@ import (
 )
 
 const (
-	PhaseInitialized string = "initialized"
+	PhaseResoucesCreated string = "resources-created"
 
-	PhaseMarking string = "marking"
+	PhaseConfiguringReplication string = "configuring-replication"
 
 	PhaseReady string = "ready"
 )
