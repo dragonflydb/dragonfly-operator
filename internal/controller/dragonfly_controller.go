@@ -82,7 +82,8 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		log.Info("Waiting for the statefulset to be ready")
-		if err := waitForStatefulSetReady(ctx, r.Client, df.Name, df.Namespace, 2*time.Minute); err != nil {
+		// TODO: What happens if we timed out here and got the same question aga
+		if err := waitForStatefulSetReady(ctx, r.Client, df.Name, df.Namespace, 5*time.Minute); err != nil {
 			log.Error(err, "could not wait for statefulset to be ready")
 			return ctrl.Result{}, err
 		}

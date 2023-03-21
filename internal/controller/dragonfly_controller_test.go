@@ -34,10 +34,8 @@ import (
 )
 
 var _ = Describe("Dragonfly Reconciler", func() {
-	const timeout = time.Second * 30
-	const interval = time.Second * 1
 
-	Context("Job with schedule", func() {
+	Context("Dragonfly resource creation", func() {
 		It("Should create successfully", func() {
 			ctx := context.Background()
 			name := "test-1"
@@ -55,7 +53,7 @@ var _ = Describe("Dragonfly Reconciler", func() {
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyInitialized(ctx, k8sClient, name, namespace, 2*time.Minute)
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseResoucesCreated, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
@@ -87,7 +85,7 @@ var _ = Describe("Dragonfly Reconciler", func() {
 	})
 })
 
-func waitForDragonflyInitialized(ctx context.Context, c client.Client, name, namespace string, maxDuration time.Duration) error {
+func waitForDragonflyPhase(ctx context.Context, c client.Client, name, namespace, phase string, maxDuration time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, maxDuration)
 	defer cancel()
 	for {
@@ -96,7 +94,7 @@ func waitForDragonflyInitialized(ctx context.Context, c client.Client, name, nam
 			return fmt.Errorf("timed out waiting for statefulset to be ready")
 		default:
 			// Check if the statefulset is ready
-			ready, err := isDragonflyCreated(ctx, c, name, namespace)
+			ready, err := isDragonflyInphase(ctx, c, name, namespace, phase)
 			if err != nil {
 				return err
 			}
@@ -107,7 +105,7 @@ func waitForDragonflyInitialized(ctx context.Context, c client.Client, name, nam
 	}
 }
 
-func isDragonflyCreated(ctx context.Context, c client.Client, name, namespace string) (bool, error) {
+func isDragonflyInphase(ctx context.Context, c client.Client, name, namespace, phase string) (bool, error) {
 	var df resourcesv1.Dragonfly
 	if err := c.Get(ctx, types.NamespacedName{
 		Name:      name,
@@ -116,7 +114,7 @@ func isDragonflyCreated(ctx context.Context, c client.Client, name, namespace st
 		return false, nil
 	}
 
-	if df.Status.Phase == PhaseResoucesCreated {
+	if df.Status.Phase == phase {
 		return true, nil
 	}
 

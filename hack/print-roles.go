@@ -113,7 +113,7 @@ func getRole(url string) (string, error) {
 		Addr: url,
 	})
 
-	resp, err := redisClient.Info("replication", "role").Result()
+	resp, err := redisClient.Info("replication").Result()
 	if err != nil {
 		return "", err
 	}
