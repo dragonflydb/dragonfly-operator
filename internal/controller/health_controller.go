@@ -61,7 +61,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	df, err := GetDragonflyInstanceFromPod(ctx, r.Client, &pod)
+	df, err := GetDragonflyInstanceFromPod(ctx, r.Client, &pod, log)
 	if err != nil {
 		log.Info("Pod does not belong to a Dragonfly instance")
 		return ctrl.Result{}, nil

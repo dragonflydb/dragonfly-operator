@@ -24,6 +24,7 @@ import (
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
+	"github.com/go-logr/logr"
 	"github.com/go-redis/redis"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -32,15 +33,15 @@ import (
 
 // DragonflyInstance is an abstraction over the `Dragonfly` CRD
 // and provides methods to handle replication.
-// TODO: Add logging
 type DragonflyInstance struct {
 	// Dragonfly is the relevant Dragonfly CRD that it performs actions over
 	df *resourcesv1.Dragonfly
 
 	client client.Client
+	log    logr.Logger
 }
 
-func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *corev1.Pod) (*DragonflyInstance, error) {
+func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *corev1.Pod, log logr.Logger) (*DragonflyInstance, error) {
 	dfName, ok := pod.Labels["app"]
 	if !ok {
 		return nil, errors.New("can't find the `app` label")
@@ -59,10 +60,12 @@ func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *core
 	return &DragonflyInstance{
 		df:     &df,
 		client: c,
+		log:    log,
 	}, nil
 }
 
 func (d *DragonflyInstance) initReplication(ctx context.Context) error {
+	d.log.Info("Initializing replication")
 	if err := d.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
 		return err
 	}
@@ -102,6 +105,7 @@ func (d *DragonflyInstance) initReplication(ctx context.Context) error {
 }
 
 func (d *DragonflyInstance) updateStatus(ctx context.Context, phase string) error {
+	d.log.Info("Updating status", "phase", phase)
 	d.df.Status.Phase = phase
 	if err := d.client.Status().Update(ctx, d.df); err != nil {
 		return err
@@ -111,6 +115,7 @@ func (d *DragonflyInstance) updateStatus(ctx context.Context, phase string) erro
 }
 
 func (d *DragonflyInstance) masterExists(ctx context.Context) (bool, error) {
+	d.log.Info("checking if a master exists already")
 	pods, err := d.getPods(ctx)
 	if err != nil {
 		return false, err
@@ -126,6 +131,7 @@ func (d *DragonflyInstance) masterExists(ctx context.Context) (bool, error) {
 }
 
 func (d *DragonflyInstance) getMasterIp(ctx context.Context) (string, error) {
+	d.log.Info("retrieving ip of the master")
 	pods, err := d.getPods(ctx)
 	if err != nil {
 		return "", err
@@ -143,6 +149,7 @@ func (d *DragonflyInstance) getMasterIp(ctx context.Context) (string, error) {
 // configureReplica marks the given pod as a replica by finding
 // a master for that instance
 func (d *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.Pod) error {
+	d.log.Info("configuring pod as replica", "pod", pod.Name)
 	masterIp, err := d.getMasterIp(ctx)
 	if err != nil {
 		return err
@@ -162,6 +169,7 @@ func (d *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.Po
 // replicaOf configures the pod as a replica
 // to the given master instance
 func (d *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
+	d.log.Info("running SLAVE OF command")
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
 	})
@@ -175,6 +183,7 @@ func (d *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, mast
 		return fmt.Errorf("Failed invoking `SLAVE OF` on the replica")
 	}
 
+	d.log.Info("updated pod role label to `replica`")
 	pod.Labels[resources.Role] = resources.Replica
 	if err := d.client.Update(ctx, pod); err != nil {
 		return fmt.Errorf("could not update replica label")
@@ -186,6 +195,7 @@ func (d *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, mast
 // replicaOfNoOne configures the pod as a master
 // along while updating other pods to be replicas
 func (d *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
+	d.log.Info("running SLAVE OF NO ONE command")
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
 	})
@@ -199,6 +209,7 @@ func (d *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod)
 		return fmt.Errorf("Failed invoking `SLAVE OF NO ONE` on master")
 	}
 
+	d.log.Info("updated pod role label to `master`")
 	pod.Labels[resources.Role] = resources.Master
 	if err := d.client.Update(ctx, pod); err != nil {
 		return err
@@ -210,6 +221,7 @@ func (d *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod)
 // configureMaster marks the given pod as a master while also marking
 // every other pod as replica
 func (d *DragonflyInstance) configureMaster(ctx context.Context, newMaster *corev1.Pod) error {
+	d.log.Info("configuring pod as master", "pod", newMaster.Name)
 	if err := d.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
 		return err
 	}
@@ -223,6 +235,7 @@ func (d *DragonflyInstance) configureMaster(ctx context.Context, newMaster *core
 		return err
 	}
 
+	d.log.Info("marking other pods as replicas")
 	// Mark others as replicas
 	for _, pod := range pods.Items {
 		if pod.Name != newMaster.Name {
@@ -240,6 +253,7 @@ func (d *DragonflyInstance) configureMaster(ctx context.Context, newMaster *core
 }
 
 func (d *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, error) {
+	d.log.Info("getting all pods relevant to the instance")
 	var pods corev1.PodList
 	if err := d.client.List(ctx, &pods, client.InNamespace(d.df.Namespace), client.MatchingLabels{
 		"app":                              d.df.Name,
