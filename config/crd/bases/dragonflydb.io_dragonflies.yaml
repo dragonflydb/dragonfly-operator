@@ -48,11 +48,11 @@ spec:
             description: DragonflyStatus defines the observed state of Dragonfly
             properties:
               phase:
-                description: 'Status of the DragonFly Instance It can be one of the
-                  following: - "Ready": The DragonFly instance is ready to serve requests
-                  - "Marking": The controller is updating the master of the DragonFly
-                  instance - "Initialized": The DragonFly instance is initialized
-                  i.e resources are created'
+                description: 'Status of the Dragonfly Instance It can be one of the
+                  following: - "ready": The Dragonfly instance is ready to serve requests
+                  - "configuring-replication": The controller is updating the master
+                  of the Dragonfly instance - "resources-created": The Dragonfly instance
+                  is initialized i.e resources are created'
                 type: string
             type: object
         type: object

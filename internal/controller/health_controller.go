@@ -18,15 +18,12 @@ package controller
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
-	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -64,7 +61,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	df, err := GetDragonFlyInstanceFromPod(ctx, r.Client, &pod)
+	df, err := GetDragonflyInstanceFromPod(ctx, r.Client, &pod)
 	if err != nil {
 		log.Info("Pod does not belong to a Dragonfly instance")
 		return ctrl.Result{}, nil
@@ -86,10 +83,10 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	role, ok := pod.Labels[resources.Role]
 	// New pod with No resources.Role
 	if !ok {
-		log.Info("No role found on the pod")
+		log.Info("Replication is not configured yet")
 		if df.df.Status.Phase == PhaseResoucesCreated {
 			// Make it ready
-			log.Info("DragonFly object is only initialized. Configuring replication for the first time")
+			log.Info("Dragonfly object is only initialized. Configuring replication for the first time")
 
 			if err = df.initReplication(ctx); err != nil {
 				log.Error(err, "could not initialize replication")
@@ -118,8 +115,8 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				}
 
 			} else {
-				log.Info(fmt.Sprintf("Master exists. Marking %s as replica", pod.Status.PodIP))
-				if err := df.addReplica(ctx, &pod); err != nil {
+				log.Info(fmt.Sprintf("Master exists. Configuring %s as replica", pod.Status.PodIP))
+				if err := df.configureReplica(ctx, &pod); err != nil {
 					log.Error(err, "could not mark replica from db")
 					return ctrl.Result{}, err
 				}
@@ -132,25 +129,6 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	return ctrl.Result{}, nil
-}
-
-func (r *HealthReconciler) getDFFromPod(ctx context.Context, pod *corev1.Pod) (*dfv1alpha1.Dragonfly, error) {
-	dfName, ok := pod.Labels["app"]
-	if !ok {
-		return nil, errors.New("can't find the `app` label")
-	}
-
-	// Retrieve the relevant Dragonfly object
-	var df dfv1alpha1.Dragonfly
-	err := r.Client.Get(ctx, types.NamespacedName{
-		Name:      dfName,
-		Namespace: pod.Namespace,
-	}, &df)
-	if err != nil {
-		return nil, err
-	}
-
-	return &df, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

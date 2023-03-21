@@ -46,11 +46,11 @@ type DragonflyStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Status of the DragonFly Instance
+	// Status of the Dragonfly Instance
 	// It can be one of the following:
-	// - "Ready": The DragonFly instance is ready to serve requests
-	// - "Marking": The controller is updating the master of the DragonFly instance
-	// - "Initialized": The DragonFly instance is initialized i.e resources are created
+	// - "ready": The Dragonfly instance is ready to serve requests
+	// - "configuring-replication": The controller is updating the master of the Dragonfly instance
+	// - "resources-created": The Dragonfly instance is initialized i.e resources are created
 	Phase string `json:"phase,omitempty"`
 }
 
