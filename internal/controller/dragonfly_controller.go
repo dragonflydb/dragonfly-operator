@@ -50,10 +50,6 @@ type DragonflyReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Dragonfly object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.1/pkg/reconcile
@@ -101,6 +97,28 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Created", "Created resources for Dragonfly object")
+	} else if df.Status.Phase == PhaseReady {
+		// This is an Update
+		log.Info("updating existing resources")
+		newResources, err := resources.GetDragonflyResources(ctx, &df)
+		if err != nil {
+			log.Error(err, "could not get resources")
+			return ctrl.Result{}, err
+		}
+
+		// update all resources
+		for _, resource := range newResources {
+			if err := r.Update(ctx, resource); err != nil {
+				log.Error(err, fmt.Sprintf("could not update resource %s/%s/%s", resource.GetObjectKind(), resource.GetNamespace(), resource.GetName()))
+				return ctrl.Result{}, err
+			}
+		}
+
+		log.Info("Waiting for the statefulset to be ready")
+		if err := waitForStatefulSetReady(ctx, r.Client, df.Name, df.Namespace, 2*time.Minute); err != nil {
+			log.Error(err, "could not wait for statefulset to be ready")
+			return ctrl.Result{}, err
+		}
 	}
 
 	return ctrl.Result{}, nil

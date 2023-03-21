@@ -97,7 +97,6 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			}
 
 			r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "configured replication for first time")
-
 		} else if df.df.Status.Phase == PhaseReady {
 			// Probably a pod restart do the needful
 			log.Info("Pod restart from a ready Dragonfly instance")

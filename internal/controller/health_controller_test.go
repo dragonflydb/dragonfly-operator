@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -44,12 +44,12 @@ var _ = Describe("Health Reconciler", func() {
 
 	Context("Fail Over is working", func() {
 		It("Initial Master is elected", func() {
-			err := k8sClient.Create(ctx, &dragonflydbiov1alpha1.Dragonfly{
+			err := k8sClient.Create(ctx, &dfv1alpha1.Dragonfly{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
 					Namespace: namespace,
 				},
-				Spec: dragonflydbiov1alpha1.DragonflySpec{
+				Spec: dfv1alpha1.DragonflySpec{
 					Replicas: int32(replicas),
 					Image:    fmt.Sprintf("%s:%s", resources.DragonflyImage, "latest"),
 				},
