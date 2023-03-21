@@ -108,9 +108,9 @@ func main() {
 	}
 
 	if err = (&controller.HealthReconciler{
-		Client:     mgr.GetClient(),
-		Scheme:     mgr.GetScheme(),
-		Configurer: controller.NewInclusterConfigurer(mgr.GetClient()),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		ReplicationClient: controller.NewInClusterClient(mgr.GetClient()),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Health")
 		os.Exit(1)

@@ -35,12 +35,12 @@ type DragonflyInstance struct {
 	// Dragonfly is the relevant Dragonfly CRD that it performs actions over
 	df *resourcesv1.Dragonfly
 
-	client client.Client
-	marker replicationMarker
-	log    logr.Logger
+	client  client.Client
+	rClient replicationClient
+	log     logr.Logger
 }
 
-func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *corev1.Pod, marker replicationMarker, log logr.Logger) (*DragonflyInstance, error) {
+func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *corev1.Pod, rClient replicationClient, log logr.Logger) (*DragonflyInstance, error) {
 	dfName, ok := pod.Labels["app"]
 	if !ok {
 		return nil, errors.New("can't find the `app` label")
@@ -57,15 +57,15 @@ func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *core
 	}
 
 	// Use InClusterConfigurer by default
-	if marker == nil {
-		marker = NewInclusterConfigurer(c)
+	if rClient == nil {
+		rClient = NewInClusterClient(c)
 	}
 
 	return &DragonflyInstance{
-		df:     &df,
-		client: c,
-		marker: marker,
-		log:    log,
+		df:      &df,
+		client:  c,
+		rClient: rClient,
+		log:     log,
 	}, nil
 }
 
@@ -86,7 +86,7 @@ func (d *DragonflyInstance) initReplication(ctx context.Context) error {
 		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] != resources.Master {
 			master = pod.Name
 			masterIp = pod.Status.PodIP
-			if err := d.marker.replicaOfNoOne(ctx, &pod); err != nil {
+			if err := d.rClient.replicaOfNoOne(ctx, &pod); err != nil {
 				return err
 			}
 			break
@@ -96,7 +96,7 @@ func (d *DragonflyInstance) initReplication(ctx context.Context) error {
 	// Mark others as replicas
 	for _, pod := range pods.Items {
 		if pod.Name != master {
-			if err := d.marker.replicaOf(ctx, &pod, masterIp); err != nil {
+			if err := d.rClient.replicaOf(ctx, &pod, masterIp); err != nil {
 				return err
 			}
 		}
@@ -160,7 +160,7 @@ func (d *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.Po
 		return err
 	}
 
-	if err := d.marker.replicaOf(ctx, pod, masterIp); err != nil {
+	if err := d.rClient.replicaOf(ctx, pod, masterIp); err != nil {
 		return err
 	}
 
@@ -179,7 +179,7 @@ func (d *DragonflyInstance) configureMaster(ctx context.Context, newMaster *core
 		return err
 	}
 
-	if err := d.marker.replicaOfNoOne(ctx, newMaster); err != nil {
+	if err := d.rClient.replicaOfNoOne(ctx, newMaster); err != nil {
 		return err
 	}
 
@@ -192,7 +192,7 @@ func (d *DragonflyInstance) configureMaster(ctx context.Context, newMaster *core
 	// Mark others as replicas
 	for _, pod := range pods.Items {
 		if pod.Name != newMaster.Name {
-			if err := d.marker.replicaOf(ctx, &pod, newMaster.Status.PodIP); err != nil {
+			if err := d.rClient.replicaOf(ctx, &pod, newMaster.Status.PodIP); err != nil {
 				return err
 			}
 		}

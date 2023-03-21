@@ -18,13 +18,13 @@ import (
 	"k8s.io/client-go/transport/spdy"
 )
 
-type outClusterMarker struct {
+type outClusterClient struct {
 	clientset *kubernetes.Clientset
 	config    rest.Config
 }
 
-func newOutclusterMarker(clientset *kubernetes.Clientset, config rest.Config) *outClusterMarker {
-	return &outClusterMarker{
+func newOutClusterClient(clientset *kubernetes.Clientset, config rest.Config) *outClusterClient {
+	return &outClusterClient{
 		clientset: clientset,
 		config:    config,
 	}
@@ -32,7 +32,7 @@ func newOutclusterMarker(clientset *kubernetes.Clientset, config rest.Config) *o
 
 // replicaOf configures the pod as a replica
 // to the given master instance
-func (c outClusterMarker) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
+func (c outClusterClient) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	err, stopChan := portForward(context.Background(), c.clientset, &c.config, pod, 6379)
 	if err != nil {
 		return err
@@ -64,7 +64,7 @@ func (c outClusterMarker) replicaOf(ctx context.Context, pod *corev1.Pod, master
 
 // replicaOfNoOne configures the pod as a master
 // along while updating other pods to be replicas
-func (c outClusterMarker) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
+func (c outClusterClient) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	err, stopChan := portForward(context.Background(), c.clientset, &c.config, pod, 6379)
 	if err != nil {
 		return err

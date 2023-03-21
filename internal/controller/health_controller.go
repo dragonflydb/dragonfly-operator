@@ -35,7 +35,7 @@ type HealthReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 
-	Configurer replicationMarker
+	ReplicationClient replicationClient
 }
 
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
@@ -63,7 +63,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	df, err := GetDragonflyInstanceFromPod(ctx, r.Client, &pod, r.Configurer, log)
+	df, err := GetDragonflyInstanceFromPod(ctx, r.Client, &pod, r.ReplicationClient, log)
 	if err != nil {
 		log.Info("Pod does not belong to a Dragonfly instance")
 		return ctrl.Result{}, nil

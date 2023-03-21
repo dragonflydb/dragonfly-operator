@@ -89,9 +89,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&HealthReconciler{
-		Client:     k8sManager.GetClient(),
-		Scheme:     k8sManager.GetScheme(),
-		Configurer: newOutclusterMarker(clientset, *testEnv.Config),
+		Client:            k8sManager.GetClient(),
+		Scheme:            k8sManager.GetScheme(),
+		ReplicationClient: newOutClusterClient(clientset, *testEnv.Config),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

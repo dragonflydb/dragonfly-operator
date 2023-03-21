@@ -10,24 +10,24 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type replicationMarker interface {
+type replicationClient interface {
 	replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error
 	replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error
 }
 
-type inClusterMarker struct {
+type inClusterClient struct {
 	client client.Client
 }
 
-func NewInclusterConfigurer(client client.Client) *inClusterMarker {
-	return &inClusterMarker{
+func NewInClusterClient(client client.Client) *inClusterClient {
+	return &inClusterClient{
 		client: client,
 	}
 }
 
 // replicaOf configures the pod as a replica
 // to the given master instance
-func (c inClusterMarker) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
+func (c inClusterClient) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
 	})
@@ -51,7 +51,7 @@ func (c inClusterMarker) replicaOf(ctx context.Context, pod *corev1.Pod, masterI
 
 // replicaOfNoOne configures the pod as a master
 // along while updating other pods to be replicas
-func (c inClusterMarker) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
+func (c inClusterClient) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
 	})
