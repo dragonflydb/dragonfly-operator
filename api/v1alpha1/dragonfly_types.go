@@ -50,7 +50,7 @@ type DragonflyStatus struct {
 	// It can be one of the following:
 	// - "ready": The Dragonfly instance is ready to serve requests
 	// - "configuring-replication": The controller is updating the master of the Dragonfly instance
-	// - "resources-created": The Dragonfly instance is initialized i.e resources are created
+	// - "resources-created": The Dragonfly instance resources were created but not yet configured
 	Phase string `json:"phase,omitempty"`
 }
 

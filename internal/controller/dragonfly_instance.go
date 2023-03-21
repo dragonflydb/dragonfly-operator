@@ -193,7 +193,6 @@ func (d *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, mast
 }
 
 // replicaOfNoOne configures the pod as a master
-// along while updating other pods to be replicas
 func (d *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	d.log.Info("running SLAVE OF NO ONE command")
 	redisClient := redis.NewClient(&redis.Options{
@@ -218,7 +217,7 @@ func (d *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod)
 	return nil
 }
 
-// configureMaster marks the given pod as a master while also marking
+// configureMaster marks the given pod as a master while also configuring
 // every other pod as replica
 func (d *DragonflyInstance) configureMaster(ctx context.Context, newMaster *corev1.Pod) error {
 	d.log.Info("configuring pod as master", "pod", newMaster.Name)
@@ -235,7 +234,7 @@ func (d *DragonflyInstance) configureMaster(ctx context.Context, newMaster *core
 		return err
 	}
 
-	d.log.Info("marking other pods as replicas")
+	d.log.Info("configuring other pods as replicas")
 	// Mark others as replicas
 	for _, pod := range pods.Items {
 		if pod.Name != newMaster.Name {

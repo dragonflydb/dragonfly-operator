@@ -41,7 +41,7 @@ type HealthReconciler struct {
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 //
-// This reconcile events focuses on marking the given pods either as a `master`
+// This reconcile events focuses on configuring the given pods either as a `master`
 // or `replica` as they go through their lifecycle. This also focus on the failing
 // over to replica's part to make sure one `master` is always available.
 func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
