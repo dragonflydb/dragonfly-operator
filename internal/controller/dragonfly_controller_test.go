@@ -116,7 +116,7 @@ func isDragonflyCreated(ctx context.Context, c client.Client, name, namespace st
 		return false, nil
 	}
 
-	if df.Status.Created {
+	if df.Status.Phase == PhaseResoucesCreated {
 		return true, nil
 	}
 

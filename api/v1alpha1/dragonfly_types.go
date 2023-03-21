@@ -46,8 +46,12 @@ type DragonflyStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Created is true if the Dragonfly resources have been created
-	Created bool `json:"created,omitempty"`
+	// Status of the Dragonfly Instance
+	// It can be one of the following:
+	// - "ready": The Dragonfly instance is ready to serve requests
+	// - "configuring-replication": The controller is updating the master of the Dragonfly instance
+	// - "resources-created": The Dragonfly instance resources were created but not yet configured
+	Phase string `json:"phase,omitempty"`
 }
 
 //+kubebuilder:object:root=true

@@ -65,7 +65,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	log.Info("Reconciling Dragonfly object")
 	// Ignore if resource is already created
 	// TODO: Handle updates to the Dragonfly object
-	if !df.Status.Created {
+	if df.Status.Phase == "" {
 		log.Info("Creating resources")
 		resources, err := resources.GetDragonflyResources(ctx, &df)
 		if err != nil {
@@ -87,13 +87,8 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return ctrl.Result{}, err
 		}
 
-		if err := configureReplication(ctx, r.Client, &df); err != nil {
-			log.Error(err, "could not find healthy and mark active")
-			return ctrl.Result{}, err
-		}
-
 		// Update Status
-		df.Status.Created = true
+		df.Status.Phase = PhaseResoucesCreated
 		log.Info("Created resources for object")
 		if err := r.Status().Update(ctx, &df); err != nil {
 			log.Error(err, "could not update the Dragonfly object")

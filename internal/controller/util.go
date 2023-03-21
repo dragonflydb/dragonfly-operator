@@ -21,14 +21,17 @@ import (
 	"fmt"
 	"time"
 
-	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
-	"github.com/dragonflydb/dragonfly-operator/internal/resources"
-	"github.com/go-redis/redis"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+const (
+	PhaseResoucesCreated string = "resources-created"
+
+	PhaseConfiguringReplication string = "configuring-replication"
+
+	PhaseReady string = "ready"
 )
 
 func waitForStatefulSetReady(ctx context.Context, c client.Client, name, namespace string, maxDuration time.Duration) error {
@@ -65,94 +68,4 @@ func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace st
 	}
 
 	return false, nil
-}
-
-func configureReplication(ctx context.Context, c client.Client, df *resourcesv1.Dragonfly) error {
-	log := log.FromContext(ctx)
-	log.Info(fmt.Sprintf("Finding healthy and marking active for %s", df.Name))
-
-	pods := corev1.PodList{}
-	if err := c.List(ctx, &pods, client.InNamespace(df.Namespace), client.MatchingLabels{
-		"app":                              df.Name,
-		resources.KubernetesPartOfLabelKey: "dragonfly",
-	},
-	); err != nil {
-		log.Error(err, "could not list Pods")
-		return err
-	}
-
-	var master string
-	var masterIp string
-	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels["role"] != "master" {
-			master = pod.Name
-			masterIp = pod.Status.PodIP
-			if err := configureAsMaster(ctx, c, pod); err != nil {
-				return err
-			}
-			break
-		}
-	}
-
-	// Mark others as replicas
-	for _, pod := range pods.Items {
-		if pod.Name != master {
-			if err := configureAsReplica(ctx, c, pod, masterIp); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func configureAsReplica(ctx context.Context, client client.Client, pod corev1.Pod, masterIp string) error {
-	log := log.FromContext(ctx)
-	log.Info(fmt.Sprintf("Marking %s as replica", pod.Name))
-
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
-	})
-
-	resp, err := redisClient.SlaveOf(masterIp, "6379").Result()
-	if err != nil {
-		return err
-	}
-
-	if resp != "OK" {
-		return fmt.Errorf("could not mark instance as active")
-	}
-
-	pod.Labels["role"] = "replica"
-	if err := client.Update(ctx, &pod); err != nil {
-		return fmt.Errorf("could not update replica label")
-	}
-
-	return nil
-}
-
-func configureAsMaster(ctx context.Context, client client.Client, pod corev1.Pod) error {
-	log := log.FromContext(ctx)
-	log.Info(fmt.Sprintf("Marking %s as active", pod.Name))
-
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
-	})
-
-	resp, err := redisClient.SlaveOf("NO", "ONE").Result()
-	if err != nil {
-		return err
-	}
-
-	if resp != "OK" {
-		return fmt.Errorf("could not mark instance as master")
-	}
-
-	pod.Labels["role"] = "master"
-	if err := client.Update(ctx, &pod); err != nil {
-		log.Error(err, "could not update Pod")
-		return err
-	}
-
-	return nil
 }
