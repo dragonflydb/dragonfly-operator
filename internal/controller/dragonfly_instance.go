@@ -64,8 +64,19 @@ func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *core
 	}, nil
 }
 
+func (d *DragonflyInstance) getStatus(ctx context.Context) (string, error) {
+	if err := d.client.Get(ctx, types.NamespacedName{
+		Name:      d.df.Name,
+		Namespace: d.df.Namespace,
+	}, d.df); err != nil {
+		return "", err
+	}
+
+	return d.df.Status.Phase, nil
+}
+
 func (d *DragonflyInstance) configureReplication(ctx context.Context) error {
-	d.log.Info("configuring replication")
+	d.log.Info("Configuring replication")
 	if err := d.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
 		return err
 	}
@@ -78,7 +89,7 @@ func (d *DragonflyInstance) configureReplication(ctx context.Context) error {
 	var master string
 	var masterIp string
 	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] != resources.Master {
+		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] != resources.Master && pod.DeletionTimestamp == nil {
 			master = pod.Name
 			masterIp = pod.Status.PodIP
 			d.log.Info("Marking pod as master", "podName", master, "ip", masterIp)
@@ -100,7 +111,7 @@ func (d *DragonflyInstance) configureReplication(ctx context.Context) error {
 				// TODO: Why does this fail every now and then?
 				// Should replication be continued if it fails?
 				d.log.Error(err, "Failed to mark pod as replica", "podName", pod.Name)
-				// return err
+				return err
 			}
 		}
 	}

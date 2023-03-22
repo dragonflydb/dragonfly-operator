@@ -77,6 +77,11 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
+	if df.df.Status.Phase == PhaseConfiguringReplication {
+		log.Info("Dragonfly object is already configuring replication")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
 	// Given a Pod Update, What do you do?
 	// If it does not have a `resources.Role`,
 	// - If the Dragonfly Object is in initialization phase, Do a init replication i.e set for first time.
@@ -86,19 +91,19 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	role, ok := pod.Labels[resources.Role]
 	// New pod with No resources.Role
 	if !ok {
-		log.Info("Replication is not configured yet")
-		if df.df.Status.Phase == PhaseResourcesCreated {
+		log.Info("Replication is not configured yet", "phase", df.df.Status.Phase)
+		switch df.df.Status.Phase {
+		case PhaseResourcesCreated:
 			// Make it ready
 			log.Info("Dragonfly object is only initialized. Configuring replication for the first time")
-
 			if err = df.configureReplication(ctx); err != nil {
 				log.Error(err, "could not initialize replication")
 				return ctrl.Result{}, err
 			}
 
 			r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "configured replication for first time")
-		} else if df.df.Status.Phase == PhaseReady {
-			// Probably a pod restart do the needful
+		case PhaseReady:
+			// Pod event either from a restart or a resource update (i.e less/more replicas)
 			log.Info("Pod restart from a ready Dragonfly instance")
 
 			// What should this pod be?
@@ -119,7 +124,6 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				}
 
 				r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
-
 			} else {
 				log.Info(fmt.Sprintf("Master exists. Configuring %s as replica", pod.Status.PodIP))
 				if err := df.configureReplica(ctx, &pod); err != nil {
@@ -129,12 +133,41 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 				r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")
 			}
+			if err := df.updateStatus(ctx, PhaseReady); err != nil {
+				log.Error(err, "could not update status")
+				return ctrl.Result{}, err
+			}
+		case PhaseConfiguringReplication:
+			log.Info("Something went wrong. reconfigure")
+			if err := df.configureReplication(ctx); err != nil {
+				log.Error(err, "couldn't find healthy and mark active")
+				return ctrl.Result{}, err
+			}
 
+			r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "Reconfigured replication")
+		default:
+			log.Info("Dragonfly object is not ready yet")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
-
 	} else {
+		// pod event on a pod with resources.Role
+		// could be deletion, check if a master exists and revamp if not
+		// Everything else can be ignored.
 		log.Info("Role exists already", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "role", role)
-		// TODO: What do you do here?
+		// Is this a deletion event?
+		if pod.DeletionTimestamp != nil {
+			log.Info("Pod is being deleted", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+			// Check if there is an active master
+			if pod.Labels[resources.Role] == resources.Master {
+				log.Info("master is being removed. re-configuring replication")
+				if err := df.configureReplication(ctx); err != nil {
+					log.Error(err, "couldn't find healthy and mark active")
+					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+				}
+			} else if pod.Labels[resources.Role] == resources.Replica {
+				log.Info("replica is being deleted. Nothing to do")
+			}
+		}
 	}
 
 	return ctrl.Result{}, nil

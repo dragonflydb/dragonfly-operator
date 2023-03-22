@@ -28,8 +28,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 // DragonflyReconciler reconciles a Dragonfly object
@@ -64,7 +66,6 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	log.Info("Reconciling Dragonfly object")
 	// Ignore if resource is already created
-	// TODO: Handle updates to the Dragonfly object
 	if df.Status.Phase == "" {
 		log.Info("Creating resources")
 		resources, err := resources.GetDragonflyResources(ctx, &df)
@@ -97,7 +98,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Created", "Created resources for Dragonfly object")
-	} else if df.Status.Phase == PhaseReady {
+	} else {
 		// This is an Update
 		log.Info("updating existing resources")
 		newResources, err := resources.GetDragonflyResources(ctx, &df)
@@ -119,6 +120,15 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			log.Error(err, "could not wait for statefulset to be ready")
 			return ctrl.Result{}, err
 		}
+
+		// Update Status
+		df.Status.Phase = PhaseResourcesCreated
+		log.Info("Created resources for object")
+		if err := r.Status().Update(ctx, &df); err != nil {
+			log.Error(err, "could not update the Dragonfly object")
+			return ctrl.Result{}, err
+		}
+		log.Info("Updated resources for object")
 	}
 
 	return ctrl.Result{}, nil
@@ -127,7 +137,8 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // SetupWithManager sets up the controller with the Manager.
 func (r *DragonflyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&dfv1alpha1.Dragonfly{}).
+		// Listen only to spec changes
+		For(&dfv1alpha1.Dragonfly{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Complete(r)
