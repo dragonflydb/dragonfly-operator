@@ -23,7 +23,7 @@ type outClusterClient struct {
 	config    rest.Config
 }
 
-func newOutClusterClient(clientset *kubernetes.Clientset, config rest.Config) *outClusterClient {
+func newOutClusterReplicationClient(clientset *kubernetes.Clientset, config rest.Config) *outClusterClient {
 	return &outClusterClient{
 		clientset: clientset,
 		config:    config,

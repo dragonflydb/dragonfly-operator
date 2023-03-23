@@ -19,7 +19,9 @@ type inClusterClient struct {
 	client client.Client
 }
 
-func NewInClusterClient(client client.Client) *inClusterClient {
+// NewReplicationClient returns a new replication client
+// that works with in the cluster and is the default.
+func NewReplicationClient(client client.Client) *inClusterClient {
 	return &inClusterClient{
 		client: client,
 	}
