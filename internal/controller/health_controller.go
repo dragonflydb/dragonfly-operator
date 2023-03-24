@@ -24,6 +24,7 @@ import (
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -33,12 +34,14 @@ import (
 
 type HealthReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme        *runtime.Scheme
+	EventRecorder record.EventRecorder
 
 	ReplicationClient replicationClient
 }
 
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -95,6 +98,8 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				return ctrl.Result{}, err
 			}
 
+			r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "configured replication for first time")
+
 		} else if df.df.Status.Phase == PhaseReady {
 			// Probably a pod restart do the needful
 			log.Info("Pod restart from a ready Dragonfly instance")
@@ -116,13 +121,18 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 					return ctrl.Result{}, err
 				}
 
+				r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
+
 			} else {
 				log.Info(fmt.Sprintf("Master exists. Configuring %s as replica", pod.Status.PodIP))
 				if err := df.configureReplica(ctx, &pod); err != nil {
 					log.Error(err, "could not mark replica from db")
 					return ctrl.Result{}, err
 				}
+
+				r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")
 			}
+
 		}
 
 	} else {
