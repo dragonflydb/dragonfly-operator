@@ -129,7 +129,7 @@ func main() {
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		EventRecorder:     eventRecorder,
-		ReplicationClient: controller.NewReplicationClient(mgr.GetClient()),
+		ReplicationClient: controller.NewReplicationClient(mgr.GetClient(), ctrl.Log.WithName("replication-client")),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Health")
 		os.Exit(1)

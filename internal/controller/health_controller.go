@@ -89,7 +89,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	// New pod with No resources.Role
 	if !ok {
 		log.Info("Replication is not configured yet")
-		if df.df.Status.Phase == PhaseResoucesCreated {
+		if df.df.Status.Phase == PhaseResourcesCreated {
 			// Make it ready
 			log.Info("Dragonfly object is only initialized. Configuring replication for the first time")
 

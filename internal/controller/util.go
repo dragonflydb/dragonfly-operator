@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	PhaseResoucesCreated string = "resources-created"
+	PhaseResourcesCreated string = "resources-created"
 
 	PhaseConfiguringReplication string = "configuring-replication"
 

@@ -93,7 +93,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		// Update Status
-		df.Status.Phase = PhaseResoucesCreated
+		df.Status.Phase = PhaseResourcesCreated
 		log.Info("Created resources for object")
 		if err := r.Status().Update(ctx, &df); err != nil {
 			log.Error(err, "could not update the Dragonfly object")
