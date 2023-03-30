@@ -58,7 +58,7 @@ func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *core
 
 	// Use InClusterConfigurer by default
 	if rClient == nil {
-		rClient = NewReplicationClient(c)
+		rClient = NewReplicationClient(c, log)
 	}
 
 	return &DragonflyInstance{

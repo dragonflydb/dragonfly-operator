@@ -53,7 +53,7 @@ var _ = Describe("Dragonfly Reconciler", func() {
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseResoucesCreated, 2*time.Minute)
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseResourcesCreated, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset

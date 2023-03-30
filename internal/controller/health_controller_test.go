@@ -61,7 +61,7 @@ var _ = Describe("Health Reconciler", func() {
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseResoucesCreated, 2*time.Minute)
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseResourcesCreated, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
@@ -203,10 +203,17 @@ var _ = Describe("Health Reconciler", func() {
 
 // getRole returns the redis Role of the given pod
 func getRole(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, port int) (string, error) {
-	err, stopChan := portForward(context.Background(), clientset, config, pod, port)
-	if err != nil {
-		return "", err
-	}
+	// retrying logic here as port-forward is prone to fail in CI environments
+	var stopChan chan struct{}
+	var err error
+	func() {
+		for i := 0; i < 5; i++ {
+			err, stopChan = portForward(ctx, clientset, config, pod, port)
+			if err == nil {
+				return
+			}
+		}
+	}()
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:%d", "localhost", port),
@@ -217,14 +224,14 @@ func getRole(ctx context.Context, clientset *kubernetes.Clientset, config *rest.
 		return "", err
 	}
 
+	// Close Channel
+	stopChan <- struct{}{}
+
 	for _, line := range strings.Split(resp, "\n") {
 		if strings.Contains(line, "role") {
 			return strings.Trim(strings.Split(line, ":")[1], "\r"), nil
 		}
 	}
-
-	// Close Channel
-	stopChan <- struct{}{}
 
 	return resp, nil
 }
