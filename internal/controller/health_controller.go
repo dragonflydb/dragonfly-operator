@@ -79,7 +79,14 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	if df.df.Status.Phase == PhaseConfiguringReplication {
 		log.Info("Dragonfly object is already configuring replication")
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		log.Info("Something went wrong. reconfigure")
+		if err := df.configureReplication(ctx); err != nil {
+			log.Error(err, "couldn't find healthy and mark active")
+			return ctrl.Result{}, err
+		}
+
+		r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "Reconfigured replication")
+		return ctrl.Result{}, nil
 	}
 
 	// Given a Pod Update, What do you do?
