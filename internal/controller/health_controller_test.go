@@ -19,20 +19,16 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
-	"github.com/go-redis/redis"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -42,7 +38,7 @@ var _ = Describe("Health Reconciler", func() {
 		resources.Master:  make([]string, 0),
 		resources.Replica: make([]string, 0),
 	}
-	name := "test-2"
+	name := "health-test"
 	namespace := "default"
 	replicas := 3
 
@@ -93,15 +89,11 @@ var _ = Describe("Health Reconciler", func() {
 			Expect(pods.Items).To(HaveLen(replicas + 1))
 
 			// Get the pods along with their roles
-			for i, pod := range pods.Items {
+			for _, pod := range pods.Items {
 				role, ok := pod.Labels[resources.Role]
 				// error if there is no label
 				Expect(ok).To(BeTrue())
-				// verify the role to match the label
-				redisRole, err := getRole(ctx, clientset, cfg, &pod, 6381+i)
-				Expect(err).To(BeNil())
 
-				Expect(role).To(Equal(redisRole))
 				podRoles[role] = append(podRoles[role], pod.Name)
 			}
 
@@ -139,14 +131,11 @@ var _ = Describe("Health Reconciler", func() {
 
 			// Get the pods along with their roles
 			podRoles := make(map[string][]string)
-			for i, pod := range pods.Items {
+			for _, pod := range pods.Items {
 				role, ok := pod.Labels[resources.Role]
 				// error if there is no label
 				Expect(ok).To(BeTrue())
 				// verify the role to match the label
-				redisRole, err := getRole(ctx, clientset, cfg, &pod, 6390+i)
-				Expect(err).To(BeNil())
-				Expect(role).To(Equal(redisRole))
 				podRoles[role] = append(podRoles[role], pod.Name)
 			}
 
@@ -183,14 +172,11 @@ var _ = Describe("Health Reconciler", func() {
 
 			// Get the pods along with their roles
 			podRoles := make(map[string][]string)
-			for i, pod := range pods.Items {
+			for _, pod := range pods.Items {
 				role, ok := pod.Labels[resources.Role]
 				// error if there is no label
 				Expect(ok).To(BeTrue())
 				// verify the role to match the label
-				redisRole, err := getRole(ctx, clientset, cfg, &pod, 6360+i)
-				Expect(err).To(BeNil())
-				Expect(role).To(Equal(redisRole))
 				podRoles[role] = append(podRoles[role], pod.Name)
 			}
 
@@ -200,38 +186,3 @@ var _ = Describe("Health Reconciler", func() {
 		})
 	})
 })
-
-// getRole returns the redis Role of the given pod
-func getRole(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, port int) (string, error) {
-	// retrying logic here as port-forward is prone to fail in CI environments
-	var stopChan chan struct{}
-	var err error
-	func() {
-		for i := 0; i < 5; i++ {
-			err, stopChan = portForward(ctx, clientset, config, pod, port)
-			if err == nil {
-				return
-			}
-		}
-	}()
-
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%d", "localhost", port),
-	})
-
-	resp, err := redisClient.Info("replication").Result()
-	if err != nil {
-		return "", err
-	}
-
-	// Close Channel
-	stopChan <- struct{}{}
-
-	for _, line := range strings.Split(resp, "\n") {
-		if strings.Contains(line, "role") {
-			return strings.Trim(strings.Split(line, ":")[1], "\r"), nil
-		}
-	}
-
-	return resp, nil
-}

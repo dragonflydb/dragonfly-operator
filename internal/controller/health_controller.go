@@ -36,8 +36,6 @@ type HealthReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme
 	EventRecorder record.EventRecorder
-
-	ReplicationClient replicationClient
 }
 
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
@@ -66,7 +64,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	df, err := GetDragonflyInstanceFromPod(ctx, r.Client, &pod, r.ReplicationClient, log)
+	df, err := GetDragonflyInstanceFromPod(ctx, r.Client, &pod, log)
 	if err != nil {
 		log.Info("Pod does not belong to a Dragonfly instance")
 		return ctrl.Result{}, nil
@@ -93,7 +91,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			// Make it ready
 			log.Info("Dragonfly object is only initialized. Configuring replication for the first time")
 
-			if err = df.initReplication(ctx); err != nil {
+			if err = df.configureReplication(ctx); err != nil {
 				log.Error(err, "could not initialize replication")
 				return ctrl.Result{}, err
 			}
@@ -116,7 +114,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 			if !exists {
 				log.Info("Master does not exist. Configuring Replication")
-				if err := df.initReplication(ctx); err != nil {
+				if err := df.configureReplication(ctx); err != nil {
 					log.Error(err, "couldn't find healthy and mark active")
 					return ctrl.Result{}, err
 				}
