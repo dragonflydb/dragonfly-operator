@@ -99,8 +99,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	// New pod with No resources.Role
 	if !ok {
 		log.Info("Replication is not configured yet", "phase", df.df.Status.Phase)
-		switch df.df.Status.Phase {
-		case PhaseResourcesCreated:
+		if df.df.Status.Phase == PhaseResourcesCreated {
 			// Make it ready
 			log.Info("Dragonfly object is only initialized. Configuring replication for the first time")
 			if err = df.configureReplication(ctx); err != nil {
@@ -109,7 +108,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			}
 
 			r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "configured replication for first time")
-		case PhaseReady:
+		} else {
 			// Pod event either from a restart or a resource update (i.e less/more replicas)
 			log.Info("Pod restart from a ready Dragonfly instance")
 
@@ -144,24 +143,13 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				log.Error(err, "could not update status")
 				return ctrl.Result{}, err
 			}
-		case PhaseConfiguringReplication:
-			log.Info("Something went wrong. reconfigure")
-			if err := df.configureReplication(ctx); err != nil {
-				log.Error(err, "couldn't find healthy and mark active")
-				return ctrl.Result{}, err
-			}
-
-			r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "Reconfigured replication")
-		default:
-			log.Info("Dragonfly object is not ready yet")
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 	} else {
-		// pod event on a pod with resources.Role
-		// could be deletion, check if a master exists and revamp if not
-		// Everything else can be ignored.
+		// pod event on a pod with role
 		log.Info("Role exists already", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "role", role)
-		// Is this a deletion event?
+		// is this a deletion event?
+		// configure replication if its a master pod
+		// do nothing if its a replica pod
 		if pod.DeletionTimestamp != nil {
 			log.Info("Pod is being deleted", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
 			// Check if there is an active master
@@ -171,8 +159,9 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 					log.Error(err, "couldn't find healthy and mark active")
 					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 				}
+				r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
 			} else if pod.Labels[resources.Role] == resources.Replica {
-				log.Info("replica is being deleted. Nothing to do")
+				log.Info("replica is being deleted. nothing to do")
 			}
 		}
 	}
