@@ -221,6 +221,10 @@ func getRole(ctx context.Context, clientset *kubernetes.Clientset, config *rest.
 		}
 	}()
 
+	if err != nil {
+		return "", err
+	}
+
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:%d", "localhost", port),
 	})

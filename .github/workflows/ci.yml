@@ -18,17 +18,13 @@ jobs:
         with:
           submodules: true
 
-      - uses: actions/setup-go@v3
-
-      - name: Build Operator
-        run: |
-          make build
-
       - name: Docker Build
         run: |
           make docker-build
 
       - uses: helm/kind-action@v1.5.0
+        with:
+          cluster_name: kind
 
       - name: Run tests
         timeout-minutes: 6
