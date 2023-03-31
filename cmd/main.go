@@ -126,10 +126,9 @@ func main() {
 	}
 
 	if err = (&controller.HealthReconciler{
-		Client:            mgr.GetClient(),
-		Scheme:            mgr.GetScheme(),
-		EventRecorder:     eventRecorder,
-		ReplicationClient: controller.NewReplicationClient(mgr.GetClient(), ctrl.Log.WithName("replication-client")),
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		EventRecorder: eventRecorder,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Health")
 		os.Exit(1)

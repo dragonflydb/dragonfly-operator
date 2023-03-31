@@ -19,6 +19,9 @@ package controller
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -27,12 +30,15 @@ import (
 	"github.com/go-redis/redis"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/portforward"
+	"k8s.io/client-go/transport/spdy"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -42,7 +48,7 @@ var _ = Describe("Health Reconciler", func() {
 		resources.Master:  make([]string, 0),
 		resources.Replica: make([]string, 0),
 	}
-	name := "test-2"
+	name := "health-test"
 	namespace := "default"
 	replicas := 3
 
@@ -234,4 +240,39 @@ func getRole(ctx context.Context, clientset *kubernetes.Clientset, config *rest.
 	}
 
 	return resp, nil
+}
+
+func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, port int) (error, chan struct{}) {
+	url := clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace(pod.Namespace).
+		Name(pod.Name).
+		SubResource("portforward").
+		URL()
+
+	transport, upgrader, err := spdy.RoundTripperFor(config)
+	if err != nil {
+		return err, nil
+	}
+
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", url)
+	ports := []string{fmt.Sprintf("%d:%d", port, 6379)}
+	readyChan := make(chan struct{}, 1)
+	stopChan := make(chan struct{}, 1)
+
+	fw, err := portforward.New(dialer, ports, stopChan, readyChan, io.Discard, os.Stderr)
+	if err != nil {
+		return err, nil
+	}
+
+	errChan := make(chan error, 1)
+	go func() { errChan <- fw.ForwardPorts() }()
+
+	select {
+	case err = <-errChan:
+		return errors.Wrap(err, "port forwarding failed"), nil
+	case <-fw.Ready:
+	}
+
+	return nil, stopChan
 }

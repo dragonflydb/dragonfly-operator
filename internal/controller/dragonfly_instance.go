@@ -19,11 +19,13 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/go-logr/logr"
+	"github.com/go-redis/redis"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,12 +37,11 @@ type DragonflyInstance struct {
 	// Dragonfly is the relevant Dragonfly CRD that it performs actions over
 	df *resourcesv1.Dragonfly
 
-	client  client.Client
-	rClient replicationClient
-	log     logr.Logger
+	client client.Client
+	log    logr.Logger
 }
 
-func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *corev1.Pod, rClient replicationClient, log logr.Logger) (*DragonflyInstance, error) {
+func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *corev1.Pod, log logr.Logger) (*DragonflyInstance, error) {
 	dfName, ok := pod.Labels["app"]
 	if !ok {
 		return nil, errors.New("can't find the `app` label")
@@ -56,21 +57,15 @@ func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *core
 		return nil, err
 	}
 
-	// Use InClusterConfigurer by default
-	if rClient == nil {
-		rClient = NewReplicationClient(c, log)
-	}
-
 	return &DragonflyInstance{
-		df:      &df,
-		client:  c,
-		rClient: rClient,
-		log:     log,
+		df:     &df,
+		client: c,
+		log:    log,
 	}, nil
 }
 
-func (d *DragonflyInstance) initReplication(ctx context.Context) error {
-	d.log.Info("Initializing replication")
+func (d *DragonflyInstance) configureReplication(ctx context.Context) error {
+	d.log.Info("configuring replication")
 	if err := d.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
 		return err
 	}
@@ -86,7 +81,9 @@ func (d *DragonflyInstance) initReplication(ctx context.Context) error {
 		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] != resources.Master {
 			master = pod.Name
 			masterIp = pod.Status.PodIP
-			if err := d.rClient.replicaOfNoOne(ctx, &pod); err != nil {
+			d.log.Info("Marking pod as master", "podName", master, "ip", masterIp)
+			if err := d.replicaOfNoOne(ctx, &pod); err != nil {
+				d.log.Error(err, "Failed to mark pod as master", "podName", pod.Name)
 				return err
 			}
 			break
@@ -95,9 +92,15 @@ func (d *DragonflyInstance) initReplication(ctx context.Context) error {
 
 	// Mark others as replicas
 	for _, pod := range pods.Items {
-		if pod.Name != master {
-			if err := d.rClient.replicaOf(ctx, &pod, masterIp); err != nil {
-				return err
+		// only mark the running non-master pods
+		d.log.Info("Checking pod", "podName", pod.Name, "ip", pod.Status.PodIP, "status", pod.Status.Phase, "deletiontimestamp", pod.DeletionTimestamp)
+		if pod.Name != master && pod.Status.Phase == corev1.PodRunning && pod.DeletionTimestamp == nil {
+			d.log.Info("Marking pod as replica", "podName", pod.Name, "ip", pod.Status.PodIP, "status", pod.Status.Phase)
+			if err := d.replicaOf(ctx, &pod, masterIp); err != nil {
+				// TODO: Why does this fail every now and then?
+				// Should replication be continued if it fails?
+				d.log.Error(err, "Failed to mark pod as replica", "podName", pod.Name)
+				// return err
 			}
 		}
 	}
@@ -160,7 +163,7 @@ func (d *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.Po
 		return err
 	}
 
-	if err := d.rClient.replicaOf(ctx, pod, masterIp); err != nil {
+	if err := d.replicaOf(ctx, pod, masterIp); err != nil {
 		return err
 	}
 
@@ -179,7 +182,7 @@ func (d *DragonflyInstance) configureMaster(ctx context.Context, newMaster *core
 		return err
 	}
 
-	if err := d.rClient.replicaOfNoOne(ctx, newMaster); err != nil {
+	if err := d.replicaOfNoOne(ctx, newMaster); err != nil {
 		return err
 	}
 
@@ -192,7 +195,7 @@ func (d *DragonflyInstance) configureMaster(ctx context.Context, newMaster *core
 	// Mark others as replicas
 	for _, pod := range pods.Items {
 		if pod.Name != newMaster.Name {
-			if err := d.rClient.replicaOf(ctx, &pod, newMaster.Status.PodIP); err != nil {
+			if err := d.replicaOf(ctx, &pod, newMaster.Status.PodIP); err != nil {
 				return err
 			}
 		}
@@ -217,4 +220,58 @@ func (d *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, error
 	}
 
 	return &pods, nil
+}
+
+// replicaOf configures the pod as a replica
+// to the given master instance
+func (d *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
+	// retry logic as port-forwarding is not reliable in CI
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
+	})
+
+	d.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp)
+	resp, err := redisClient.SlaveOf(masterIp, "6379").Result()
+	if err != nil {
+		return fmt.Errorf("Error running SLAVE OF command: %s", err)
+	}
+
+	if resp != "OK" {
+		return fmt.Errorf("Response of `SLAVE OF` on replica is not OK: %s", resp)
+	}
+
+	d.log.Info("Marking pod role as replica", "pod", pod.Name)
+	pod.Labels[resources.Role] = resources.Replica
+	if err := d.client.Update(ctx, pod); err != nil {
+		return fmt.Errorf("could not update replica label")
+	}
+
+	return nil
+}
+
+// replicaOfNoOne configures the pod as a master
+// along while updating other pods to be replicas
+func (d *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
+	// retry logic as command issuance can timeout and fail
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
+	})
+
+	d.log.Info("Running SLAVE OF NO ONE command", "pod", pod.Name)
+	resp, err := redisClient.SlaveOf("NO", "ONE").Result()
+	if err != nil {
+		return fmt.Errorf("Error running SLAVE OF NO ONE command: %w", err)
+	}
+
+	if resp != "OK" {
+		return fmt.Errorf("Response of `SLAVE OF NO NE` on master is not OK: %s", resp)
+	}
+
+	d.log.Info("Marking pod role as master", "pod", pod.Name)
+	pod.Labels[resources.Role] = resources.Master
+	if err := d.client.Update(ctx, pod); err != nil {
+		return err
+	}
+
+	return nil
 }

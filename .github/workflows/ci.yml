@@ -10,6 +10,8 @@ on:
 jobs:
   build-operator:
     runs-on: ubuntu-latest
+    env:
+      IMG: ghcr.io/dragonflydb/operator:${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v3
@@ -22,14 +24,16 @@ jobs:
         run: |
           make build
 
+      - name: Docker Build
+        run: |
+          make docker-build
+
       - uses: helm/kind-action@v1.5.0
 
       - name: Run tests
+        timeout-minutes: 6
         run: |
+          make docker-kind-load
+          make deploy
           make test
-
-      - name: Docker Build
-        run: |
-          export IMG=ghcr.io/dragonflydb/operator:${{ github.sha }}
-          make docker-build
 
