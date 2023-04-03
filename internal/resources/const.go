@@ -16,6 +16,8 @@ limitations under the License.
 
 package resources
 
+import "k8s.io/apimachinery/pkg/api/resource"
+
 const (
 	// DragonflyPort is the port on which Dragonfly listens
 	DragonflyPort = 6379
@@ -57,4 +59,19 @@ const (
 	Master string = "master"
 
 	Replica string = "replica"
+)
+
+var (
+	// Default resource requirements for the Dragonfly instance
+	// resourceRequestCPU is the CPU request for the Dragonfly instance
+	resourceRequestCPU = resource.MustParse("100m")
+
+	// resourcesRequestMemory is the memory request for the Dragonfly instance
+	resourceRequestMemory = resource.MustParse("128Mi")
+
+	// resourcesLimitCPU is the CPU limit for the Dragonfly instance
+	resourceLimitCPU = resource.MustParse("1000m")
+
+	// resourcesLimitMemory is the memory limit for the Dragonfly instance
+	resourceLimitMemory = resource.MustParse("1024Mi")
 )
