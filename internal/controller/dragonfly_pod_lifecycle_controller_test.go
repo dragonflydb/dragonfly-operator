@@ -40,7 +40,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 	}
 	name := "health-test"
 	namespace := "default"
-	replicas := 3
+	replicas := 4
 
 	df := dfv1alpha1.Dragonfly{
 		ObjectMeta: metav1.ObjectMeta{
@@ -92,7 +92,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 			Expect(err).To(BeNil())
 
 			// 4 pod replicas = 1 master + 3 replicas
-			Expect(pods.Items).To(HaveLen(replicas + 1))
+			Expect(pods.Items).To(HaveLen(replicas))
 
 			// Get the pods along with their roles
 			for _, pod := range pods.Items {
@@ -139,7 +139,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 			Expect(err).To(BeNil())
 
 			// 4 pod replicas = 1 master + 3 replicas
-			Expect(pods.Items).To(HaveLen(replicas + 1))
+			Expect(pods.Items).To(HaveLen(replicas))
 
 			// Get the pods along with their roles
 			podRoles := make(map[string][]string)
@@ -187,7 +187,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 			Expect(err).To(BeNil())
 
 			// 4 pod replicas = 1 master + 3 replicas
-			Expect(pods.Items).To(HaveLen(replicas + 1))
+			Expect(pods.Items).To(HaveLen(replicas))
 
 			// Get the pods along with their roles
 			podRoles := make(map[string][]string)

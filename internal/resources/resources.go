@@ -41,9 +41,6 @@ func GetDragonflyResources(ctx context.Context, db *resourcesv1.Dragonfly) ([]cl
 		image = fmt.Sprintf("%s:%s", DragonflyImage, Version)
 	}
 
-	// Master + Replicas
-	replicas := db.Spec.Replicas + 1
-
 	// Create a StatefulSet, Headless Service
 	statefulset := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -69,7 +66,7 @@ func GetDragonflyResources(ctx context.Context, db *resourcesv1.Dragonfly) ([]cl
 			},
 		},
 		Spec: appsv1.StatefulSetSpec{
-			Replicas:    &replicas,
+			Replicas:    &db.Spec.Replicas,
 			ServiceName: db.Name,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{

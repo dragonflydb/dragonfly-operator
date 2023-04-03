@@ -43,7 +43,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Namespace: namespace,
 		},
 		Spec: dragonflydbiov1alpha1.DragonflySpec{
-			Replicas: 2,
+			Replicas: 3,
 			Image:    fmt.Sprintf("%s:%s", resources.DragonflyImage, "latest"),
 		},
 	}
@@ -92,7 +92,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			}, &df)
 			Expect(err).To(BeNil())
 
-			df.Spec.Replicas = 4
+			df.Spec.Replicas = 5
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 
@@ -135,7 +135,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			}, &df)
 			Expect(err).To(BeNil())
 
-			df.Spec.Replicas = 2
+			df.Spec.Replicas = 3
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 
