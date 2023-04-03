@@ -27,7 +27,7 @@ jobs:
           cluster_name: kind
 
       - name: Run tests
-        timeout-minutes: 6
+        timeout-minutes: 10
         run: |
           make docker-kind-load
           make deploy

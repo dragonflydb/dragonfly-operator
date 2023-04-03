@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Health Reconciler", func() {
+var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 	ctx := context.Background()
 	podRoles := map[string][]string{
 		resources.Master:  make([]string, 0),
@@ -42,18 +42,20 @@ var _ = Describe("Health Reconciler", func() {
 	namespace := "default"
 	replicas := 3
 
+	df := dfv1alpha1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: dfv1alpha1.DragonflySpec{
+			Replicas: int32(replicas),
+			Image:    fmt.Sprintf("%s:%s", resources.DragonflyImage, "latest"),
+		},
+	}
+
 	Context("Fail Over is working", func() {
 		It("Initial Master is elected", func() {
-			err := k8sClient.Create(ctx, &dragonflydbiov1alpha1.Dragonfly{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      name,
-					Namespace: namespace,
-				},
-				Spec: dragonflydbiov1alpha1.DragonflySpec{
-					Replicas: int32(replicas),
-					Image:    fmt.Sprintf("%s:%s", resources.DragonflyImage, "latest"),
-				},
-			})
+			err := k8sClient.Create(ctx, &df)
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked initialized
@@ -75,7 +77,11 @@ var _ = Describe("Health Reconciler", func() {
 			}, &svc)
 			Expect(err).To(BeNil())
 
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 2*time.Minute)
+			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
+			Expect(err).To(BeNil())
+
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 1*time.Minute)
+			Expect(err).To(BeNil())
 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
@@ -114,9 +120,15 @@ var _ = Describe("Health Reconciler", func() {
 			err = k8sClient.Delete(ctx, &pod)
 			Expect(err).To(BeNil())
 
-			// Expect a new master along while having 3 replicas
-			// Wait for Status to be ready
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 2*time.Minute)
+			// Wait until the loop is reconciled. This is needed as status is ready previously
+			// and the test might move forward even before the reconcile loop is triggered
+			time.Sleep(10 * time.Second)
+
+			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
+			Expect(err).To(BeNil())
+
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 1*time.Minute)
+			Expect(err).To(BeNil())
 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
@@ -155,9 +167,16 @@ var _ = Describe("Health Reconciler", func() {
 			err = k8sClient.Delete(ctx, &pod)
 			Expect(err).To(BeNil())
 
+			// Wait until the loop is reconciled. This is needed as status is ready previously
+			// and the test might move forward even before the reconcile loop is triggered
+			time.Sleep(10 * time.Second)
+
 			// Expect a new replica
 			// Wait for Status to be ready
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 2*time.Minute)
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 1*time.Minute)
+			Expect(err).To(BeNil())
+			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
+			Expect(err).To(BeNil())
 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
@@ -185,4 +204,5 @@ var _ = Describe("Health Reconciler", func() {
 			Expect(podRoles[resources.Replica]).To(HaveLen(replicas))
 		})
 	})
+
 })

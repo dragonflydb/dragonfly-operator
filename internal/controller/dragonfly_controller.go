@@ -28,8 +28,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 // DragonflyReconciler reconciles a Dragonfly object
@@ -50,10 +52,6 @@ type DragonflyReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Dragonfly object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.14.1/pkg/reconcile
@@ -68,7 +66,6 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	log.Info("Reconciling Dragonfly object")
 	// Ignore if resource is already created
-	// TODO: Handle updates to the Dragonfly object
 	if df.Status.Phase == "" {
 		log.Info("Creating resources")
 		resources, err := resources.GetDragonflyResources(ctx, &df)
@@ -101,6 +98,30 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Created", "Created resources for Dragonfly object")
+	} else {
+		// This is an Update
+		log.Info("updating existing resources")
+		newResources, err := resources.GetDragonflyResources(ctx, &df)
+		if err != nil {
+			log.Error(err, "could not get resources")
+			return ctrl.Result{}, err
+		}
+
+		// update all resources
+		for _, resource := range newResources {
+			if err := r.Update(ctx, resource); err != nil {
+				log.Error(err, fmt.Sprintf("could not update resource %s/%s/%s", resource.GetObjectKind(), resource.GetNamespace(), resource.GetName()))
+				return ctrl.Result{}, err
+			}
+		}
+
+		log.Info("Waiting for the statefulset to be ready")
+		if err := waitForStatefulSetReady(ctx, r.Client, df.Name, df.Namespace, 2*time.Minute); err != nil {
+			log.Error(err, "could not wait for statefulset to be ready")
+			return ctrl.Result{}, err
+		}
+
+		log.Info("Updated resources for object")
 	}
 
 	return ctrl.Result{}, nil
@@ -109,7 +130,8 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // SetupWithManager sets up the controller with the Manager.
 func (r *DragonflyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&dfv1alpha1.Dragonfly{}).
+		// Listen only to spec changes
+		For(&dfv1alpha1.Dragonfly{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Complete(r)

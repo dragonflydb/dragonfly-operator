@@ -64,13 +64,24 @@ func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *core
 	}, nil
 }
 
-func (d *DragonflyInstance) configureReplication(ctx context.Context) error {
-	d.log.Info("configuring replication")
-	if err := d.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
+func (dfi *DragonflyInstance) getStatus(ctx context.Context) (string, error) {
+	if err := dfi.client.Get(ctx, types.NamespacedName{
+		Name:      dfi.df.Name,
+		Namespace: dfi.df.Namespace,
+	}, dfi.df); err != nil {
+		return "", err
+	}
+
+	return dfi.df.Status.Phase, nil
+}
+
+func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {
+	dfi.log.Info("Configuring replication")
+	if err := dfi.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
 		return err
 	}
 
-	pods, err := d.getPods(ctx)
+	pods, err := dfi.getPods(ctx)
 	if err != nil {
 		return err
 	}
@@ -78,12 +89,12 @@ func (d *DragonflyInstance) configureReplication(ctx context.Context) error {
 	var master string
 	var masterIp string
 	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] != resources.Master {
+		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] != resources.Master && pod.DeletionTimestamp == nil {
 			master = pod.Name
 			masterIp = pod.Status.PodIP
-			d.log.Info("Marking pod as master", "podName", master, "ip", masterIp)
-			if err := d.replicaOfNoOne(ctx, &pod); err != nil {
-				d.log.Error(err, "Failed to mark pod as master", "podName", pod.Name)
+			dfi.log.Info("Marking pod as master", "podName", master, "ip", masterIp)
+			if err := dfi.replicaOfNoOne(ctx, &pod); err != nil {
+				dfi.log.Error(err, "Failed to mark pod as master", "podName", pod.Name)
 				return err
 			}
 			break
@@ -93,38 +104,38 @@ func (d *DragonflyInstance) configureReplication(ctx context.Context) error {
 	// Mark others as replicas
 	for _, pod := range pods.Items {
 		// only mark the running non-master pods
-		d.log.Info("Checking pod", "podName", pod.Name, "ip", pod.Status.PodIP, "status", pod.Status.Phase, "deletiontimestamp", pod.DeletionTimestamp)
+		dfi.log.Info("Checking pod", "podName", pod.Name, "ip", pod.Status.PodIP, "status", pod.Status.Phase, "deletiontimestamp", pod.DeletionTimestamp)
 		if pod.Name != master && pod.Status.Phase == corev1.PodRunning && pod.DeletionTimestamp == nil {
-			d.log.Info("Marking pod as replica", "podName", pod.Name, "ip", pod.Status.PodIP, "status", pod.Status.Phase)
-			if err := d.replicaOf(ctx, &pod, masterIp); err != nil {
+			dfi.log.Info("Marking pod as replica", "podName", pod.Name, "ip", pod.Status.PodIP, "status", pod.Status.Phase)
+			if err := dfi.replicaOf(ctx, &pod, masterIp); err != nil {
 				// TODO: Why does this fail every now and then?
 				// Should replication be continued if it fails?
-				d.log.Error(err, "Failed to mark pod as replica", "podName", pod.Name)
-				// return err
+				dfi.log.Error(err, "Failed to mark pod as replica", "podName", pod.Name)
+				return err
 			}
 		}
 	}
 
-	if err := d.updateStatus(ctx, PhaseReady); err != nil {
+	if err := dfi.updateStatus(ctx, PhaseReady); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (d *DragonflyInstance) updateStatus(ctx context.Context, phase string) error {
-	d.log.Info("Updating status", "phase", phase)
-	d.df.Status.Phase = phase
-	if err := d.client.Status().Update(ctx, d.df); err != nil {
+func (dfi *DragonflyInstance) updateStatus(ctx context.Context, phase string) error {
+	dfi.log.Info("Updating status", "phase", phase)
+	dfi.df.Status.Phase = phase
+	if err := dfi.client.Status().Update(ctx, dfi.df); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (d *DragonflyInstance) masterExists(ctx context.Context) (bool, error) {
-	d.log.Info("checking if a master exists already")
-	pods, err := d.getPods(ctx)
+func (dfi *DragonflyInstance) masterExists(ctx context.Context) (bool, error) {
+	dfi.log.Info("checking if a master exists already")
+	pods, err := dfi.getPods(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -138,9 +149,9 @@ func (d *DragonflyInstance) masterExists(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
-func (d *DragonflyInstance) getMasterIp(ctx context.Context) (string, error) {
-	d.log.Info("retrieving ip of the master")
-	pods, err := d.getPods(ctx)
+func (dfi *DragonflyInstance) getMasterIp(ctx context.Context) (string, error) {
+	dfi.log.Info("retrieving ip of the master")
+	pods, err := dfi.getPods(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -156,18 +167,18 @@ func (d *DragonflyInstance) getMasterIp(ctx context.Context) (string, error) {
 
 // configureReplica marks the given pod as a replica by finding
 // a master for that instance
-func (d *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.Pod) error {
-	d.log.Info("configuring pod as replica", "pod", pod.Name)
-	masterIp, err := d.getMasterIp(ctx)
+func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.Pod) error {
+	dfi.log.Info("configuring pod as replica", "pod", pod.Name)
+	masterIp, err := dfi.getMasterIp(ctx)
 	if err != nil {
 		return err
 	}
 
-	if err := d.replicaOf(ctx, pod, masterIp); err != nil {
+	if err := dfi.replicaOf(ctx, pod, masterIp); err != nil {
 		return err
 	}
 
-	if err := d.updateStatus(ctx, PhaseReady); err != nil {
+	if err := dfi.updateStatus(ctx, PhaseReady); err != nil {
 		return err
 	}
 
@@ -176,43 +187,43 @@ func (d *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.Po
 
 // configureMaster marks the given pod as a master while also marking
 // every other pod as replica
-func (d *DragonflyInstance) configureMaster(ctx context.Context, newMaster *corev1.Pod) error {
-	d.log.Info("configuring pod as master", "pod", newMaster.Name)
-	if err := d.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
+func (dfi *DragonflyInstance) configureMaster(ctx context.Context, newMaster *corev1.Pod) error {
+	dfi.log.Info("configuring pod as master", "pod", newMaster.Name)
+	if err := dfi.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
 		return err
 	}
 
-	if err := d.replicaOfNoOne(ctx, newMaster); err != nil {
+	if err := dfi.replicaOfNoOne(ctx, newMaster); err != nil {
 		return err
 	}
 
-	pods, err := d.getPods(ctx)
+	pods, err := dfi.getPods(ctx)
 	if err != nil {
 		return err
 	}
 
-	d.log.Info("configuring other pods as replicas")
+	dfi.log.Info("configuring other pods as replicas")
 	// Mark others as replicas
 	for _, pod := range pods.Items {
 		if pod.Name != newMaster.Name {
-			if err := d.replicaOf(ctx, &pod, newMaster.Status.PodIP); err != nil {
+			if err := dfi.replicaOf(ctx, &pod, newMaster.Status.PodIP); err != nil {
 				return err
 			}
 		}
 	}
 
-	if err := d.updateStatus(ctx, PhaseReady); err != nil {
+	if err := dfi.updateStatus(ctx, PhaseReady); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (d *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, error) {
-	d.log.Info("getting all pods relevant to the instance")
+func (dfi *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, error) {
+	dfi.log.Info("getting all pods relevant to the instance")
 	var pods corev1.PodList
-	if err := d.client.List(ctx, &pods, client.InNamespace(d.df.Namespace), client.MatchingLabels{
-		"app":                              d.df.Name,
+	if err := dfi.client.List(ctx, &pods, client.InNamespace(dfi.df.Namespace), client.MatchingLabels{
+		"app":                              dfi.df.Name,
 		resources.KubernetesPartOfLabelKey: "dragonfly",
 	},
 	); err != nil {
@@ -224,13 +235,12 @@ func (d *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, error
 
 // replicaOf configures the pod as a replica
 // to the given master instance
-func (d *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
-	// retry logic as port-forwarding is not reliable in CI
+func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
 	})
 
-	d.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp)
+	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp)
 	resp, err := redisClient.SlaveOf(masterIp, "6379").Result()
 	if err != nil {
 		return fmt.Errorf("Error running SLAVE OF command: %s", err)
@@ -240,9 +250,9 @@ func (d *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, mast
 		return fmt.Errorf("Response of `SLAVE OF` on replica is not OK: %s", resp)
 	}
 
-	d.log.Info("Marking pod role as replica", "pod", pod.Name)
+	dfi.log.Info("Marking pod role as replica", "pod", pod.Name)
 	pod.Labels[resources.Role] = resources.Replica
-	if err := d.client.Update(ctx, pod); err != nil {
+	if err := dfi.client.Update(ctx, pod); err != nil {
 		return fmt.Errorf("could not update replica label")
 	}
 
@@ -251,13 +261,12 @@ func (d *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, mast
 
 // replicaOfNoOne configures the pod as a master
 // along while updating other pods to be replicas
-func (d *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
-	// retry logic as command issuance can timeout and fail
+func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
 	})
 
-	d.log.Info("Running SLAVE OF NO ONE command", "pod", pod.Name)
+	dfi.log.Info("Running SLAVE OF NO ONE command", "pod", pod.Name)
 	resp, err := redisClient.SlaveOf("NO", "ONE").Result()
 	if err != nil {
 		return fmt.Errorf("Error running SLAVE OF NO ONE command: %w", err)
@@ -267,9 +276,9 @@ func (d *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod)
 		return fmt.Errorf("Response of `SLAVE OF NO NE` on master is not OK: %s", resp)
 	}
 
-	d.log.Info("Marking pod role as master", "pod", pod.Name)
+	dfi.log.Info("Marking pod role as master", "pod", pod.Name)
 	pod.Labels[resources.Role] = resources.Master
-	if err := d.client.Update(ctx, pod); err != nil {
+	if err := dfi.client.Update(ctx, pod); err != nil {
 		return err
 	}
 
