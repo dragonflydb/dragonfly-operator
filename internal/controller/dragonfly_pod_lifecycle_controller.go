@@ -64,29 +64,17 @@ func (r *DFPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	df, err := GetDragonflyInstanceFromPod(ctx, r.Client, &pod, log)
+	dfi, err := GetDragonflyInstanceFromPod(ctx, r.Client, &pod, log)
 	if err != nil {
 		log.Info("Pod does not belong to a Dragonfly instance")
 		return ctrl.Result{}, nil
 	}
 
-	if df.df.Status.Phase == "" {
+	if dfi.df.Status.Phase == "" {
 		// retry after resources are created
 		// Phase should be initialized by the time this is called
 		log.Info("Dragonfly object is not initialized yet")
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-	}
-
-	if df.df.Status.Phase == PhaseConfiguringReplication {
-		log.Info("Dragonfly object is already configuring replication")
-		log.Info("Something went wrong. reconfigure")
-		if err := df.configureReplication(ctx); err != nil {
-			log.Error(err, "couldn't find healthy and mark active")
-			return ctrl.Result{}, err
-		}
-
-		r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "Reconfigured replication")
-		return ctrl.Result{}, nil
 	}
 
 	// Given a Pod Update, What do you do?
@@ -98,17 +86,17 @@ func (r *DFPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	role, ok := pod.Labels[resources.Role]
 	// New pod with No resources.Role
 	if !ok {
-		log.Info("No replication role was set yet", "phase", df.df.Status.Phase)
-		if df.df.Status.Phase == PhaseResourcesCreated {
+		log.Info("No replication role was set yet", "phase", dfi.df.Status.Phase)
+		if dfi.df.Status.Phase == PhaseResourcesCreated {
 			// Make it ready
 			log.Info("Dragonfly object is only initialized. Configuring replication for the first time")
-			if err = df.configureReplication(ctx); err != nil {
+			if err = dfi.configureReplication(ctx); err != nil {
 				log.Error(err, "could not initialize replication")
 				return ctrl.Result{}, err
 			}
 
-			r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "configured replication for first time")
-		} else {
+			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "configured replication for first time")
+		} else if dfi.df.Status.Phase == PhaseReady {
 			// Pod event either from a restart or a resource update (i.e less/more replicas)
 			log.Info("Pod restart from a ready Dragonfly instance")
 
@@ -116,7 +104,7 @@ func (r *DFPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			// If there is no active master, find and mark an healthy instance
 			// if there is an active master, mark it as a replica
 			// Check if there is an active master
-			exists, err := df.masterExists(ctx)
+			exists, err := dfi.masterExists(ctx)
 			if err != nil {
 				log.Error(err, "could not check if active master exists")
 				return ctrl.Result{}, err
@@ -124,24 +112,20 @@ func (r *DFPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 			if !exists {
 				log.Info("Master does not exist. Configuring Replication")
-				if err := df.configureReplication(ctx); err != nil {
+				if err := dfi.configureReplication(ctx); err != nil {
 					log.Error(err, "couldn't find healthy and mark active")
 					return ctrl.Result{}, err
 				}
 
-				r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
+				r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
 			} else {
 				log.Info(fmt.Sprintf("Master exists. Configuring %s as replica", pod.Status.PodIP))
-				if err := df.configureReplica(ctx, &pod); err != nil {
+				if err := dfi.configureReplica(ctx, &pod); err != nil {
 					log.Error(err, "could not mark replica from db")
 					return ctrl.Result{}, err
 				}
 
-				r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")
-			}
-			if err := df.updateStatus(ctx, PhaseReady); err != nil {
-				log.Error(err, "could not update status")
-				return ctrl.Result{}, err
+				r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")
 			}
 		}
 	} else {
@@ -155,11 +139,11 @@ func (r *DFPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			// Check if there is an active master
 			if pod.Labels[resources.Role] == resources.Master {
 				log.Info("master is being removed. re-configuring replication")
-				if err := df.configureReplication(ctx); err != nil {
+				if err := dfi.configureReplication(ctx); err != nil {
 					log.Error(err, "couldn't find healthy and mark active")
 					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 				}
-				r.EventRecorder.Event(df.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
+				r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
 			} else if pod.Labels[resources.Role] == resources.Replica {
 				log.Info("replica is being deleted. nothing to do")
 			}

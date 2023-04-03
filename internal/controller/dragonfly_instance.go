@@ -236,7 +236,6 @@ func (dfi *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, err
 // replicaOf configures the pod as a replica
 // to the given master instance
 func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
-	// retry logic as port-forwarding is not reliable in CI
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
 	})
@@ -263,7 +262,6 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 // replicaOfNoOne configures the pod as a master
 // along while updating other pods to be replicas
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
-	// retry logic as command issuance can timeout and fail
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
 	})
