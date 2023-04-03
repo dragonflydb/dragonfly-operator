@@ -5,13 +5,13 @@
   </a>
 </p>
 
-# dragonfly-operator
+Dragonfly Operator is a Kubernetes operator used to deploy and manage [Dragonfly](https://dragonflydb.io/) instances inside your Kubernetes clusters.
+Main features include:
 
-// TODO(user): Add simple overview of use/purpose
+- Automatic failover
+- Scaling up/down the number of instances
 
-## Description
-
-// TODO(user): An in-depth paragraph about your project and overview of use
+You can find more information about Dragonfly in the [official documentation](https://dragonflydb.io/docs/).
 
 ## Getting Started
 
@@ -20,22 +20,30 @@ You’ll need a Kubernetes cluster to run against. You can use [KIND](https://si
 
 ### Running on the cluster
 
-1. Install Instances of Custom Resources:
-
-```sh
-kubectl apply -f config/samples/
-```
-
-2. Build and push your image to the location specified by `IMG`:
+- Build and push your image to the location specified by `IMG`:
 
 ```sh
 make docker-build docker-push IMG=<some-registry>/dragonfly-operator:tag
 ```
 
-3. Deploy the controller to the cluster with the image specified by `IMG`:
+- Deploy the controller to the cluster with the image specified by `IMG`:
+
+> **Note**
+>
+> If you are using `kind`, You can load the image instead of pushing to a registry by running
+>
+> ```sh
+> make docker-kind-load IMG=<some-registry>/dragonfly-operator:tag
+> ```
 
 ```sh
 make deploy IMG=<some-registry>/dragonfly-operator:tag
+```
+
+- Install Instances of Custom Resources:
+
+```sh
+kubectl apply -f config/samples/
 ```
 
 ### Uninstall CRDs
@@ -53,45 +61,6 @@ UnDeploy the controller from the cluster:
 ```sh
 make undeploy
 ```
-
-## Contributing
-
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-### How it works
-
-This project aims to follow the Kubernetes [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
-
-It uses [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/),
-which provide a reconcile function responsible for synchronizing resources until the desired state is reached on the cluster.
-
-### Test It Out
-
-1. Install the CRDs into the cluster:
-
-```sh
-make install
-```
-
-2. Run your controller (this will run in the foreground, so switch to a new terminal if you want to leave it running):
-
-```sh
-make run
-```
-
-**NOTE:** You can also run this in one step by running: `make install run`
-
-### Modifying the API definitions
-
-If you are editing the API definitions, generate the manifests such as CRs or CRDs using:
-
-```sh
-make manifests
-```
-
-**NOTE:** Run `make --help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
 ## License
 
