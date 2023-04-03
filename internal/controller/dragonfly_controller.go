@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
@@ -65,7 +64,6 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	log.Info("Reconciling Dragonfly object")
-	// Ignore if resource is already created
 	if df.Status.Phase == "" {
 		log.Info("Creating resources")
 		resources, err := resources.GetDragonflyResources(ctx, &df)
@@ -80,13 +78,6 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				log.Error(err, fmt.Sprintf("could not create resource %s/%s/%s", resource.GetObjectKind(), resource.GetNamespace(), resource.GetName()))
 				return ctrl.Result{}, err
 			}
-		}
-
-		log.Info("Waiting for the statefulset to be ready")
-		// TODO: What happens if we timed out here and got the same instance event again
-		if err := waitForStatefulSetReady(ctx, r.Client, df.Name, df.Namespace, 5*time.Minute); err != nil {
-			log.Error(err, "could not wait for statefulset to be ready")
-			return ctrl.Result{}, err
 		}
 
 		// Update Status
@@ -113,12 +104,6 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				log.Error(err, fmt.Sprintf("could not update resource %s/%s/%s", resource.GetObjectKind(), resource.GetNamespace(), resource.GetName()))
 				return ctrl.Result{}, err
 			}
-		}
-
-		log.Info("Waiting for the statefulset to be ready")
-		if err := waitForStatefulSetReady(ctx, r.Client, df.Name, df.Namespace, 2*time.Minute); err != nil {
-			log.Error(err, "could not wait for statefulset to be ready")
-			return ctrl.Result{}, err
 		}
 
 		log.Info("Updated resources for object")
