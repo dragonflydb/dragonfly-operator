@@ -20,13 +20,14 @@ You’ll need a Kubernetes cluster to run against. You can use [KIND](https://si
 
 ### Running on the cluster
 
-- Build and push your image to the location specified by `IMG`:
+1. Build your image with `IMG` tag:
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/dragonfly-operator:tag
+export IMG=<some-registry>/dragonfly-operator:tag
+make docker-build
 ```
 
-- Deploy the controller to the cluster with the image specified by `IMG`:
+2. Make the image available to the cluster:
 
 > **Note**
 >
@@ -37,13 +38,37 @@ make docker-build docker-push IMG=<some-registry>/dragonfly-operator:tag
 > ```
 
 ```sh
-make deploy IMG=<some-registry>/dragonfly-operator:tag
+make docker-push
 ```
 
-- Install Instances of Custom Resources:
+2. Deploy the controller to the cluster with the image specified by `IMG`:
 
 ```sh
-kubectl apply -f config/samples/
+make deploy
+```
+
+3. Verify that the controller is running, and CRD's are installed:
+
+```sh
+➜ watch kubectl -n dragonfly-operator-system get pods                                                        
+NAME                                                     READY   STATUS        RESTARTS   AGE
+dragonfly-operator-controller-manager-7b88f9d84b-qnj4c   2/2     Running       0          13m
+➜ kubectl get crds                             
+NAME                         CREATED AT
+dragonflies.dragonflydb.io   2023-04-03T13:29:18Z
+```
+
+3. Install a sample instance of Custom Resource:
+
+```sh
+kubectl apply -f config/samples/v1alpha1_dragonfly.yaml
+
+```
+
+4. Check the status of the instance:
+
+```sh
+kubectl describe dragonfly dragonfly-sample
 ```
 
 ### Uninstall CRDs
