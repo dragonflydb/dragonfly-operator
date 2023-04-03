@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-type DFPodLifeCycleReconciler struct {
+type DfPodLifeCycleReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme
 	EventRecorder record.EventRecorder
@@ -47,7 +47,7 @@ type DFPodLifeCycleReconciler struct {
 // This reconcile events focuses on configuring the given pods either as a `master`
 // or `replica` as they go through their lifecycle. This also focus on the failing
 // over to replica's part to make sure one `master` is always available.
-func (r *DFPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
 	log.Info("Received", "pod", req.NamespacedName)
@@ -154,7 +154,7 @@ func (r *DFPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *DFPodLifeCycleReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *DfPodLifeCycleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		WithEventFilter(
 			predicate.Funcs{
