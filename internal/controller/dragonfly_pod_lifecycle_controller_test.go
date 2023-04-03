@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Health Reconciler", Ordered, func() {
+var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 	ctx := context.Background()
 	podRoles := map[string][]string{
 		resources.Master:  make([]string, 0),

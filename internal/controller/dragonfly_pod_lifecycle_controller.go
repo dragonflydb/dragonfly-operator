@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-type HealthReconciler struct {
+type DFPodLifeCycleReconciler struct {
 	client.Client
 	Scheme        *runtime.Scheme
 	EventRecorder record.EventRecorder
@@ -47,7 +47,7 @@ type HealthReconciler struct {
 // This reconcile events focuses on configuring the given pods either as a `master`
 // or `replica` as they go through their lifecycle. This also focus on the failing
 // over to replica's part to make sure one `master` is always available.
-func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *DFPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
 	log.Info("Received", "pod", req.NamespacedName)
@@ -98,7 +98,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	role, ok := pod.Labels[resources.Role]
 	// New pod with No resources.Role
 	if !ok {
-		log.Info("Replication is not configured yet", "phase", df.df.Status.Phase)
+		log.Info("No replication role was set yet", "phase", df.df.Status.Phase)
 		if df.df.Status.Phase == PhaseResourcesCreated {
 			// Make it ready
 			log.Info("Dragonfly object is only initialized. Configuring replication for the first time")
@@ -170,7 +170,7 @@ func (r *HealthReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *HealthReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *DFPodLifeCycleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		WithEventFilter(
 			predicate.Funcs{

@@ -125,7 +125,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.HealthReconciler{
+	if err = (&controller.DFPodLifeCycleReconciler{
 		Client:        mgr.GetClient(),
 		Scheme:        mgr.GetScheme(),
 		EventRecorder: eventRecorder,
