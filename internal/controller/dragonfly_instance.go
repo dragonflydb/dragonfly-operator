@@ -101,6 +101,11 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {
 		}
 	}
 
+	if master == "" {
+		dfi.log.Info("Couldn't find a healthy pod to configure as master")
+		return errors.New("couldn't find a healthy pod to configure as master")
+	}
+
 	// Mark others as replicas
 	for _, pod := range pods.Items {
 		// only mark the running non-master pods
