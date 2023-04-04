@@ -5,13 +5,13 @@
   </a>
 </p>
 
-# dragonfly-operator
+Dragonfly Operator is a Kubernetes operator used to deploy and manage [Dragonfly](https://dragonflydb.io/) instances inside your Kubernetes clusters.
+Main features include:
 
-// TODO(user): Add simple overview of use/purpose
+- Automatic failover
+- Scaling up/down the number of instances
 
-## Description
-
-// TODO(user): An in-depth paragraph about your project and overview of use
+You can find more information about Dragonfly in the [official documentation](https://dragonflydb.io/docs/).
 
 ## Getting Started
 
@@ -20,22 +20,55 @@ You’ll need a Kubernetes cluster to run against. You can use [KIND](https://si
 
 ### Running on the cluster
 
-1. Install Instances of Custom Resources:
+1. Build your image with `IMG` tag:
 
 ```sh
-kubectl apply -f config/samples/
+export IMG=<some-registry>/dragonfly-operator:tag
+make docker-build
 ```
 
-2. Build and push your image to the location specified by `IMG`:
+2. Make the image available to the cluster:
+
+> **Note**
+>
+> If you are using `kind`, You can load the image instead of pushing to a registry by running
+>
+> ```sh
+> make docker-kind-load IMG=<some-registry>/dragonfly-operator:tag
+> ```
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/dragonfly-operator:tag
+make docker-push
 ```
 
-3. Deploy the controller to the cluster with the image specified by `IMG`:
+2. Deploy the controller to the cluster with the image specified by `IMG`:
 
 ```sh
-make deploy IMG=<some-registry>/dragonfly-operator:tag
+make deploy
+```
+
+3. Verify that the controller is running, and CRD's are installed:
+
+```sh
+➜ watch kubectl -n dragonfly-operator-system get pods                                                        
+NAME                                                     READY   STATUS        RESTARTS   AGE
+dragonfly-operator-controller-manager-7b88f9d84b-qnj4c   2/2     Running       0          13m
+➜ kubectl get crds                             
+NAME                         CREATED AT
+dragonflies.dragonflydb.io   2023-04-03T13:29:18Z
+```
+
+3. Install a sample instance of Custom Resource:
+
+```sh
+kubectl apply -f config/samples/v1alpha1_dragonfly.yaml
+
+```
+
+4. Check the status of the instance:
+
+```sh
+kubectl describe dragonfly dragonfly-sample
 ```
 
 ### Uninstall CRDs
@@ -53,45 +86,6 @@ UnDeploy the controller from the cluster:
 ```sh
 make undeploy
 ```
-
-## Contributing
-
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-### How it works
-
-This project aims to follow the Kubernetes [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
-
-It uses [Controllers](https://kubernetes.io/docs/concepts/architecture/controller/),
-which provide a reconcile function responsible for synchronizing resources until the desired state is reached on the cluster.
-
-### Test It Out
-
-1. Install the CRDs into the cluster:
-
-```sh
-make install
-```
-
-2. Run your controller (this will run in the foreground, so switch to a new terminal if you want to leave it running):
-
-```sh
-make run
-```
-
-**NOTE:** You can also run this in one step by running: `make install run`
-
-### Modifying the API definitions
-
-If you are editing the API definitions, generate the manifests such as CRs or CRDs using:
-
-```sh
-make manifests
-```
-
-**NOTE:** Run `make --help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
 ## License
 
