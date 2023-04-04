@@ -92,7 +92,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			log.Info("Dragonfly object is only initialized. Configuring replication for the first time")
 			if err = dfi.configureReplication(ctx); err != nil {
 				log.Error(err, "could not initialize replication")
-				return ctrl.Result{}, err
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 			}
 
 			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "configured replication for first time")
@@ -107,14 +107,14 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			exists, err := dfi.masterExists(ctx)
 			if err != nil {
 				log.Error(err, "could not check if active master exists")
-				return ctrl.Result{}, err
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 			}
 
 			if !exists {
 				log.Info("Master does not exist. Configuring Replication")
 				if err := dfi.configureReplication(ctx); err != nil {
 					log.Error(err, "couldn't find healthy and mark active")
-					return ctrl.Result{}, err
+					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 				}
 
 				r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
@@ -122,7 +122,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				log.Info(fmt.Sprintf("Master exists. Configuring %s as replica", pod.Status.PodIP))
 				if err := dfi.configureReplica(ctx, &pod); err != nil {
 					log.Error(err, "could not mark replica from db")
-					return ctrl.Result{}, err
+					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 				}
 
 				r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")

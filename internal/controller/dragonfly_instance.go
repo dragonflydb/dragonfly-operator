@@ -77,9 +77,6 @@ func (dfi *DragonflyInstance) getStatus(ctx context.Context) (string, error) {
 
 func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {
 	dfi.log.Info("Configuring replication")
-	if err := dfi.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
-		return err
-	}
 
 	pods, err := dfi.getPods(ctx)
 	if err != nil {
@@ -194,9 +191,6 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 // every other pod as replica
 func (dfi *DragonflyInstance) configureMaster(ctx context.Context, newMaster *corev1.Pod) error {
 	dfi.log.Info("configuring pod as master", "pod", newMaster.Name)
-	if err := dfi.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
-		return err
-	}
 
 	if err := dfi.replicaOfNoOne(ctx, newMaster); err != nil {
 		return err
