@@ -168,6 +168,20 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 
 			// 3 pod replicas = 1 master + 2 replicas
 			Expect(pods.Items).To(HaveLen(3))
+
+			// Get the pods along with their roles
+			podRoles := make(map[string][]string)
+			for _, pod := range pods.Items {
+				role, ok := pod.Labels[resources.Role]
+				// error if there is no label
+				Expect(ok).To(BeTrue())
+				// verify the role to match the label
+				podRoles[role] = append(podRoles[role], pod.Name)
+			}
+
+			// One Master & Two Replicas
+			Expect(podRoles[resources.Master]).To(HaveLen(1))
+			Expect(podRoles[resources.Replica]).To(HaveLen(2))
 		})
 
 		It("Update to image should be propagated successfully", func() {
@@ -199,6 +213,28 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 
 			// check for pod image
 			Expect(ss.Spec.Template.Spec.Containers[0].Image).To(Equal(newImage))
+
+			// Check if there are relevant pods with expected roles
+			var pods corev1.PodList
+			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+				"app":                              name,
+				resources.KubernetesPartOfLabelKey: "dragonfly",
+			})
+			Expect(err).To(BeNil())
+
+			// Get the pods along with their roles
+			podRoles := make(map[string][]string)
+			for _, pod := range pods.Items {
+				role, ok := pod.Labels[resources.Role]
+				// error if there is no label
+				Expect(ok).To(BeTrue())
+				// verify the role to match the label
+				podRoles[role] = append(podRoles[role], pod.Name)
+			}
+
+			// One Master & Two Replicas
+			Expect(podRoles[resources.Master]).To(HaveLen(1))
+			Expect(podRoles[resources.Replica]).To(HaveLen(2))
 
 		})
 	})
