@@ -2,3 +2,7 @@ resources:
 - manager.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+images:
+- name: controller
+  newName: ttl.sh/dragonfly-operator
+  newTag: 16h
