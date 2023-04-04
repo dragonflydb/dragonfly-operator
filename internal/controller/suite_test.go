@@ -17,6 +17,8 @@ limitations under the License.
 package controller
 
 import (
+	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -24,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -70,4 +73,17 @@ var _ = BeforeSuite(func() {
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
+})
+
+var _ = AfterSuite(func() {
+	// print logs of the controller
+	podList := &corev1.PodList{}
+	err := k8sClient.List(context.Background(), podList, client.InNamespace("dragonfly-operator-system"))
+	Expect(err).To(BeNil())
+
+	for _, pod := range podList.Items {
+		logs, err := clientset.CoreV1().Pods("default").GetLogs(pod.Name, &corev1.PodLogOptions{Container: "dragonfly"}).DoRaw(context.Background())
+		Expect(err).To(BeNil())
+		fmt.Println(string(logs))
+	}
 })
