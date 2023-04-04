@@ -105,7 +105,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 
 			// One Master & Three Replicas
 			Expect(podRoles[resources.Master]).To(HaveLen(1))
-			Expect(podRoles[resources.Replica]).To(HaveLen(replicas))
+			Expect(podRoles[resources.Replica]).To(HaveLen(replicas - 1))
 		})
 
 		It("New Master is elected as old one dies", func() {
@@ -153,7 +153,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 
 			// One Master & Three Replicas
 			Expect(podRoles[resources.Master]).To(HaveLen(1))
-			Expect(podRoles[resources.Replica]).To(HaveLen(replicas))
+			Expect(podRoles[resources.Replica]).To(HaveLen(replicas - 1))
 		})
 
 		It("New pods are added as replica", func() {
@@ -201,7 +201,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 
 			// One Master & Three Replicas
 			Expect(podRoles[resources.Master]).To(HaveLen(1))
-			Expect(podRoles[resources.Replica]).To(HaveLen(replicas))
+			Expect(podRoles[resources.Replica]).To(HaveLen(replicas - 1))
 		})
 	})
 
