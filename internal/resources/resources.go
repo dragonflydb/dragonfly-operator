@@ -30,50 +30,47 @@ import (
 
 // GetDragonflyResources returns the resources required for a Dragonfly
 // Instance
-func GetDragonflyResources(ctx context.Context, db *resourcesv1.Dragonfly) ([]client.Object, error) {
+func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]client.Object, error) {
 	log := log.FromContext(ctx)
-	log.Info(fmt.Sprintf("Creating resources for %s", db.Name))
+	log.Info(fmt.Sprintf("Creating resources for %s", df.Name))
 
 	var resources []client.Object
 
-	image := db.Spec.Image
+	image := df.Spec.Image
 	if image == "" {
 		image = fmt.Sprintf("%s:%s", DragonflyImage, Version)
 	}
 
-	// Master + Replicas
-	replicas := db.Spec.Replicas + 1
-
 	// Create a StatefulSet, Headless Service
 	statefulset := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      db.Name,
-			Namespace: db.Namespace,
+			Name:      df.Name,
+			Namespace: df.Namespace,
 			// Useful for automatically deleting the resources when the Dragonfly object is deleted
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: db.APIVersion,
-					Kind:       db.Kind,
-					Name:       db.Name,
-					UID:        db.UID,
+					APIVersion: df.APIVersion,
+					Kind:       df.Kind,
+					Name:       df.Name,
+					UID:        df.UID,
 				},
 			},
 			Labels: map[string]string{
 				KubernetesAppComponentLabelKey: "dragonfly",
-				KubernetesAppInstanceNameLabel: db.Name,
+				KubernetesAppInstanceNameLabel: df.Name,
 				KubernetesAppNameLabelKey:      "dragonfly",
 				KubernetesAppVersionLabelKey:   Version,
 				KubernetesPartOfLabelKey:       "dragonfly",
 				KubernetesManagedByLabelKey:    DragonflyOperatorName,
-				"app":                          db.Name,
+				"app":                          df.Name,
 			},
 		},
 		Spec: appsv1.StatefulSetSpec{
-			Replicas:    &replicas,
-			ServiceName: db.Name,
+			Replicas:    &df.Spec.Replicas,
+			ServiceName: df.Name,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app":                     db.Name,
+					"app":                     df.Name,
 					KubernetesPartOfLabelKey:  "dragonfly",
 					KubernetesAppNameLabelKey: "dragonfly",
 				},
@@ -81,7 +78,7 @@ func GetDragonflyResources(ctx context.Context, db *resourcesv1.Dragonfly) ([]cl
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app":                     db.Name,
+						"app":                     df.Name,
 						KubernetesPartOfLabelKey:  "dragonfly",
 						KubernetesAppNameLabelKey: "dragonfly",
 					},
@@ -142,31 +139,31 @@ func GetDragonflyResources(ctx context.Context, db *resourcesv1.Dragonfly) ([]cl
 
 	service := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      db.Name,
-			Namespace: db.Namespace,
+			Name:      df.Name,
+			Namespace: df.Namespace,
 			// Useful for automatically deleting the resources when the Dragonfly object is deleted
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					APIVersion: db.APIVersion,
-					Kind:       db.Kind,
-					Name:       db.Name,
-					UID:        db.UID,
+					APIVersion: df.APIVersion,
+					Kind:       df.Kind,
+					Name:       df.Name,
+					UID:        df.UID,
 				},
 			},
 			Labels: map[string]string{
 				KubernetesAppComponentLabelKey: "Dragonfly",
-				KubernetesAppInstanceNameLabel: db.Name,
+				KubernetesAppInstanceNameLabel: df.Name,
 				KubernetesAppNameLabelKey:      "dragonfly",
 				KubernetesAppVersionLabelKey:   Version,
 				KubernetesPartOfLabelKey:       "dragonfly",
 				KubernetesManagedByLabelKey:    DragonflyOperatorName,
-				"app":                          db.Name,
+				"app":                          df.Name,
 			},
 		},
 		Spec: corev1.ServiceSpec{
 			ClusterIP: "None",
 			Selector: map[string]string{
-				"app":                     db.Name,
+				"app":                     df.Name,
 				KubernetesAppNameLabelKey: "dragonfly",
 				Role:                      Master,
 			},

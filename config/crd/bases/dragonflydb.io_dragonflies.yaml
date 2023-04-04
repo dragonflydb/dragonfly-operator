@@ -39,8 +39,8 @@ spec:
                 description: Image is the Dragonfly image to use
                 type: string
               replicas:
-                description: Replicas is the number of read-only Dragonfly replicas
-                  to deploy
+                description: Replicas is the total number of Dragonfly instances including
+                  the master
                 format: int32
                 type: integer
             type: object
