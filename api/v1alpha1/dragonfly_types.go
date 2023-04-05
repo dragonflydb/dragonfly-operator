@@ -37,6 +37,7 @@ type DragonflySpec struct {
 	// (Optional) Dragonfly container resource limits. Any container limits
 	// can be specified.
 	// +optional
+	// +kubebuilder:validation:Optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 

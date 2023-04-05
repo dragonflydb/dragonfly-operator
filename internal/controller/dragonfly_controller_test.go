@@ -52,8 +52,8 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 					corev1.ResourceMemory: resource.MustParse("100Mi"),
 				},
 				Limits: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("100m"),
-					corev1.ResourceMemory: resource.MustParse("100Mi"),
+					corev1.ResourceCPU:    resource.MustParse("200m"),
+					corev1.ResourceMemory: resource.MustParse("200Mi"),
 				},
 			},
 		},
