@@ -50,6 +50,8 @@ const (
 	// KubernetesPartOfLabel is the name of a higher level application this one is part of
 	KubernetesPartOfLabelKey = "app.kubernetes.io/part-of"
 
+	MasterIp string = "master-ip"
+
 	Role string = "role"
 
 	Master string = "master"
