@@ -62,7 +62,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	log.Info("Reconciling Dragonfly object V1")
+	log.Info("Reconciling Dragonfly object")
 	// Ignore if resource is already created
 	if df.Status.Phase == "" {
 		log.Info("Creating resources")

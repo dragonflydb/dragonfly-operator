@@ -145,7 +145,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	} else {
 		// is something wrong? check if all pods have a matching role and revamp accordingly
-		log.Info("Role exists already. checking if something is wrong", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "role", role)
+		log.Info("Non-deletion event for a pod with an existing role. checking if something is wrong", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "role", role)
 
 		if err := dfi.checkAndConfigureReplication(ctx); err != nil {
 			log.Error(err, "could not check and configure replication")

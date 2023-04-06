@@ -212,7 +212,7 @@ func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.
 	}
 
 	var redisMasterIp string
-	// check if the pod is a replica, check if it is connected to the right master
+	// check if it is connected to the right master
 	for _, line := range strings.Split(resp, "\n") {
 		if strings.Contains(line, "master_host") {
 			redisMasterIp = strings.Trim(strings.Split(line, ":")[1], "\r")
@@ -253,7 +253,7 @@ func (dfi *DragonflyInstance) checkAndConfigureReplication(ctx context.Context) 
 
 		// configure non replica pods as replicas
 		for _, pod := range pods.Items {
-			if pod.Labels[resources.Role] != resources.Replica {
+			if pod.Labels[resources.Role] != resources.Replica && pod.Labels[resources.Role] != resources.Master {
 				dfi.log.Info("configuring pod as replica", "pod", pod.Name)
 				if err := dfi.configureReplica(ctx, &pod); err != nil {
 					return err
