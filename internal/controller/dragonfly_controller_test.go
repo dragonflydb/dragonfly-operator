@@ -38,24 +38,26 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 	ctx := context.Background()
 	name := "df-test"
 	namespace := "default"
+	resourcesReq := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("100Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("200m"),
+			corev1.ResourceMemory: resource.MustParse("200Mi"),
+		},
+	}
+
 	df := dragonflydbiov1alpha1.Dragonfly{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
 		Spec: dragonflydbiov1alpha1.DragonflySpec{
-			Replicas: 3,
-			Image:    fmt.Sprintf("%s:%s", resources.DragonflyImage, "latest"),
-			Resources: &corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("100m"),
-					corev1.ResourceMemory: resource.MustParse("100Mi"),
-				},
-				Limits: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("200m"),
-					corev1.ResourceMemory: resource.MustParse("200Mi"),
-				},
-			},
+			Replicas:  3,
+			Image:     fmt.Sprintf("%s:%s", resources.DragonflyImage, "latest"),
+			Resources: &resourcesReq,
 		},
 	}
 
@@ -96,6 +98,12 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 
 			// 3 pod replicas = 1 master + 2 replicas
 			Expect(pods.Items).To(HaveLen(3))
+
+			// check for pod resources
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU].Equal(resourcesReq.Limits[corev1.ResourceCPU])).To(BeTrue())
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceMemory].Equal(resourcesReq.Limits[corev1.ResourceMemory])).To(BeTrue())
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU].Equal(resourcesReq.Requests[corev1.ResourceCPU])).To(BeTrue())
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory].Equal(resourcesReq.Requests[corev1.ResourceMemory])).To(BeTrue())
 		})
 
 		It("Increase in replicas should be propagated successfully", func() {
@@ -290,9 +298,11 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			}, &ss)
 			Expect(err).To(BeNil())
 
-			// check for pod image
-			Expect(ss.Spec.Template.Spec.Containers[0].Resources).To(Equal(newResources))
-
+			// check for pod resources
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU].Equal(newResources.Limits[corev1.ResourceCPU])).To(BeTrue())
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceMemory].Equal(newResources.Limits[corev1.ResourceMemory])).To(BeTrue())
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU].Equal(newResources.Requests[corev1.ResourceCPU])).To(BeTrue())
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory].Equal(newResources.Requests[corev1.ResourceMemory])).To(BeTrue())
 		})
 	})
 })
