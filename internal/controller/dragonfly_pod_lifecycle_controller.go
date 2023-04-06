@@ -38,8 +38,8 @@ type DfPodLifeCycleReconciler struct {
 	EventRecorder record.EventRecorder
 }
 
-//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -54,7 +54,6 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	var pod corev1.Pod
 	err := r.Client.Get(ctx, req.NamespacedName, &pod, &client.GetOptions{})
 	if err != nil {
-		// TODO: Handle Pod Deletion in a different way
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -91,8 +90,8 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			// Make it ready
 			log.Info("Dragonfly object is only initialized. Configuring replication for the first time")
 			if err = dfi.configureReplication(ctx); err != nil {
-				log.Error(err, "could not initialize replication")
-				return ctrl.Result{}, err
+				log.Info("could not initialize replication. will retry", "error", err)
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 			}
 
 			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "configured replication for first time")
@@ -107,14 +106,14 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			exists, err := dfi.masterExists(ctx)
 			if err != nil {
 				log.Error(err, "could not check if active master exists")
-				return ctrl.Result{}, err
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 			}
 
 			if !exists {
 				log.Info("Master does not exist. Configuring Replication")
 				if err := dfi.configureReplication(ctx); err != nil {
 					log.Error(err, "couldn't find healthy and mark active")
-					return ctrl.Result{}, err
+					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 				}
 
 				r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
@@ -122,32 +121,38 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				log.Info(fmt.Sprintf("Master exists. Configuring %s as replica", pod.Status.PodIP))
 				if err := dfi.configureReplica(ctx, &pod); err != nil {
 					log.Error(err, "could not mark replica from db")
-					return ctrl.Result{}, err
+					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 				}
 
 				r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")
 			}
 		}
-	} else {
-		// pod event on a pod with role
-		log.Info("Role exists already", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "role", role)
-		// is this a deletion event?
+	} else if pod.DeletionTimestamp != nil {
+		// pod deletion event
 		// configure replication if its a master pod
 		// do nothing if its a replica pod
-		if pod.DeletionTimestamp != nil {
-			log.Info("Pod is being deleted", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
-			// Check if there is an active master
-			if pod.Labels[resources.Role] == resources.Master {
-				log.Info("master is being removed. re-configuring replication")
-				if err := dfi.configureReplication(ctx); err != nil {
-					log.Error(err, "couldn't find healthy and mark active")
-					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
-				}
-				r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
-			} else if pod.Labels[resources.Role] == resources.Replica {
-				log.Info("replica is being deleted. nothing to do")
+		log.Info("Pod is being deleted", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
+		// Check if there is an active master
+		if pod.Labels[resources.Role] == resources.Master {
+			log.Info("master is being removed. re-configuring replication")
+			if err := dfi.configureReplication(ctx); err != nil {
+				log.Error(err, "couldn't find healthy and mark active")
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 			}
+			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
+		} else if pod.Labels[resources.Role] == resources.Replica {
+			log.Info("replica is being deleted. nothing to do")
 		}
+	} else {
+		// is something wrong? check if all pods have a matching role and revamp accordingly
+		log.Info("Non-deletion event for a pod with an existing role. checking if something is wrong", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "role", role)
+
+		if err := dfi.checkAndConfigureReplication(ctx); err != nil {
+			log.Error(err, "could not check and configure replication")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+		}
+
+		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Checked and configured replication")
 	}
 
 	return ctrl.Result{}, nil

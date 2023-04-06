@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -77,9 +78,6 @@ func (dfi *DragonflyInstance) getStatus(ctx context.Context) (string, error) {
 
 func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {
 	dfi.log.Info("Configuring replication")
-	if err := dfi.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
-		return err
-	}
 
 	pods, err := dfi.getPods(ctx)
 	if err != nil {
@@ -190,37 +188,103 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 	return nil
 }
 
-// configureMaster marks the given pod as a master while also marking
-// every other pod as replica
-func (dfi *DragonflyInstance) configureMaster(ctx context.Context, newMaster *corev1.Pod) error {
-	dfi.log.Info("configuring pod as master", "pod", newMaster.Name)
-	if err := dfi.updateStatus(ctx, PhaseConfiguringReplication); err != nil {
-		return err
+// checkReplicaRole checks if the given pod is a replica and if it is
+// connected to the right master
+func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.Pod, masterIp string) (bool, error) {
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, 6379),
+	})
+
+	resp, err := redisClient.Info("replication").Result()
+	if err != nil {
+		return false, err
 	}
 
-	if err := dfi.replicaOfNoOne(ctx, newMaster); err != nil {
-		return err
+	var redisRole string
+	for _, line := range strings.Split(resp, "\n") {
+		if strings.Contains(line, "role") {
+			redisRole = strings.Trim(strings.Split(line, ":")[1], "\r")
+		}
 	}
 
+	if redisRole != resources.Replica {
+		return false, nil
+	}
+
+	var redisMasterIp string
+	// check if it is connected to the right master
+	for _, line := range strings.Split(resp, "\n") {
+		if strings.Contains(line, "master_host") {
+			redisMasterIp = strings.Trim(strings.Split(line, ":")[1], "\r")
+		}
+	}
+
+	if masterIp != redisMasterIp && masterIp != pod.Labels[resources.MasterIp] {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// checkAndConfigureReplication checks if all the pods are assigned to
+// the correct role and if not, configures them accordingly
+func (dfi *DragonflyInstance) checkAndConfigureReplication(ctx context.Context) error {
+	dfi.log.Info("checking if all pods are configured correctly")
 	pods, err := dfi.getPods(ctx)
 	if err != nil {
 		return err
 	}
 
-	dfi.log.Info("configuring other pods as replicas")
-	// Mark others as replicas
+	// check for one master and all replicas
+	podRoles := make(map[string][]string)
 	for _, pod := range pods.Items {
-		if pod.Name != newMaster.Name {
-			if err := dfi.replicaOf(ctx, &pod, newMaster.Status.PodIP); err != nil {
-				return err
+		podRoles[pod.Labels[resources.Role]] = append(podRoles[pod.Labels[resources.Role]], pod.Name)
+	}
+
+	if len(podRoles[resources.Master]) != 1 {
+		dfi.log.Info("incorrect number of masters. reconfiguring replication", "masters", podRoles[resources.Master])
+		if err = dfi.configureReplication(ctx); err != nil {
+			return err
+		}
+	}
+
+	if len(podRoles[resources.Replica]) != len(pods.Items)-1 {
+		dfi.log.Info("incorrect number of replicas", "replicas", podRoles[resources.Replica])
+
+		// configure non replica pods as replicas
+		for _, pod := range pods.Items {
+			if pod.Labels[resources.Role] != resources.Replica && pod.Labels[resources.Role] != resources.Master {
+				dfi.log.Info("configuring pod as replica", "pod", pod.Name)
+				if err := dfi.configureReplica(ctx, &pod); err != nil {
+					return err
+				}
 			}
 		}
 	}
 
-	if err := dfi.updateStatus(ctx, PhaseReady); err != nil {
+	masterIp, err := dfi.getMasterIp(ctx)
+	if err != nil {
 		return err
 	}
 
+	for _, pod := range pods.Items {
+		if pod.Labels[resources.Role] == resources.Replica {
+			ok, err := dfi.checkReplicaRole(ctx, &pod, masterIp)
+			if err != nil {
+				return err
+			}
+
+			// configuring to the right master
+			if !ok {
+				dfi.log.Info("configuring pod as replica to the right master", "pod", pod.Name)
+				if err := dfi.configureReplica(ctx, &pod); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	dfi.log.Info("all pods are configured correctly", "dfi", dfi.df.Name)
 	return nil
 }
 
@@ -257,6 +321,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 
 	dfi.log.Info("Marking pod role as replica", "pod", pod.Name)
 	pod.Labels[resources.Role] = resources.Replica
+	pod.Labels[resources.MasterIp] = masterIp
 	if err := dfi.client.Update(ctx, pod); err != nil {
 		return fmt.Errorf("could not update replica label")
 	}
