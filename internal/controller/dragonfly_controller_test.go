@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,14 +38,26 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 	ctx := context.Background()
 	name := "df-test"
 	namespace := "default"
+	resourcesReq := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("100Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("200m"),
+			corev1.ResourceMemory: resource.MustParse("200Mi"),
+		},
+	}
+
 	df := dragonflydbiov1alpha1.Dragonfly{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
 		Spec: dragonflydbiov1alpha1.DragonflySpec{
-			Replicas: 3,
-			Image:    fmt.Sprintf("%s:%s", resources.DragonflyImage, "latest"),
+			Replicas:  3,
+			Image:     fmt.Sprintf("%s:%s", resources.DragonflyImage, "latest"),
+			Resources: &resourcesReq,
 		},
 	}
 
@@ -72,6 +85,9 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			}, &svc)
 			Expect(err).To(BeNil())
 
+			// check resource requirements of statefulset
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources).To(Equal(*df.Spec.Resources))
+
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
@@ -82,6 +98,12 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 
 			// 3 pod replicas = 1 master + 2 replicas
 			Expect(pods.Items).To(HaveLen(3))
+
+			// check for pod resources
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU].Equal(resourcesReq.Limits[corev1.ResourceCPU])).To(BeTrue())
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceMemory].Equal(resourcesReq.Limits[corev1.ResourceMemory])).To(BeTrue())
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU].Equal(resourcesReq.Requests[corev1.ResourceCPU])).To(BeTrue())
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory].Equal(resourcesReq.Requests[corev1.ResourceMemory])).To(BeTrue())
 		})
 
 		It("Increase in replicas should be propagated successfully", func() {
@@ -236,6 +258,51 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Expect(podRoles[resources.Master]).To(HaveLen(1))
 			Expect(podRoles[resources.Replica]).To(HaveLen(2))
 
+		})
+
+		It("Update to resources should be propagated successfully", func() {
+
+			newResources := corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("0.5"),
+					corev1.ResourceMemory: resource.MustParse("512Mi"),
+				},
+			}
+
+			// Update df to the latest
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			df.Spec.Resources = &newResources
+			err = k8sClient.Update(ctx, &df)
+			Expect(err).To(BeNil())
+
+			// Wait until Dragonfly object is marked resources-created
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 3*time.Minute)
+			Expect(err).To(BeNil())
+			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
+			Expect(err).To(BeNil())
+
+			// Check for service and statefulset
+			var ss appsv1.StatefulSet
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &ss)
+			Expect(err).To(BeNil())
+
+			// check for pod resources
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU].Equal(newResources.Limits[corev1.ResourceCPU])).To(BeTrue())
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceMemory].Equal(newResources.Limits[corev1.ResourceMemory])).To(BeTrue())
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU].Equal(newResources.Requests[corev1.ResourceCPU])).To(BeTrue())
+			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory].Equal(newResources.Requests[corev1.ResourceMemory])).To(BeTrue())
 		})
 	})
 })
