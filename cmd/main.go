@@ -38,13 +38,17 @@ import (
 
 	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/controller"
-	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	//+kubebuilder:scaffold:imports
 )
 
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+)
+
+const (
+	// Version is the version of the operator.
+	Version = "source"
 )
 
 func init() {
@@ -73,7 +77,7 @@ func main() {
 	flag.Parse()
 
 	if versionFlag {
-		fmt.Println(resources.Version)
+		fmt.Println(Version)
 		os.Exit(0)
 	}
 
