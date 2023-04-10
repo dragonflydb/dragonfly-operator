@@ -13,78 +13,49 @@ Main features include:
 
 You can find more information about Dragonfly in the [official documentation](https://dragonflydb.io/docs/).
 
-## Getting Started
+## Installation
 
-You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.
-**Note:** Your controller will automatically use the current context in your kubeconfig file (i.e. whatever cluster `kubectl cluster-info` shows).
-
-### Running on the cluster
-
-1. Build your image with `IMG` tag:
+Make sure to have your Kubernetes cluster up and running. Dragonfly Operator can be installed by running
 
 ```sh
-export IMG=<some-registry>/dragonfly-operator:tag
-make docker-build
+# Install CRDs
+kubectl apply -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/crd.yaml
+# Install the operator
+kubectl apply -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/dragonfly-operator.yaml
 ```
 
-2. Make the image available to the cluster:
+By default, the operator will be installed in the `dragonfly-operator-system` namespace.
 
-> **Note**
->
-> If you are using `kind`, You can load the image instead of pushing to a registry by running
->
-> ```sh
-> make docker-kind-load IMG=<some-registry>/dragonfly-operator:tag
-> ```
+## Usage
+
+### Creating a Dragonfly instance
+
+To create a sample Dragonfly instance, you can run the following command:
 
 ```sh
-make docker-push
+kubectl apply -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/config/samples/v1alpha1_dragonfly.yaml
 ```
 
-2. Deploy the controller to the cluster with the image specified by `IMG`:
+This will create a Dragonfly instance with 3 replicas. You can check the status of the instance by running
 
 ```sh
-make deploy
+kubectl describe dragonflies.dragonflydb.io dragonfly-sample
 ```
 
-3. Verify that the controller is running, and CRD's are installed:
+### Scaling up/down the number of replicas
+
+To scale up/down the number of replicas, you can edit the `spec.replicas` field in the Dragonfly instance. For example, to scale up to 5 replicas, you can run
 
 ```sh
-➜ watch kubectl -n dragonfly-operator-system get pods                                                        
-NAME                                                     READY   STATUS        RESTARTS   AGE
-dragonfly-operator-controller-manager-7b88f9d84b-qnj4c   2/2     Running       0          13m
-➜ kubectl get crds                             
-NAME                         CREATED AT
-dragonflies.dragonflydb.io   2023-04-03T13:29:18Z
+kubectl patch dragonfly dragonfly-sample --type merge -p '{"spec":{"replicas":5}}'
 ```
 
-3. Install a sample instance of Custom Resource:
+### Vertically scaling the instance
+
+To vertically scale the instance, you can edit the `spec.resources` field in the Dragonfly instance. For example, to increase the CPU limit to 2 cores, you can run
 
 ```sh
-kubectl apply -f config/samples/v1alpha1_dragonfly.yaml
-
-```
-
-4. Check the status of the instance:
-
-```sh
-kubectl describe dragonfly dragonfly-sample
-```
-
-### Uninstall CRDs
-
-To delete the CRDs from the cluster:
-
-```sh
-make uninstall
-```
-
-### Undeploy controller
-
-UnDeploy the controller from the cluster:
-
-```sh
-make undeploy
+kubectl patch dragonfly dragonfly-sample --type merge -p '{"spec":{"resources":{"limits":{"cpu":"2"}}}}'
 ```
 
 ## License
