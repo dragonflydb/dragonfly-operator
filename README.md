@@ -42,6 +42,8 @@ This will create a Dragonfly instance with 3 replicas. You can check the status 
 kubectl describe dragonflies.dragonflydb.io dragonfly-sample
 ```
 
+A service of the form `<dragonfly-name>.<namespace>.svc.cluster.local` will be created, that selects the master instance. You can use this service to connect to the cluster. As pods are added/removed, the service will automatically update to point to the new master.
+
 ### Scaling up/down the number of replicas
 
 To scale up/down the number of replicas, you can edit the `spec.replicas` field in the Dragonfly instance. For example, to scale up to 5 replicas, you can run
