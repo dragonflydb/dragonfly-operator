@@ -11,7 +11,7 @@ Main features include:
 - Automatic failover
 - Scaling up/down the number of instances
 
-You can find more information about Dragonfly in the [official documentation](https://dragonflydb.io/docs/).
+Currently, Dragonfly Operator is in **Alpha**. You can find more information about Dragonfly in the [official documentation](https://dragonflydb.io/docs/).
 
 ## Installation
 
