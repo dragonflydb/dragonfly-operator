@@ -11,7 +11,7 @@ Main features include:
 - Automatic failover
 - Scaling up/down the number of instances
 
-You can find more information about Dragonfly in the [official documentation](https://dragonflydb.io/docs/).
+Currently, Dragonfly Operator is in **Alpha**. You can find more information about Dragonfly in the [official documentation](https://dragonflydb.io/docs/).
 
 ## Installation
 
@@ -41,6 +41,8 @@ This will create a Dragonfly instance with 3 replicas. You can check the status 
 ```sh
 kubectl describe dragonflies.dragonflydb.io dragonfly-sample
 ```
+
+A service of the form `<dragonfly-name>.<namespace>.svc.cluster.local` will be created, that selects the master instance. You can use this service to connect to the cluster. As pods are added/removed, the service will automatically update to point to the new master.
 
 ### Scaling up/down the number of replicas
 
