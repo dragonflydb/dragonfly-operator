@@ -41,19 +41,6 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		image = fmt.Sprintf("%s:%s", DragonflyImage, Version)
 	}
 
-	if df.Spec.Resources == nil {
-		df.Spec.Resources = &corev1.ResourceRequirements{
-			Limits: corev1.ResourceList{
-				corev1.ResourceCPU:    resourceLimitCPU,
-				corev1.ResourceMemory: resourceLimitMemory,
-			},
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resourceRequestCPU,
-				corev1.ResourceMemory: resourceRequestMemory,
-			},
-		}
-	}
-
 	// Create a StatefulSet, Headless Service
 	statefulset := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -141,12 +128,16 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 								TimeoutSeconds:      5,
 							},
 							ImagePullPolicy: corev1.PullAlways,
-							Resources:       *df.Spec.Resources,
 						},
 					},
 				},
 			},
 		},
+	}
+
+	// set only if resources are specified
+	if df.Spec.Resources != nil {
+		statefulset.Spec.Template.Spec.Containers[0].Resources = *df.Spec.Resources
 	}
 
 	resources = append(resources, &statefulset)
