@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package e2e
 
 import (
 	"context"
@@ -22,6 +22,7 @@ import (
 	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	"github.com/dragonflydb/dragonfly-operator/internal/controller"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -59,7 +60,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseResourcesCreated, 2*time.Minute)
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
@@ -80,7 +81,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
 			Expect(err).To(BeNil())
 
-			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 1*time.Minute)
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 1*time.Minute)
 			Expect(err).To(BeNil())
 
 			// Check if there are relevant pods with expected roles
@@ -127,7 +128,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
 			Expect(err).To(BeNil())
 
-			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 1*time.Minute)
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 1*time.Minute)
 			Expect(err).To(BeNil())
 
 			// Check if there are relevant pods with expected roles
@@ -173,7 +174,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 
 			// Expect a new replica
 			// Wait for Status to be ready
-			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 1*time.Minute)
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 1*time.Minute)
 			Expect(err).To(BeNil())
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
 			Expect(err).To(BeNil())
