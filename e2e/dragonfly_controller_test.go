@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package e2e
 
 import (
 	"context"
@@ -23,6 +23,7 @@ import (
 
 	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	"github.com/dragonflydb/dragonfly-operator/internal/controller"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -41,11 +42,11 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 	resourcesReq := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("100m"),
-			corev1.ResourceMemory: resource.MustParse("100Mi"),
+			corev1.ResourceMemory: resource.MustParse("300Mi"),
 		},
 		Limits: corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("200m"),
-			corev1.ResourceMemory: resource.MustParse("200Mi"),
+			corev1.ResourceMemory: resource.MustParse("400Mi"),
 		},
 	}
 
@@ -67,7 +68,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseResourcesCreated, 2*time.Minute)
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
@@ -119,7 +120,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked resources-created
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 2*time.Minute)
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
@@ -162,7 +163,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked resources-created
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 2*time.Minute)
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
@@ -220,7 +221,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked resources-created
-			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 3*time.Minute)
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			Expect(err).To(BeNil())
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
 			Expect(err).To(BeNil())
@@ -285,7 +286,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked resources-created
-			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, PhaseReady, 3*time.Minute)
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			Expect(err).To(BeNil())
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
 			Expect(err).To(BeNil())
