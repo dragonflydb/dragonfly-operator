@@ -271,8 +271,10 @@ func (dfi *DragonflyInstance) checkAndConfigureReplication(ctx context.Context) 
 		// configure non replica pods as replicas
 		for _, pod := range pods.Items {
 			if pod.Labels[resources.Role] == "" {
-				if err := dfi.configureReplica(ctx, &pod); err != nil {
-					return err
+				if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Status.PodIP != "" {
+					if err := dfi.configureReplica(ctx, &pod); err != nil {
+						return err
+					}
 				}
 			}
 		}
