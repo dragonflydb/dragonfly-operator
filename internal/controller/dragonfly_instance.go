@@ -100,7 +100,7 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {
 	var master string
 	var masterIp string
 	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.DeletionTimestamp == nil {
+		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.DeletionTimestamp == nil && pod.Status.PodIP != "" {
 			master = pod.Name
 			masterIp = pod.Status.PodIP
 			dfi.log.Info("Marking pod as master", "podName", master, "ip", masterIp)
@@ -118,20 +118,24 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {
 	}
 
 	// Mark others as replicas
+	markedPods := 0
 	for _, pod := range pods.Items {
 		// only mark the running non-master pods
 		dfi.log.Info("Checking pod", "podName", pod.Name, "ip", pod.Status.PodIP, "status", pod.Status.Phase, "deletiontimestamp", pod.DeletionTimestamp)
-		if pod.Name != master && pod.Status.Phase == corev1.PodRunning && pod.DeletionTimestamp == nil {
+		if pod.Name != master && pod.Status.Phase == corev1.PodRunning && pod.DeletionTimestamp == nil && pod.Status.PodIP != "" {
 			dfi.log.Info("Marking pod as replica", "podName", pod.Name, "ip", pod.Status.PodIP, "status", pod.Status.Phase)
 			if err := dfi.replicaOf(ctx, &pod, masterIp); err != nil {
 				// TODO: Why does this fail every now and then?
 				// Should replication be continued if it fails?
 				dfi.log.Error(err, "Failed to mark pod as replica", "podName", pod.Name)
 				return err
+			} else {
+				markedPods++
 			}
 		}
 	}
 
+	dfi.log.Info(fmt.Sprintf("Successfully marked %d/%d replicas", markedPods, len(pods.Items)-1))
 	if err := dfi.updateStatus(ctx, PhaseReady); err != nil {
 		return err
 	}
