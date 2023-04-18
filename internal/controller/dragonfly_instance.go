@@ -84,10 +84,23 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {
 		return err
 	}
 
+	// remove master pod label if it exists
+	// This is important as the pod termination could take a while in
+	// the deleted case causing unnecessary master reconcilation as 2 masters
+	// could exist at the same time.
+	for _, pod := range pods.Items {
+		if pod.Labels[resources.Role] == resources.Master {
+			delete(pod.Labels, resources.Role)
+			if err := dfi.client.Update(ctx, &pod); err != nil {
+				return err
+			}
+		}
+	}
+
 	var master string
 	var masterIp string
 	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] != resources.Master && pod.DeletionTimestamp == nil {
+		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.DeletionTimestamp == nil {
 			master = pod.Name
 			masterIp = pod.Status.PodIP
 			dfi.log.Info("Marking pod as master", "podName", master, "ip", masterIp)
