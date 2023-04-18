@@ -57,9 +57,9 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Pod is not ready to be processed yet
-	if pod.Status.PodIP == "" {
-		log.Info("Pod IP is not yet available")
+	// check for pod readiness
+	if pod.Status.PodIP == "" || pod.Status.Phase != corev1.PodRunning || !pod.Status.ContainerStatuses[0].Ready {
+		log.Info("Pod is not ready yet")
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
