@@ -123,7 +123,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 
 			// Wait until the loop is reconciled. This is needed as status is ready previously
 			// and the test might move forward even before the reconcile loop is triggered
-			time.Sleep(10 * time.Second)
+			time.Sleep(1 * time.Minute)
 
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
 			Expect(err).To(BeNil())
