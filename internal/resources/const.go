@@ -27,7 +27,7 @@ const (
 	DragonflyOperatorName = "dragonfly-operator"
 
 	// DragonflyImage is the default image of the Dragonfly to use
-	DragonflyImage = "ghcr.io/dragonflydb/dragonfly"
+	DragonflyImage = "docker.dragonflydb.io/dragonflydb/dragonfly"
 
 	// DragonflyHealthCheckPath is the path on which the Dragonfly exposes its health check
 	DragonflyHealthCheckPath = "/health"

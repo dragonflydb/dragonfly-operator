@@ -17,5 +17,5 @@ limitations under the License.
 package resources
 
 const (
-	Version = "alpha-alpine"
+	Version = "alpha-ubuntu"
 )
