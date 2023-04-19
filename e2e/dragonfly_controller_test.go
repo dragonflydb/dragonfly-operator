@@ -94,7 +94,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			// check resource requirements of statefulset
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources).To(Equal(*df.Spec.Resources))
 			// check args of statefulset
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(Equal(df.Spec.Args))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args[1:]).To(Equal(df.Spec.Args))
 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
@@ -268,7 +268,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 
 		})
 
-		It("Update to resources should be propagated successfully", func() {
+		It("Update to resources and args should be propagated successfully", func() {
 			newResources := corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("1"),
@@ -292,6 +292,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Expect(err).To(BeNil())
 
 			df.Spec.Resources = &newResources
+			df.Spec.Args = newArgs
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 
@@ -310,7 +311,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Expect(err).To(BeNil())
 
 			// check for pod args
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(Equal(newArgs))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args[1:]).To(Equal(newArgs))
 
 			// check for pod resources
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU].Equal(newResources.Limits[corev1.ResourceCPU])).To(BeTrue())
