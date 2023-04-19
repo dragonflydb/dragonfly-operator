@@ -31,8 +31,15 @@ type DragonflySpec struct {
 
 	// Replicas is the total number of Dragonfly instances including the master
 	Replicas int32 `json:"replicas,omitempty"`
+
 	// Image is the Dragonfly image to use
 	Image string `json:"image,omitempty"`
+
+	// (Optional) Dragonfly container args to pass to the container
+	// Refer to the Dragonfly documentation for the list of supported args
+	// +optional
+	// +kubebuilder:validation:Optional
+	Args []string `json:"args,omitempty"`
 
 	// (Optional) Dragonfly container resource limits. Any container limits
 	// can be specified.

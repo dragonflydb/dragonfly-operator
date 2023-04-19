@@ -140,6 +140,10 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		statefulset.Spec.Template.Spec.Containers[0].Resources = *df.Spec.Resources
 	}
 
+	if df.Spec.Args != nil {
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, df.Spec.Args...)
+	}
+
 	resources = append(resources, &statefulset)
 
 	service := corev1.Service{

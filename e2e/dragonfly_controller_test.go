@@ -50,6 +50,10 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 		},
 	}
 
+	args := []string{
+		"--vmodule=replica=1,server_family=1",
+	}
+
 	df := dragonflydbiov1alpha1.Dragonfly{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -59,6 +63,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Replicas:  3,
 			Image:     fmt.Sprintf("%s:%s", resources.DragonflyImage, "latest"),
 			Resources: &resourcesReq,
+			Args:      args,
 		},
 	}
 
@@ -88,6 +93,8 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 
 			// check resource requirements of statefulset
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources).To(Equal(*df.Spec.Resources))
+			// check args of statefulset
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(Equal(df.Spec.Args))
 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
@@ -262,7 +269,6 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 		})
 
 		It("Update to resources should be propagated successfully", func() {
-
 			newResources := corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("1"),
@@ -272,6 +278,10 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 					corev1.ResourceCPU:    resource.MustParse("0.5"),
 					corev1.ResourceMemory: resource.MustParse("512Mi"),
 				},
+			}
+
+			newArgs := []string{
+				"--vmodule=replica=1",
 			}
 
 			// Update df to the latest
@@ -298,6 +308,9 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 				Namespace: namespace,
 			}, &ss)
 			Expect(err).To(BeNil())
+
+			// check for pod args
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(Equal(newArgs))
 
 			// check for pod resources
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU].Equal(newResources.Limits[corev1.ResourceCPU])).To(BeTrue())
