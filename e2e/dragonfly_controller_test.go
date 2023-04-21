@@ -215,7 +215,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 		})
 
 		It("Update to image should be propagated successfully", func() {
-			newImage := resources.DragonflyImage + ":v0.17.0"
+			newImage := resources.DragonflyImage + ":v1.1.0"
 			// Update df to the latest
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      name,

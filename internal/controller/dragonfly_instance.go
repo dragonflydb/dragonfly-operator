@@ -198,10 +198,6 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 		return err
 	}
 
-	if err := dfi.updateStatus(ctx, PhaseReady); err != nil {
-		return err
-	}
-
 	return nil
 }
 
