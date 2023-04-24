@@ -83,6 +83,24 @@ To vertically scale the instance, you can edit the `spec.resources` field in the
 kubectl patch dragonfly dragonfly-sample --type merge -p '{"spec":{"resources":{"requests":{"memory":"1Gi"},"limits":{"memory":"2Gi"}}}}'
 ```
 
+### Deleting a Dragonfly instance
+
+To delete a Dragonfly instance, you can run
+
+```sh
+kubectl delete dragonfly dragonfly-sample
+```
+
+This will automatically delete all the resources (i.e pods and services) associated with the instance.
+
+### Uninstalling the operator
+
+To uninstall the operator, you can run
+
+```sh
+kubectl delete -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/dragonfly-operator.yaml
+```
+
 ## License
 
 Copyright 2023 DragonflyDB authors.
