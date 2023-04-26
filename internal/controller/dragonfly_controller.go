@@ -93,8 +93,6 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	} else if df.Status.Phase == PhaseRollout {
 		// This is a Rollout
-		// Get all the pods that are not on the latest spec
-		// and delete them one by one
 		log.Info("Rolling out new version")
 		var updatedStatefulset appsv1.StatefulSet
 		if err := r.Get(ctx, client.ObjectKey{Namespace: df.Namespace, Name: df.Name}, &updatedStatefulset); err != nil {
@@ -134,7 +132,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 
-		// Check if latest replicas had a full sync
+		// Check if all the latest replicas had a full sync
 		// if not, requeue
 		fullSyncedUpdatedReplicas := 0
 		for _, replica := range replicas {
@@ -157,11 +155,10 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 
-		log.Info(fmt.Sprintf("%d/%d new replicas are in stable sync", fullSyncedUpdatedReplicas, len(replicas)))
+		log.Info(fmt.Sprintf("%d/%d are in stable sync", fullSyncedUpdatedReplicas, len(replicas)))
 
 		// if we are here it means that all latest replicas are in stable sync
-		// delete replicas whose spec doesn't match
-		// redo: this to a method that returns next pod to rollout
+		// delete older version replicas
 		for _, replica := range replicas {
 			// Check if pod is on latest version
 			onLatestVersion, err := isPodOnLatestVersion(ctx, r.Client, &replica, &updatedStatefulset)
@@ -173,7 +170,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if !onLatestVersion {
 				// delete the replica
 				log.Info("deleting replica", "pod", replica.Name)
-				r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", fmt.Sprintf("Deleting replica %s", replica.Name))
+				r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Deleting replica")
 				if err := r.Delete(ctx, &replica); err != nil {
 					log.Error(err, "could not delete pod")
 					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
@@ -184,15 +181,34 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 
+		masterOnLatest, err := isPodOnLatestVersion(ctx, r.Client, &master, &updatedStatefulset)
+		if err != nil {
+			log.Error(err, "could not check if pod is on latest version")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+		}
+
 		// If we are here it means that all replicas
 		// are on latest version
-		// Update Master now
-		log.Info("deleting master")
-		if err := r.Delete(ctx, &master); err != nil {
-			log.Error(err, "could not delete master")
-			return ctrl.Result{}, err
+		if !masterOnLatest {
+			// Update Master now
+			log.Info("deleting master")
+			if err := r.Delete(ctx, &master); err != nil {
+				log.Error(err, "could not delete master")
+				return ctrl.Result{Requeue: true}, err
+			}
+			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Deleting master %s")
 		}
-		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", fmt.Sprintf("Deleting master %s", master.Name))
+
+		// If we are here all are on latest version
+		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Completed")
+
+		// update status to ready
+		df.Status.Phase = PhaseReady
+		if err := r.Status().Update(ctx, &df); err != nil {
+			log.Error(err, "could not update the Dragonfly object")
+			return ctrl.Result{Requeue: true}, err
+		}
+
 		return ctrl.Result{}, nil
 	} else {
 		// This is an Update
@@ -220,9 +236,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return ctrl.Result{}, err
 		}
 
-		// check if the spec has changed
 		if statefulSet.Status.UpdatedReplicas != statefulSet.Status.Replicas {
-			// if !reflect.DeepEqual(oldStatefulset.Spec, newStatefulset.Spec) {
 			log.Info("Pod spec has changed, performing a rollout")
 			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Starting a rollout")
 
@@ -234,6 +248,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				return ctrl.Result{Requeue: true}, err
 			}
 
+			// requeue so that the rollout is processed
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Updated resources")
