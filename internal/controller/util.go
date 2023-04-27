@@ -35,8 +35,6 @@ const (
 
 	PhaseResourcesUpdated string = "resources-updated"
 
-	PhaseRollout string = "rolling-update"
-
 	PhaseReady string = "ready"
 )
 

@@ -91,7 +91,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Created resources")
 		return ctrl.Result{}, nil
-	} else if df.Status.Phase == PhaseRollout {
+	} else if df.Status.IsRollingUpdate {
 		// This is a Rollout
 		log.Info("Rolling out new version")
 		var updatedStatefulset appsv1.StatefulSet
@@ -202,8 +202,8 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// If we are here all are on latest version
 		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Completed")
 
-		// update status to ready
-		df.Status.Phase = PhaseReady
+		// update status
+		df.Status.IsRollingUpdate = false
 		if err := r.Status().Update(ctx, &df); err != nil {
 			log.Error(err, "could not update the Dragonfly object")
 			return ctrl.Result{Requeue: true}, err
@@ -242,7 +242,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 			// Start rollout and update status
 			// update status so that we can track progress
-			df.Status.Phase = PhaseRollout
+			df.Status.IsRollingUpdate = true
 			if err := r.Status().Update(ctx, &df); err != nil {
 				log.Error(err, "could not update the Dragonfly object")
 				return ctrl.Result{Requeue: true}, err

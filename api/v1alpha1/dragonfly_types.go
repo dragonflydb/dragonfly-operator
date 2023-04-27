@@ -59,6 +59,9 @@ type DragonflyStatus struct {
 	// - "configuring-replication": The controller is updating the master of the Dragonfly instance
 	// - "resources-created": The Dragonfly instance resources were created but not yet configured
 	Phase string `json:"phase,omitempty"`
+
+	// IsRollingUpdate is true if the Dragonfly instance is being updated
+	IsRollingUpdate bool `json:"isRollingUpdate,omitempty"`
 }
 
 //+kubebuilder:object:root=true

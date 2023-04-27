@@ -100,6 +100,10 @@ spec:
           status:
             description: DragonflyStatus defines the observed state of Dragonfly
             properties:
+              isRollingUpdate:
+                description: IsRollingUpdate is true if the Dragonfly instance is
+                  being updated
+                type: boolean
               phase:
                 description: 'Status of the Dragonfly Instance It can be one of the
                   following: - "ready": The Dragonfly instance is ready to serve requests

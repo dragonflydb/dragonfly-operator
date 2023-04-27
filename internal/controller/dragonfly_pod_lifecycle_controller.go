@@ -95,7 +95,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			}
 
 			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "configured replication for first time")
-		} else if dfi.df.Status.Phase == PhaseReady || dfi.df.Status.Phase == PhaseRollout {
+		} else if dfi.df.Status.Phase == PhaseReady {
 			// Pod event either from a restart or a resource update (i.e less/more replicas)
 			log.Info("Pod restart from a ready Dragonfly instance")
 
