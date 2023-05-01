@@ -91,10 +91,10 @@ func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace st
 	return false, nil
 }
 
-func checkForStableState(ctx context.Context, c client.Client, pod *corev1.Pod) error {
+func checkForStableState(ctx context.Context, c client.Client, pod *corev1.Pod) (bool, error) {
 	// wait until pod IP is ready
 	if pod.Status.PodIP == "" || pod.Status.Phase != corev1.PodRunning {
-		return nil
+		return false, nil
 	}
 
 	redisClient := redis.NewClient(&redis.Options{
@@ -103,16 +103,16 @@ func checkForStableState(ctx context.Context, c client.Client, pod *corev1.Pod) 
 
 	_, err := redisClient.Ping().Result()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	info, err := redisClient.Info("replication").Result()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if info == "" {
-		return errors.New("empty info")
+		return false, errors.New("empty info")
 	}
 
 	data := map[string]string{}
@@ -125,16 +125,16 @@ func checkForStableState(ctx context.Context, c client.Client, pod *corev1.Pod) 
 	}
 
 	if data["master_sync_in_progress"] == "1" {
-		return fmt.Errorf("master_sync_in_progress:%s", data["master_sync_in_progress"])
+		return false, nil
 	}
 
 	if data["master_link_status"] != "up" {
-		return fmt.Errorf("master_link_status:%s", data["master_link_status"])
+		return false, nil
 	}
 
 	if data["master_last_io_seconds_ago"] == "-1" {
-		return fmt.Errorf("master_last_io_seconds_ago:%s", data["master_last_io_seconds_ago"])
+		return false, nil
 	}
 
-	return nil
+	return true, nil
 }

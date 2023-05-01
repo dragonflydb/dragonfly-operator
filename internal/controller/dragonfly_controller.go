@@ -146,12 +146,17 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if onLatestVersion {
 				// check if the replica had a full sync
 				log.Info("New Replica found. Checking if replica had a full sync", "pod", replica.Name)
-				err := checkForStableState(ctx, r.Client, &replica)
+				isStableState, err := checkForStableState(ctx, r.Client, &replica)
 				if err != nil {
-					log.Info("Not all new replicas are in stable sync yet", "pod", replica.Name, "reason", err)
+					log.Error(err, "could not check if pod is in stable state")
 					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 				}
-				log.Info("Replica is in stable sync", "pod", replica.Name)
+
+				if !isStableState {
+					log.Info("Not all new replicas are in stable status yet", "pod", replica.Name, "reason", err)
+					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+				}
+				log.Info("Replica is in stable state", "pod", replica.Name)
 				fullSyncedUpdatedReplicas++
 			}
 		}
@@ -177,7 +182,6 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 				}
 
-				// Requeue and wait for it to be stable sync
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 			}
 		}
