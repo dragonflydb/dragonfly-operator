@@ -4,5 +4,5 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
 - name: controller
-  newName: ghcr.io/dragonflydb/operator
-  newTag: v0.0.2
+  newName: docker.dragonflydb.io/dragonflydb/operator
+  newTag: v0.0.3
