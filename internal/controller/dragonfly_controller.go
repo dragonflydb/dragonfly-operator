@@ -115,7 +115,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return ctrl.Result{Requeue: true}, nil
 		}
 
-		// filter replicas
+		// filter replicas to master and replicas
 		var master corev1.Pod
 		replicas := make([]corev1.Pod, 0)
 		for _, pod := range pods.Items {
@@ -132,7 +132,8 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 
-		// Check if all the latest replicas had a full sync
+		// We want to update the replicas first then the master
+		// We want to have at most one updated replica in full sync phase at a time
 		// if not, requeue
 		fullSyncedUpdatedReplicas := 0
 		for _, replica := range replicas {
@@ -145,7 +146,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if onLatestVersion {
 				// check if the replica had a full sync
 				log.Info("New Replica found. Checking if replica had a full sync", "pod", replica.Name)
-				err := checkForStableSync(ctx, r.Client, &replica)
+				err := checkForStableState(ctx, r.Client, &replica)
 				if err != nil {
 					log.Info("Not all new replicas are in stable sync yet", "pod", replica.Name, "reason", err)
 					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
@@ -155,7 +156,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 
-		log.Info(fmt.Sprintf("%d/%d are in stable sync", fullSyncedUpdatedReplicas, len(replicas)))
+		log.Info(fmt.Sprintf("%d/%d are in stable state", fullSyncedUpdatedReplicas, len(replicas)))
 
 		// if we are here it means that all latest replicas are in stable sync
 		// delete older version replicas

@@ -351,6 +351,14 @@ func isDragonflyInphase(ctx context.Context, c client.Client, name, namespace, p
 		return false, nil
 	}
 
+	// Ready means we also want rolling update to be false
+	if phase == controller.PhaseReady {
+		// check for replicas
+		if df.Status.IsRollingUpdate {
+			return false, nil
+		}
+	}
+
 	if df.Status.Phase == phase {
 		return true, nil
 	}

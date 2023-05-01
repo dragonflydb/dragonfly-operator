@@ -91,25 +91,7 @@ func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace st
 	return false, nil
 }
 
-func waitForFullSync(ctx context.Context, c client.Client, pod *corev1.Pod, maxDuration time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, maxDuration)
-	defer cancel()
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for full sync")
-		default:
-			// Check if the statefulset is ready
-			err := checkForStableSync(ctx, c, pod)
-			if err != nil {
-				return err
-			}
-			return nil
-		}
-	}
-}
-
-func checkForStableSync(ctx context.Context, c client.Client, pod *corev1.Pod) error {
+func checkForStableState(ctx context.Context, c client.Client, pod *corev1.Pod) error {
 	// wait until pod IP is ready
 	if pod.Status.PodIP == "" || pod.Status.Phase != corev1.PodRunning {
 		return nil
