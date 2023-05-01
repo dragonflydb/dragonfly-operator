@@ -215,7 +215,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 		})
 
 		It("Update to image should be propagated successfully", func() {
-			newImage := resources.DragonflyImage + ":v0.17.0"
+			newImage := resources.DragonflyImage + ":v1.1.0"
 			// Update df to the latest
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      name,
@@ -349,6 +349,14 @@ func isDragonflyInphase(ctx context.Context, c client.Client, name, namespace, p
 		Namespace: namespace,
 	}, &df); err != nil {
 		return false, nil
+	}
+
+	// Ready means we also want rolling update to be false
+	if phase == controller.PhaseReady {
+		// check for replicas
+		if df.Status.IsRollingUpdate {
+			return false, nil
+		}
 	}
 
 	if df.Status.Phase == phase {
