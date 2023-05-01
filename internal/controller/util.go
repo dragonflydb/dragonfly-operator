@@ -91,7 +91,7 @@ func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace st
 	return false, nil
 }
 
-func checkForStableState(ctx context.Context, c client.Client, pod *corev1.Pod) (bool, error) {
+func isStableState(ctx context.Context, c client.Client, pod *corev1.Pod) (bool, error) {
 	// wait until pod IP is ready
 	if pod.Status.PodIP == "" || pod.Status.Phase != corev1.PodRunning {
 		return false, nil

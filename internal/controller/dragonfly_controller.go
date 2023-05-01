@@ -146,7 +146,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if onLatestVersion {
 				// check if the replica had a full sync
 				log.Info("New Replica found. Checking if replica had a full sync", "pod", replica.Name)
-				isStableState, err := checkForStableState(ctx, r.Client, &replica)
+				isStableState, err := isStableState(ctx, r.Client, &replica)
 				if err != nil {
 					log.Error(err, "could not check if pod is in stable state")
 					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
