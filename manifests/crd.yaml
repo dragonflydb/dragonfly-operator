@@ -34,6 +34,12 @@ spec:
           spec:
             description: DragonflySpec defines the desired state of Dragonfly
             properties:
+              args:
+                description: (Optional) Dragonfly container args to pass to the container
+                  Refer to the Dragonfly documentation for the list of supported args
+                items:
+                  type: string
+                type: array
               image:
                 description: Image is the Dragonfly image to use
                 type: string
@@ -93,6 +99,10 @@ spec:
           status:
             description: DragonflyStatus defines the observed state of Dragonfly
             properties:
+              isRollingUpdate:
+                description: IsRollingUpdate is true if the Dragonfly instance is
+                  being updated
+                type: boolean
               phase:
                 description: 'Status of the Dragonfly Instance It can be one of the
                   following: - "ready": The Dragonfly instance is ready to serve requests
