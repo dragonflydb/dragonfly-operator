@@ -26,12 +26,9 @@ jobs:
         run: |
           make docker-build
 
-      - name: Install Kind & Create Cluster
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.19.0/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
-          kind create cluster
+      - uses: helm/kind-action@v1.7.0
+        with:
+          cluster_name: kind
 
       - name: Run tests
         timeout-minutes: 10
@@ -39,6 +36,11 @@ jobs:
           make docker-kind-load
           make deploy
           make test
+
+      - name: Cleanup
+        run: |
+          make undeploy
+          make uninstall
 
   release-operator:
     permissions:
