@@ -173,6 +173,8 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
+			time.Sleep(40 * time.Second)
+
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
 			err = k8sClient.Get(ctx, types.NamespacedName{
