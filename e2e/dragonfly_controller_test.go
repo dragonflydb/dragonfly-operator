@@ -173,6 +173,8 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
+			time.Sleep(40 * time.Second)
+
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
 			err = k8sClient.Get(ctx, types.NamespacedName{
@@ -226,6 +228,8 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			df.Spec.Image = newImage
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
+
+			time.Sleep(30 * time.Second)
 
 			// Wait until Dragonfly object is marked resources-created
 			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
