@@ -37,6 +37,10 @@ jobs:
           make deploy
           make test
 
+      - name: Cleanup
+        run: |
+          make undeploy
+
   release-operator:
     permissions:
       contents: write
