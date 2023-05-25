@@ -40,7 +40,6 @@ jobs:
       - name: Cleanup
         run: |
           make undeploy
-          make uninstall
 
   release-operator:
     permissions:

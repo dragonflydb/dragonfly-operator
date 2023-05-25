@@ -229,6 +229,8 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 
+			time.Sleep(30 * time.Second)
+
 			// Wait until Dragonfly object is marked resources-created
 			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			Expect(err).To(BeNil())
