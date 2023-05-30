@@ -18,9 +18,7 @@ Currently, Dragonfly Operator is in **Alpha**. You can find more information abo
 Make sure to have your Kubernetes cluster up and running. Dragonfly Operator can be installed by running
 
 ```sh
-# Install CRDs
-kubectl apply -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/crd.yaml
-# Install the operator
+# Install the CRD and Operator
 kubectl apply -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/dragonfly-operator.yaml
 ```
 
