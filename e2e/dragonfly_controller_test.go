@@ -288,6 +288,38 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 				"--vmodule=replica=1",
 			}
 
+			newAnnotations := map[string]string{
+				"foo": "bar",
+			}
+
+			newTolerations := []corev1.Toleration{
+				{
+					Key:      "foo",
+					Operator: corev1.TolerationOpEqual,
+					Value:    "bar",
+					Effect:   corev1.TaintEffectPreferNoSchedule,
+				},
+			}
+
+			newAffinity := corev1.Affinity{
+				NodeAffinity: &corev1.NodeAffinity{
+					PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
+						{
+							Weight: 1,
+							Preference: corev1.NodeSelectorTerm{
+								MatchExpressions: []corev1.NodeSelectorRequirement{
+									{
+										Key:      "foo",
+										Operator: corev1.NodeSelectorOpIn,
+										Values:   []string{"bar"},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
 			// Update df to the latest
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      name,
@@ -297,6 +329,10 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 
 			df.Spec.Resources = &newResources
 			df.Spec.Args = newArgs
+			df.Spec.Tolerations = newTolerations
+			df.Spec.Affinity = &newAffinity
+			df.Spec.Annotations = newAnnotations
+
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 
@@ -322,6 +358,15 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceMemory].Equal(newResources.Limits[corev1.ResourceMemory])).To(BeTrue())
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU].Equal(newResources.Requests[corev1.ResourceCPU])).To(BeTrue())
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory].Equal(newResources.Requests[corev1.ResourceMemory])).To(BeTrue())
+
+			// check for annotations
+			Expect(ss.Spec.Template.ObjectMeta.Annotations).To(Equal(newAnnotations))
+
+			// check for tolerations
+			Expect(ss.Spec.Template.Spec.Tolerations).To(Equal(newTolerations))
+
+			// check for affinity
+			Expect(ss.Spec.Template.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(Equal(newAffinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
 		})
 	})
 })
