@@ -41,11 +41,26 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	Args []string `json:"args,omitempty"`
 
+	// (Optional) Annotations to add to the Dragonfly pods.
+	// +optional
+	// +kubebuilder:validation:Optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
 	// (Optional) Dragonfly container resource limits. Any container limits
 	// can be specified.
 	// +optional
 	// +kubebuilder:validation:Optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// (Optional) Dragonfly pod affinity
+	// +optional
+	// +kubebuilder:validation:Optional
+	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+
+	// (Optional) Dragonfly pod tolerations
+	// +optional
+	// +kubebuilder:validation:Optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
 // DragonflyStatus defines the observed state of Dragonfly
