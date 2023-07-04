@@ -147,6 +147,18 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, df.Spec.Args...)
 	}
 
+	if df.Spec.Annotations != nil {
+		statefulset.Spec.Template.ObjectMeta.Annotations = df.Spec.Annotations
+	}
+
+	if df.Spec.Affinity != nil {
+		statefulset.Spec.Template.Spec.Affinity = df.Spec.Affinity
+	}
+
+	if df.Spec.Tolerations != nil {
+		statefulset.Spec.Template.Spec.Tolerations = df.Spec.Tolerations
+	}
+
 	resources = append(resources, &statefulset)
 
 	service := corev1.Service{
