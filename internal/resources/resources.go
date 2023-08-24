@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -208,5 +209,57 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 
 	resources = append(resources, &service)
 
+	monitors, err := GetMonitoringResources(ctx, df)
+	if err != nil {
+		return resources, err
+	}
+	resources = append(resources, monitors...)
+
+	return resources, nil
+}
+
+func GetMonitoringResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]client.Object, error) {
+	var resources []client.Object
+	serviceMonitor := &monitoringv1.ServiceMonitor{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ServiceMonitor",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      df.Name + "-monitor",
+			Namespace: df.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: df.APIVersion,
+					Kind:       df.Kind,
+					Name:       df.Name,
+					UID:        df.UID,
+				},
+			},
+			Labels: map[string]string{
+				KubernetesAppComponentLabelKey: "Dragonfly",
+				KubernetesAppInstanceNameLabel: df.Name,
+				KubernetesAppNameLabelKey:      "dragonfly",
+				KubernetesPartOfLabelKey:       "dragonfly",
+				KubernetesManagedByLabelKey:    DragonflyOperatorName,
+				"app":                          df.Name,
+			},
+		},
+		Spec: monitoringv1.ServiceMonitorSpec{
+			Endpoints: []monitoringv1.Endpoint{
+				{
+					Port: DragonflyPortName,
+					Path: "/metrics",
+				},
+			},
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					KubernetesAppNameLabelKey: "dragonfly",
+					"app":                     df.Name,
+				},
+			},
+		},
+	}
+	resources = append(resources, serviceMonitor)
 	return resources, nil
 }
