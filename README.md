@@ -81,6 +81,10 @@ To vertically scale the instance, you can edit the `spec.resources` field in the
 kubectl patch dragonfly dragonfly-sample --type merge -p '{"spec":{"resources":{"requests":{"memory":"1Gi"},"limits":{"memory":"2Gi"}}}}'
 ```
 
+### Configuring instance authentication
+
+To add authentication to the dragonfly pods, you either set the `DFLY_PASSWORD` environment variable, or add the `--requirepass` argument. 
+
 ### Deleting a Dragonfly instance
 
 To delete a Dragonfly instance, you can run
