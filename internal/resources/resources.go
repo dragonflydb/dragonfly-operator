@@ -185,7 +185,6 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 			},
 		},
 		Spec: corev1.ServiceSpec{
-			ClusterIP: "None",
 			Selector: map[string]string{
 				"app":                     df.Name,
 				KubernetesAppNameLabelKey: "dragonfly",
