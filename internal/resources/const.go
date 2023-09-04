@@ -21,6 +21,7 @@ const (
 	DragonflyPort = 6379
 
 	// DragonflyAdminPort is the admin port on which Dragonfly listens
+	// IMPORTANT: This port should not be opened to non trusted networks.
 	DragonflyAdminPort = 9999
 
 	// DragonflyPortName is the name of the port on which the Dragonfly instance listens
