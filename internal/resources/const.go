@@ -16,6 +16,8 @@ limitations under the License.
 
 package resources
 
+import "fmt"
+
 const (
 	// DragonflyPort is the port on which Dragonfly listens
 	DragonflyPort = 6379
@@ -62,3 +64,8 @@ const (
 
 	Replica string = "replica"
 )
+
+var DefaultDragonflyArgs = []string{
+	"--alsologtostderr",
+	fmt.Sprintf("-admin_port=%d", DragonflyAdminPort),
+}
