@@ -20,6 +20,9 @@ const (
 	// DragonflyPort is the port on which Dragonfly listens
 	DragonflyPort = 6379
 
+	// DragonflyAdminPort is the admin port on which Dragonfly listens
+	DragonflyAdminPort = 9999
+
 	// DragonflyPortName is the name of the port on which the Dragonfly instance listens
 	DragonflyPortName = "redis"
 
