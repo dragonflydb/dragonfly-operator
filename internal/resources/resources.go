@@ -99,6 +99,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 							},
 							Args: []string{
 								"--alsologtostderr",
+								fmt.Sprintf("-admin_port=%d", DragonflyAdminPort),
 							},
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
