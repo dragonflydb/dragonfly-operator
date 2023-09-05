@@ -209,7 +209,7 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 // connected to the right master
 func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.Pod, masterIp string) (bool, error) {
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, 6379),
+		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
 	resp, err := redisClient.Info("replication").Result()
@@ -324,17 +324,17 @@ func (dfi *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, err
 // to the given master instance
 func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
+		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
 	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp)
-	resp, err := redisClient.SlaveOf(masterIp, "6379").Result()
+	resp, err := redisClient.SlaveOf(masterIp, fmt.Sprint(resources.DragonflyAdminPort)).Result()
 	if err != nil {
-		return fmt.Errorf("Error running SLAVE OF command: %s", err)
+		return fmt.Errorf("error running SLAVE OF command: %s", err)
 	}
 
 	if resp != "OK" {
-		return fmt.Errorf("Response of `SLAVE OF` on replica is not OK: %s", resp)
+		return fmt.Errorf("response of `SLAVE OF` on replica is not OK: %s", resp)
 	}
 
 	dfi.log.Info("Marking pod role as replica", "pod", pod.Name)
@@ -351,17 +351,17 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 // along while updating other pods to be replicas
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:6379", pod.Status.PodIP),
+		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
 	dfi.log.Info("Running SLAVE OF NO ONE command", "pod", pod.Name)
 	resp, err := redisClient.SlaveOf("NO", "ONE").Result()
 	if err != nil {
-		return fmt.Errorf("Error running SLAVE OF NO ONE command: %w", err)
+		return fmt.Errorf("error running SLAVE OF NO ONE command: %w", err)
 	}
 
 	if resp != "OK" {
-		return fmt.Errorf("Response of `SLAVE OF NO NE` on master is not OK: %s", resp)
+		return fmt.Errorf("response of `SLAVE OF NO ONE` on master is not OK: %s", resp)
 	}
 
 	dfi.log.Info("Marking pod role as master", "pod", pod.Name)

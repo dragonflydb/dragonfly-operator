@@ -16,9 +16,15 @@ limitations under the License.
 
 package resources
 
+import "fmt"
+
 const (
 	// DragonflyPort is the port on which Dragonfly listens
 	DragonflyPort = 6379
+
+	// DragonflyAdminPort is the admin port on which Dragonfly listens
+	// IMPORTANT: This port should not be opened to non trusted networks.
+	DragonflyAdminPort = 9999
 
 	// DragonflyPortName is the name of the port on which the Dragonfly instance listens
 	DragonflyPortName = "redis"
@@ -58,3 +64,8 @@ const (
 
 	Replica string = "replica"
 )
+
+var DefaultDragonflyArgs = []string{
+	"--alsologtostderr",
+	fmt.Sprintf("-admin_port=%d", DragonflyAdminPort),
+}

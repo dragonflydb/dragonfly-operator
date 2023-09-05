@@ -94,7 +94,8 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			// check resource requirements of statefulset
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources).To(Equal(*df.Spec.Resources))
 			// check args of statefulset
-			Expect(ss.Spec.Template.Spec.Containers[0].Args[1:]).To(Equal(df.Spec.Args))
+			expectArgs := append(resources.DefaultDragonflyArgs, df.Spec.Args...)
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(Equal(expectArgs))
 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
@@ -351,7 +352,8 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Expect(err).To(BeNil())
 
 			// check for pod args
-			Expect(ss.Spec.Template.Spec.Containers[0].Args[1:]).To(Equal(newArgs))
+			expectedArgs := append(resources.DefaultDragonflyArgs, newArgs...)
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(Equal(expectedArgs))
 
 			// check for pod resources
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU].Equal(newResources.Limits[corev1.ResourceCPU])).To(BeTrue())
