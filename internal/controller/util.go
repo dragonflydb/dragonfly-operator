@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/go-redis/redis"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -98,7 +99,7 @@ func isStableState(ctx context.Context, c client.Client, pod *corev1.Pod) (bool,
 	}
 
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, 6379),
+		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
 	_, err := redisClient.Ping().Result()

@@ -97,9 +97,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 									ContainerPort: DragonflyPort,
 								},
 							},
-							Args: []string{
-								"--alsologtostderr",
-							},
+							Args: DefaultDragonflyArgs,
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
