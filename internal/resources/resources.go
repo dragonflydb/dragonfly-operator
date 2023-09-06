@@ -98,6 +98,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 								},
 							},
 							Args: DefaultDragonflyArgs,
+							Env:  df.Spec.Env,
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
@@ -155,6 +156,10 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 
 	if df.Spec.Tolerations != nil {
 		statefulset.Spec.Template.Spec.Tolerations = df.Spec.Tolerations
+	}
+
+	if df.Spec.ServiceAccountName != "" {
+		statefulset.Spec.Template.Spec.ServiceAccountName = df.Spec.ServiceAccountName
 	}
 
 	resources = append(resources, &statefulset)
