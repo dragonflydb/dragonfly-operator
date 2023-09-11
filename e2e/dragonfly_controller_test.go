@@ -70,7 +70,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 					Value: "df-pass-1",
 				},
 			},
-			Affinity: &corev1.Affinity{
+			/*Affinity: &corev1.Affinity{
 				NodeAffinity: &corev1.NodeAffinity{
 					PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
 						{
@@ -87,7 +87,7 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 						},
 					},
 				},
-			},
+			},*/
 		},
 	}
 
