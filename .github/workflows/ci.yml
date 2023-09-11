@@ -29,7 +29,7 @@ jobs:
       - uses: helm/kind-action@v1.7.0
         with:
           cluster_name: kind
-
+          config: ./hack/kind-config.yaml
       - name: Run tests
         timeout-minutes: 10
         run: |
