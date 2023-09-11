@@ -64,6 +64,30 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Image:     fmt.Sprintf("%s:%s", resources.DragonflyImage, "latest"),
 			Resources: &resourcesReq,
 			Args:      args,
+			Env: []corev1.EnvVar{
+				{
+					Name:  "DFLY_PASSWORD",
+					Value: "df-pass-1",
+				},
+			},
+			Affinity: &corev1.Affinity{
+				NodeAffinity: &corev1.NodeAffinity{
+					PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
+						{
+							Weight: 1,
+							Preference: corev1.NodeSelectorTerm{
+								MatchExpressions: []corev1.NodeSelectorRequirement{
+									{
+										Key:      "database",
+										Operator: corev1.NodeSelectorOpIn,
+										Values:   []string{"dragonfly"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -113,6 +137,12 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceMemory].Equal(resourcesReq.Limits[corev1.ResourceMemory])).To(BeTrue())
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU].Equal(resourcesReq.Requests[corev1.ResourceCPU])).To(BeTrue())
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory].Equal(resourcesReq.Requests[corev1.ResourceMemory])).To(BeTrue())
+
+			// check for affinity
+			Expect(ss.Spec.Template.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(Equal(df.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
+
+			// check for env
+			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(Equal(df.Spec.Env))
 		})
 
 		It("Increase in replicas should be propagated successfully", func() {
