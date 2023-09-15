@@ -213,7 +213,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 	if df.Spec.Tls != "" {
 		tlsCertKeyArg := "--tls_cert_file=/etc/dragonfly-tls/tls.crt"
 		tlsPrivateKeyArg := "--tls_key_file=/etc/dragonfly-tls/tls.key"
-		tlsCACertKeyArg := "tls_ca_cert_file=etc/dragonfly-tls/tls-ca.crt"
+		tlsCACertKeyArg := "--tls_ca_cert_file=/etc/dragonfly-tls/tls-ca.crt"
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, []string{"--tls", tlsCertKeyArg, tlsPrivateKeyArg, tlsCACertKeyArg}...)
 	}
 
