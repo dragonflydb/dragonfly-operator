@@ -96,6 +96,10 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 									Name:          DragonflyPortName,
 									ContainerPort: DragonflyPort,
 								},
+								{
+									Name:          "admin",
+									ContainerPort: DragonflyAdminPort,
+								},
 							},
 							Args: DefaultDragonflyArgs,
 							Env:  df.Spec.Env,
