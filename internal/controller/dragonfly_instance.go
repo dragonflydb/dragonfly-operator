@@ -327,7 +327,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
-	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp)
+	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp, "addr", redisClient.Options().Addr)
 	resp, err := redisClient.SlaveOf(masterIp, fmt.Sprint(resources.DragonflyAdminPort)).Result()
 	if err != nil {
 		return fmt.Errorf("error running SLAVE OF command: %s", err)
@@ -354,7 +354,7 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
-	dfi.log.Info("Running SLAVE OF NO ONE command", "pod", pod.Name)
+	dfi.log.Info("Running SLAVE OF NO ONE command", "pod", pod.Name, "addr", redisClient.Options().Addr)
 	resp, err := redisClient.SlaveOf("NO", "ONE").Result()
 	if err != nil {
 		return fmt.Errorf("error running SLAVE OF NO ONE command: %w", err)
