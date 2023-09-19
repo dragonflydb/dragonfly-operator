@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
-	"github.com/go-redis/redis"
+	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
