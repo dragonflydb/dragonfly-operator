@@ -62,13 +62,11 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 		},
 		Spec: dragonflydbiov1alpha1.DragonflySpec{
 			Replicas:  3,
-			Image:     fmt.Sprintf("%s:%s", resources.DragonflyImage, "latest"),
 			Resources: &resourcesReq,
 			Args:      args,
 			Env: []corev1.EnvVar{
 				{
-					// remove _1 to make it actally work
-					Name:  "DFLY_PASSWORD_1",
+					Name:  "DFLY_PASSWORD",
 					Value: "df-pass-1",
 				},
 			},
