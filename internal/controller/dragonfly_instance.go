@@ -26,7 +26,7 @@ import (
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/go-logr/logr"
-	"github.com/go-redis/redis"
+	"github.com/redis/go-redis/v9"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -212,7 +212,7 @@ func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.
 		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
-	resp, err := redisClient.Info("replication").Result()
+	resp, err := redisClient.Info(ctx, "replication").Result()
 	if err != nil {
 		return false, err
 	}
@@ -327,8 +327,8 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
-	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp)
-	resp, err := redisClient.SlaveOf(masterIp, fmt.Sprint(resources.DragonflyAdminPort)).Result()
+	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp, "addr", redisClient.Options().Addr)
+	resp, err := redisClient.SlaveOf(ctx, masterIp, fmt.Sprint(resources.DragonflyAdminPort)).Result()
 	if err != nil {
 		return fmt.Errorf("error running SLAVE OF command: %s", err)
 	}
@@ -354,8 +354,8 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
-	dfi.log.Info("Running SLAVE OF NO ONE command", "pod", pod.Name)
-	resp, err := redisClient.SlaveOf("NO", "ONE").Result()
+	dfi.log.Info("Running SLAVE OF NO ONE command", "pod", pod.Name, "addr", redisClient.Options().Addr)
+	resp, err := redisClient.SlaveOf(ctx, "NO", "ONE").Result()
 	if err != nil {
 		return fmt.Errorf("error running SLAVE OF NO ONE command: %w", err)
 	}
