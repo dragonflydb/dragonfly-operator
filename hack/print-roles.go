@@ -9,8 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/go-redis/redis"
 	"github.com/pkg/errors"
+	"github.com/redis/go-redis/v9"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -63,7 +63,7 @@ func main() {
 			panic(err.Error())
 		}
 
-		role, err := getRole(fmt.Sprintf("localhost:%d", startPort+i))
+		role, err := getRole(context.Background(), fmt.Sprintf("localhost:%d", startPort+i))
 		if err != nil {
 			panic(err.Error())
 		}
@@ -108,12 +108,12 @@ func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *r
 	return nil
 }
 
-func getRole(url string) (string, error) {
+func getRole(ctx context.Context, url string) (string, error) {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: url,
 	})
 
-	resp, err := redisClient.Info("replication").Result()
+	resp, err := redisClient.Info(ctx, "replication").Result()
 	if err != nil {
 		return "", err
 	}

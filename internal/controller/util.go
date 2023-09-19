@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
-	"github.com/go-redis/redis"
+	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -102,12 +102,12 @@ func isStableState(ctx context.Context, c client.Client, pod *corev1.Pod) (bool,
 		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
-	_, err := redisClient.Ping().Result()
+	_, err := redisClient.Ping(ctx).Result()
 	if err != nil {
 		return false, err
 	}
 
-	info, err := redisClient.Info("replication").Result()
+	info, err := redisClient.Info(ctx, "replication").Result()
 	if err != nil {
 		return false, err
 	}
