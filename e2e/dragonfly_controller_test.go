@@ -52,7 +52,6 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 
 	args := []string{
 		"--vmodule=replica=1,server_family=1",
-		"--requirepass=df-pass-1",
 	}
 
 	df := dragonflydbiov1alpha1.Dragonfly{
