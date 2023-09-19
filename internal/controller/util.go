@@ -102,12 +102,12 @@ func isStableState(ctx context.Context, c client.Client, pod *corev1.Pod) (bool,
 		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
-	_, err := redisClient.Ping().Result()
+	_, err := redisClient.Ping(ctx).Result()
 	if err != nil {
 		return false, err
 	}
 
-	info, err := redisClient.Info("replication").Result()
+	info, err := redisClient.Info(ctx, "replication").Result()
 	if err != nil {
 		return false, err
 	}
