@@ -67,5 +67,5 @@ const (
 
 var DefaultDragonflyArgs = []string{
 	"--alsologtostderr",
-	fmt.Sprintf("-admin_port=%d", DragonflyAdminPort),
+	fmt.Sprintf("--admin_port=%d", DragonflyAdminPort),
 }
