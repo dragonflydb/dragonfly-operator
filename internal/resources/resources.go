@@ -45,8 +45,6 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		image = fmt.Sprintf("%s:%s", DragonflyImage, Version)
 	}
 
-	tlsSecretOptional := true
-
 	// Create a StatefulSet, Headless Service
 	statefulset := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -93,17 +91,6 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 					},
 				},
 				Spec: corev1.PodSpec{
-					Volumes: []corev1.Volume{
-						{
-							Name: "dragonfly-tls",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: df.Spec.Tls,
-									Optional:   &tlsSecretOptional,
-								},
-							},
-						},
-					},
 					Containers: []corev1.Container{
 						{
 							Name:  "dragonfly",
@@ -151,13 +138,6 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 								TimeoutSeconds:      5,
 							},
 							ImagePullPolicy: corev1.PullAlways,
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "dragonfly-tls",
-									ReadOnly:  true,
-									MountPath: "etc/dragonfly-tls",
-								},
-							},
 						},
 					},
 					SecurityContext: &corev1.PodSecurityContext{
@@ -210,11 +190,29 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		}
 	}
 
-	if df.Spec.Tls != "" {
-		tlsCertKeyArg := "--tls_cert_file=/etc/dragonfly-tls/tls.crt"
-		tlsPrivateKeyArg := "--tls_key_file=/etc/dragonfly-tls/tls.key"
-		tlsCACertKeyArg := "--tls_ca_cert_file=/etc/dragonfly-tls/tls-ca.crt"
-		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, []string{"--tls", tlsCertKeyArg, tlsPrivateKeyArg, tlsCACertKeyArg}...)
+	if df.Spec.TLSSecretRef != "" {
+		statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: "dragonfly-tls",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: df.Spec.TLSSecretRef,
+				},
+			},
+		})
+
+		statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "dragonfly-tls",
+			ReadOnly:  true,
+			MountPath: "etc/dragonfly-tls",
+		})
+
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, []string{
+			"--tls",
+			"--tls_cert_file=/etc/dragonfly-tls/tls.crt",
+			"--tls_key_file=/etc/dragonfly-tls/tls.key",
+			"--tls_ca_cert_file=/etc/dragonfly-tls/tls-ca.crt",
+		}...,
+		)
 	}
 
 	if df.Spec.Annotations != nil {

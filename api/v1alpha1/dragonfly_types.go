@@ -72,11 +72,12 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
-	// (Optional) Dragonfly pod tls secret. The secret should already
-	// exist in the dragonfly-operator-system namespace.
+	// (Optional) Dragonfly TLS secret to used for TLS
+	// Connections to Dragonfly. Must be in the same namespace
+	// as the Dragonfly instance.
 	// +optional
 	// +kubebuilder:validation:Optional
-	Tls string `json:"tls,omitempty"`
+	TLSSecretRef string `json:"tlsSecretRef,omitempty"`
 
 	// (Optional) Dragonfly Snapshot configuration
 	// +optional
