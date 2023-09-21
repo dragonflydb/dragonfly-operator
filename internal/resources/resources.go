@@ -216,7 +216,6 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 			"--tls",
 			fmt.Sprintf("--tls_cert_file=%s/tls.crt", tlsPath),
 			fmt.Sprintf("--tls_key_file=%s/tls.key", tlsPath),
-			fmt.Sprintf("--tls_ca_cert_file=%s/ca.crt", tlsPath),
 		}...)
 	}
 
