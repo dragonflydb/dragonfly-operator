@@ -32,6 +32,10 @@ var (
 	dflyUserGroup int64 = 999
 )
 
+const (
+	tlsPath = "/etc/dragonfly-tls"
+)
+
 // GetDragonflyResources returns the resources required for a Dragonfly
 // Instance
 func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]client.Object, error) {
@@ -203,16 +207,15 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
 			Name:      "dragonfly-tls",
 			ReadOnly:  true,
-			MountPath: "etc/dragonfly-tls",
+			MountPath: tlsPath,
 		})
 
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, []string{
 			"--tls",
-			"--tls_cert_file=/etc/dragonfly-tls/tls.crt",
-			"--tls_key_file=/etc/dragonfly-tls/tls.key",
-			"--tls_ca_cert_file=/etc/dragonfly-tls/tls-ca.crt",
-		}...,
-		)
+			fmt.Sprintf("--tls_cert_file=%s/tls.crt", tlsPath),
+			fmt.Sprintf("--tls_key_file=%s/tls.key", tlsPath),
+			fmt.Sprintf("--tls_ca_cert_file=%s/ca.crt", tlsPath),
+		}...)
 	}
 
 	if df.Spec.Annotations != nil {
