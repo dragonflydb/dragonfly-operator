@@ -18,7 +18,6 @@ spec:
       cpu: 600m
       memory: 750Mi
   persistentVolumeClaimSpec:
-    storageClassName: standard-rwo
     accessModes:
     - ReadWriteOnce
     resources:
