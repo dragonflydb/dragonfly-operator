@@ -17,9 +17,11 @@ spec:
     limits:
       cpu: 600m
       memory: 750Mi
-  persistentVolumeClaimSpec:
-    accessModes:
-    - ReadWriteOnce
-    resources:
-      requests:
-        storage: 2Gi
+  snapshot:
+    schedule: "*/5 * * * *"
+    persistentVolumeClaimSpec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 2Gi

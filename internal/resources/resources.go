@@ -150,28 +150,35 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, df.Spec.Args...)
 	}
 
-	if df.Spec.PersistentVolumeClaimSpec != nil {
-		statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: df.Name,
-			},
-			Spec: *df.Spec.PersistentVolumeClaimSpec,
-		})
+	if df.Spec.Snapshot != nil {
+		if df.Spec.Snapshot.PersistentVolumeClaimSpec != nil {
+			// attach and use the PVC if specified
+			statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: df.Name,
+				},
+				Spec: *df.Spec.Snapshot.PersistentVolumeClaimSpec,
+			})
 
-		statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-			Name:      df.Name,
-			MountPath: "/dragonfly/snapshots",
-		})
+			statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+				Name:      df.Name,
+				MountPath: "/dragonfly/snapshots",
+			})
+
+			statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, corev1.Volume{
+				Name: df.Name,
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: df.Name,
+					},
+				},
+			})
+		}
 
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, "--dir=/dragonfly/snapshots")
-		statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, corev1.Volume{
-			Name: df.Name,
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: df.Name,
-				},
-			},
-		})
+		if df.Spec.Snapshot.Cron != "" {
+			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--snapshot_cron=%s", df.Spec.Snapshot.Cron))
+		}
 	}
 
 	if df.Spec.Annotations != nil {
