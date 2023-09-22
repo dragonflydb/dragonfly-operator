@@ -235,6 +235,41 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		statefulset.Spec.Template.Spec.ServiceAccountName = df.Spec.ServiceAccountName
 	}
 
+	if df.Spec.Authentication != nil {
+		if df.Spec.Authentication.PasswordFromSecret != nil {
+			// load the secret key as a password into env
+			statefulset.Spec.Template.Spec.Containers[0].Env = append(statefulset.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
+				// check the validity of this env. some cahtter around changing this
+				Name: "DFLY_PASSWORD",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: df.Spec.Authentication.PasswordFromSecret,
+				},
+			})
+		}
+
+		if df.Spec.Authentication.ClientCACertSecret != nil {
+			// mount the secret as a volume
+			statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, corev1.Volume{
+				Name: "client-ca-cert",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: df.Spec.Authentication.ClientCACertSecret.Name,
+					},
+				},
+			})
+
+			// mount it
+			statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+				Name:      "client-ca-cert",
+				MountPath: "/etc/dragonfly/client-ca-cert",
+			})
+
+			// pass it as an arg
+			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, "--tls_ca_cert_dir=/etc/dragonfly/client-ca-cert")
+
+		}
+	}
+
 	resources = append(resources, &statefulset)
 
 	service := corev1.Service{
