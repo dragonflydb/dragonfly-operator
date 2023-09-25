@@ -71,8 +71,16 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			Args:      args,
 			Env: []corev1.EnvVar{
 				{
-					Name:  "DFLY_PASSWORD",
-					Value: "df-pass-1",
+					Name:  "ENV-1",
+					Value: "value-1",
+				},
+			},
+			Authentication: &resourcesv1.Authentication{
+				PasswordFromSecret: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "df-secret",
+					},
+					Key: "password",
 				},
 			},
 			Affinity: &corev1.Affinity{
@@ -98,7 +106,19 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 
 	Context("Dragonfly resource creation", func() {
 		It("Should create successfully", func() {
-			err := k8sClient.Create(ctx, &df)
+			// create the secret
+			err := k8sClient.Create(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "df-secret",
+					Namespace: namespace,
+				},
+				StringData: map[string]string{
+					"password": "df-pass-1",
+				},
+			})
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Create(ctx, &df)
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked initialized
@@ -148,6 +168,14 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 
 			// check for env
 			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(Equal(df.Spec.Env))
+
+			// expect the password to be converted into a env var from secret
+			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(ContainElement(corev1.EnvVar{
+				Name: "DFLY_PASSWORD",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: df.Spec.Authentication.PasswordFromSecret,
+				},
+			}))
 
 			stopChan := make(chan struct{}, 1)
 			rc, err := InitRunCmd(ctx, stopChan, name, namespace, "df-pass-1")
