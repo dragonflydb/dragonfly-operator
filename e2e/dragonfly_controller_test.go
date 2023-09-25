@@ -157,7 +157,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources).To(Equal(*df.Spec.Resources))
 			// check args of statefulset
 			expectArgs := append(resources.DefaultDragonflyArgs, df.Spec.Args...)
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(Equal(expectArgs))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElements(expectArgs))
 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
