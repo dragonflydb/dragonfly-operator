@@ -127,7 +127,9 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 					Name:      "df-secret",
 					Namespace: namespace,
 				},
-				StringData: map[string]string{},
+				StringData: map[string]string{
+					"password": "df-pass-1",
+				},
 			})
 			Expect(err).To(BeNil())
 
