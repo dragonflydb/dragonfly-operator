@@ -28,6 +28,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+var (
+	dflyUserGroup int64 = 999
+)
+
 // GetDragonflyResources returns the resources required for a Dragonfly
 // Instance
 func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]client.Object, error) {
@@ -135,6 +139,9 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 							},
 							ImagePullPolicy: corev1.PullAlways,
 						},
+					},
+					SecurityContext: &corev1.PodSecurityContext{
+						FSGroup: &dflyUserGroup,
 					},
 				},
 			},
