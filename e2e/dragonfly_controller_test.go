@@ -82,6 +82,9 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 					},
 					Key: "password",
 				},
+				ClientCACertSecret: &corev1.SecretReference{
+					Name: "df-client-ca-certs",
+				},
 			},
 			Affinity: &corev1.Affinity{
 				NodeAffinity: &corev1.NodeAffinity{
@@ -109,12 +112,22 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			// create the secret
 			err := k8sClient.Create(ctx, &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "df-secret",
+					Name:      "df-client-ca-certs",
 					Namespace: namespace,
 				},
 				StringData: map[string]string{
-					"password": "df-pass-1",
+					"ca.crt": "foo",
 				},
+			})
+			Expect(err).To(BeNil())
+
+			// create the secret
+			err = k8sClient.Create(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "df-secret",
+					Namespace: namespace,
+				},
+				StringData: map[string]string{},
 			})
 			Expect(err).To(BeNil())
 
@@ -169,11 +182,27 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			// check for env
 			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(Equal(df.Spec.Env))
 
-			// expect the password to be converted into a env var from secret
+			// Authentication
+			// PasswordFromSecret
 			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(ContainElement(corev1.EnvVar{
 				Name: "DFLY_PASSWORD",
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: df.Spec.Authentication.PasswordFromSecret,
+				},
+			}))
+
+			// ClientCACertSecret
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("%s=%s", resources.TLSCACertDirArg, resources.TLSCACertDir)))
+			Expect(ss.Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
+				Name:      resources.TLSCACertVolumeName,
+				MountPath: resources.TLSCACertDir,
+			}))
+			Expect(ss.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
+				Name: resources.TLSCACertVolumeName,
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: df.Spec.Authentication.ClientCACertSecret.Name,
+					},
 				},
 			}))
 

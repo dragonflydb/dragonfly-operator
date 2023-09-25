@@ -33,7 +33,10 @@ var (
 )
 
 const (
-	TlsPath = "/etc/dragonfly-tls"
+	TlsPath             = "/etc/dragonfly-tls"
+	TLSCACertDirArg     = "--tls_ca_cert_dir"
+	TLSCACertDir        = "/etc/dragonfly/client-ca-cert"
+	TLSCACertVolumeName = "client-ca-cert"
 )
 
 // GetDragonflyResources returns the resources required for a Dragonfly
@@ -250,7 +253,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		if df.Spec.Authentication.ClientCACertSecret != nil {
 			// mount the secret as a volume
 			statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, corev1.Volume{
-				Name: "client-ca-cert",
+				Name: TLSCACertVolumeName,
 				VolumeSource: corev1.VolumeSource{
 					Secret: &corev1.SecretVolumeSource{
 						SecretName: df.Spec.Authentication.ClientCACertSecret.Name,
@@ -260,12 +263,12 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 
 			// mount it
 			statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-				Name:      "client-ca-cert",
-				MountPath: "/etc/dragonfly/client-ca-cert",
+				Name:      TLSCACertVolumeName,
+				MountPath: TLSCACertDir,
 			})
 
 			// pass it as an arg
-			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, "--tls_ca_cert_dir=/etc/dragonfly/client-ca-cert")
+			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s", TLSCACertDirArg, TLSCACertDir))
 
 		}
 	}
