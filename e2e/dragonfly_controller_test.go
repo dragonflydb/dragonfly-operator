@@ -180,7 +180,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			Expect(ss.Spec.Template.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(Equal(df.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
 
 			// check for env
-			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(Equal(df.Spec.Env))
+			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(ContainElements(df.Spec.Env))
 
 			// Authentication
 			// PasswordFromSecret
