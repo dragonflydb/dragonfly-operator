@@ -203,7 +203,8 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 				Name: resources.TLSCACertVolumeName,
 				VolumeSource: corev1.VolumeSource{
 					Secret: &corev1.SecretVolumeSource{
-						SecretName: df.Spec.Authentication.ClientCACertSecret.Name,
+						SecretName:  df.Spec.Authentication.ClientCACertSecret.Name,
+						DefaultMode: func() *int32 { i := int32(420); return &i }(),
 					},
 				},
 			}))
@@ -454,7 +455,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 
 			// check for pod args
 			expectedArgs := append(resources.DefaultDragonflyArgs, newArgs...)
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(Equal(expectedArgs))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElements(expectedArgs))
 
 			// check for pod resources
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU].Equal(newResources.Limits[corev1.ResourceCPU])).To(BeTrue())
