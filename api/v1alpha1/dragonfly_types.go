@@ -72,7 +72,7 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
-	// (Optional) Dragonfly pod security context
+	// (Optional) Dragonfly Snapshot configuration
 	// +optional
 	// +kubebuilder:validation:Optional
 	Snapshot *Snapshot `json:"snapshot,omitempty"`

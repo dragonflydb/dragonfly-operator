@@ -162,7 +162,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 			// attach and use the PVC if specified
 			statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: df.Name,
+					Name: "df",
 					Labels: map[string]string{
 						"app":                     df.Name,
 						KubernetesPartOfLabelKey:  "dragonfly",
