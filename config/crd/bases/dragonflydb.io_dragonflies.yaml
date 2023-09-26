@@ -1043,7 +1043,7 @@ spec:
                 description: (Optional) Dragonfly pod service account name
                 type: string
               snapshot:
-                description: (Optional) Dragonfly pod security context
+                description: (Optional) Dragonfly Snapshot configuration
                 properties:
                   cron:
                     description: (Optional) Dragonfly snapshot schedule
