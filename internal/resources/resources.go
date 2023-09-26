@@ -163,6 +163,11 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 			statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: df.Name,
+					Labels: map[string]string{
+						"app":                     df.Name,
+						KubernetesPartOfLabelKey:  "dragonfly",
+						KubernetesAppNameLabelKey: "dragonfly",
+					},
 				},
 				Spec: *df.Spec.Snapshot.PersistentVolumeClaimSpec,
 			})

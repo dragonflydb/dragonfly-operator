@@ -402,6 +402,76 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 	})
 })
 
+var _ = Describe("Dragonfly PVC Test", Ordered, func() {
+
+	ctx := context.Background()
+	name := "df-pvc"
+	namespace := "default"
+
+	args := []string{
+		"--vmodule=replica=1,server_family=1",
+	}
+
+	Context("Dragonfly resource creation and data insertion", func() {
+		It("Should create successfully", func() {
+			err := k8sClient.Create(ctx, &dragonflydbiov1alpha1.Dragonfly{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: namespace,
+				},
+				Spec: dragonflydbiov1alpha1.DragonflySpec{
+					Replicas: 1,
+					Args:     args,
+					Snapshot: &dragonflydbiov1alpha1.Snapshot{
+						PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{
+								corev1.ReadWriteOnce,
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+				},
+			})
+			Expect(err).To(BeNil())
+
+			// Wait until Dragonfly object is marked initialized
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+
+			// Check for service and statefulset
+			var ss appsv1.StatefulSet
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &ss)
+			Expect(err).To(BeNil())
+
+			var svc corev1.Service
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &svc)
+			Expect(err).To(BeNil())
+
+			// check if the pvc is created
+			var pvcs corev1.PersistentVolumeClaimList
+			err = k8sClient.List(ctx, &pvcs, client.InNamespace(namespace), client.MatchingLabels{
+				"app":                              name,
+				resources.KubernetesPartOfLabelKey: "dragonfly",
+			})
+			Expect(err).To(BeNil())
+			Expect(pvcs.Items).To(HaveLen(1))
+
+			// TODO: Do data insert testing
+		})
+
+	})
+})
+
 func waitForDragonflyPhase(ctx context.Context, c client.Client, name, namespace, phase string, maxDuration time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, maxDuration)
 	defer cancel()
