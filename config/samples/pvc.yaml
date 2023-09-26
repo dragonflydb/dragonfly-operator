@@ -9,7 +9,7 @@ metadata:
     app.kubernetes.io/created-by: dragonfly-operator
   name: dragonfly-sample
 spec:
-  replicas: 3
+  replicas: 1
   resources:
     requests:
       cpu: 500m
@@ -18,7 +18,7 @@ spec:
       cpu: 600m
       memory: 750Mi
   snapshot:
-    schedule: "*/5 * * * *"
+    cron: "*/5 * * * *"
     persistentVolumeClaimSpec:
       accessModes:
       - ReadWriteOnce

@@ -407,6 +407,7 @@ var _ = Describe("Dragonfly PVC Test", Ordered, func() {
 	ctx := context.Background()
 	name := "df-pvc"
 	namespace := "default"
+	schedule := "*/1 * * * *"
 
 	args := []string{
 		"--vmodule=replica=1,server_family=1",
@@ -423,6 +424,7 @@ var _ = Describe("Dragonfly PVC Test", Ordered, func() {
 					Replicas: 1,
 					Args:     args,
 					Snapshot: &dragonflydbiov1alpha1.Snapshot{
+						Cron: schedule,
 						PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{
 								corev1.ReadWriteOnce,
@@ -465,6 +467,7 @@ var _ = Describe("Dragonfly PVC Test", Ordered, func() {
 			})
 			Expect(err).To(BeNil())
 			Expect(pvcs.Items).To(HaveLen(1))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--snapshot_cron=%s", schedule)))
 
 			// TODO: Do data insert testing
 		})
