@@ -242,21 +242,20 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		if df.Spec.Authentication.PasswordFromSecret != nil {
 			// load the secret key as a password into env
 			statefulset.Spec.Template.Spec.Containers[0].Env = append(statefulset.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
-				// check the validity of this env. some cahtter around changing this
-				Name: "DFLY_PASSWORD",
+				Name: "DFLY_requirepass",
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: df.Spec.Authentication.PasswordFromSecret,
 				},
 			})
 		}
 
-		if df.Spec.Authentication.ClientCACertSecret != nil {
+		if df.Spec.Authentication.ClientCaCertSecret != nil {
 			// mount the secret as a volume
 			statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, corev1.Volume{
 				Name: TLSCACertVolumeName,
 				VolumeSource: corev1.VolumeSource{
 					Secret: &corev1.SecretVolumeSource{
-						SecretName: df.Spec.Authentication.ClientCACertSecret.Name,
+						SecretName: df.Spec.Authentication.ClientCaCertSecret.Name,
 					},
 				},
 			})

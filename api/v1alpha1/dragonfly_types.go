@@ -111,7 +111,7 @@ type Authentication struct {
 	// client certificate is signed by one of this CA. Server TLS must be enabled for this.
 	// Multiple CAs can be specified with various key names.
 	// +optional
-	ClientCACertSecret *corev1.SecretReference `json:"clientCACertSecret,omitempty"`
+	ClientCaCertSecret *corev1.SecretReference `json:"clientCaCertSecret,omitempty"`
 }
 
 // DragonflyStatus defines the observed state of Dragonfly

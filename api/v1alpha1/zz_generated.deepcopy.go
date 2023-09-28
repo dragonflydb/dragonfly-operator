@@ -34,8 +34,8 @@ func (in *Authentication) DeepCopyInto(out *Authentication) {
 		*out = new(v1.SecretKeySelector)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.ClientCACertSecret != nil {
-		in, out := &in.ClientCACertSecret, &out.ClientCACertSecret
+	if in.ClientCaCertSecret != nil {
+		in, out := &in.ClientCaCertSecret, &out.ClientCaCertSecret
 		*out = new(v1.SecretReference)
 		**out = **in
 	}

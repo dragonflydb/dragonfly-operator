@@ -877,7 +877,7 @@ spec:
               authentication:
                 description: (Optional) Dragonfly Authentication mechanism
                 properties:
-                  clientCACertSecret:
+                  clientCaCertSecret:
                     description: (Optional) If specified, the Dragonfly instance will
                       check if the client certificate is signed by one of this CA.
                       Server TLS must be enabled for this. Multiple CAs can be specified

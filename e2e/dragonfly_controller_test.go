@@ -82,7 +82,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 					},
 					Key: "password",
 				},
-				ClientCACertSecret: &corev1.SecretReference{
+				ClientCaCertSecret: &corev1.SecretReference{
 					Name: "df-client-ca-certs",
 				},
 			},
@@ -187,7 +187,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			// Authentication
 			// PasswordFromSecret
 			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(ContainElement(corev1.EnvVar{
-				Name: "DFLY_PASSWORD",
+				Name: "DFLY_requirepass",
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: df.Spec.Authentication.PasswordFromSecret,
 				},
@@ -203,7 +203,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 				Name: resources.TLSCACertVolumeName,
 				VolumeSource: corev1.VolumeSource{
 					Secret: &corev1.SecretVolumeSource{
-						SecretName:  df.Spec.Authentication.ClientCACertSecret.Name,
+						SecretName:  df.Spec.Authentication.ClientCaCertSecret.Name,
 						DefaultMode: func() *int32 { i := int32(420); return &i }(),
 					},
 				},
