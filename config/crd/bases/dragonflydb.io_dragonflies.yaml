@@ -1260,7 +1260,7 @@ spec:
               tlsSecretRef:
                 description: (Optional) Dragonfly TLS secret to used for TLS Connections
                   to Dragonfly. Dragonfly instance  must have access to this secret
-                  an be in the same namespace
+                  and be in the same namespace
                 properties:
                   name:
                     description: name is unique within a namespace to reference a

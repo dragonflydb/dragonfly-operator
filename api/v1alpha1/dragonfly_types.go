@@ -74,7 +74,7 @@ type DragonflySpec struct {
 
 	// (Optional) Dragonfly TLS secret to used for TLS
 	// Connections to Dragonfly. Dragonfly instance  must
-	// have access to this secret an be in the same namespace
+	// have access to this secret and be in the same namespace
 	// +optional
 	// +kubebuilder:validation:Optional
 	TLSSecretRef *corev1.SecretReference `json:"tlsSecretRef,omitempty"`
