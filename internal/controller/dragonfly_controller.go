@@ -264,8 +264,9 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 
-		log.Info("Updated resources for object")
-		return ctrl.Result{Requeue: true}, nil
+		log.Info("Updated resources for object. Requeing")
+		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Updated resources")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 }
 

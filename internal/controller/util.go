@@ -94,7 +94,7 @@ func replTakeover(ctx context.Context, newMaster *corev1.Pod) error {
 		Addr: fmt.Sprintf("%s:%d", newMaster.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
-	resp, err := redisClient.Do(ctx, "REPLTAKEOVER 10000").Result()
+	resp, err := redisClient.Do(ctx, "repltakeover 10000").Result()
 	if err != nil {
 		return fmt.Errorf("error running REPLTAKEOVER command: %w", err)
 	}
