@@ -71,6 +71,23 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
+	// (Optional) Dragonfly Snapshot configuration
+	// +optional
+	// +kubebuilder:validation:Optional
+	Snapshot *Snapshot `json:"snapshot,omitempty"`
+}
+
+type Snapshot struct {
+	// (Optional) Dragonfly snapshot schedule
+	// +optional
+	// +kubebuilder:validation:Optional
+	Cron string `json:"cron,omitempty"`
+
+	// (Optional) Dragonfly PVC spec
+	// +optional
+	// +kubebuilder:validation:Optional
+	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
 }
 
 // DragonflyStatus defines the observed state of Dragonfly

@@ -28,6 +28,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+var (
+	dflyUserGroup int64 = 999
+)
+
 // GetDragonflyResources returns the resources required for a Dragonfly
 // Instance
 func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]client.Object, error) {
@@ -136,6 +140,9 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 							ImagePullPolicy: corev1.PullAlways,
 						},
 					},
+					SecurityContext: &corev1.PodSecurityContext{
+						FSGroup: &dflyUserGroup,
+					},
 				},
 			},
 		},
@@ -148,6 +155,39 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 
 	if df.Spec.Args != nil {
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, df.Spec.Args...)
+	}
+
+	if df.Spec.Snapshot != nil {
+		// err if pvc is not specified while cron is specified
+		if df.Spec.Snapshot.Cron != "" && df.Spec.Snapshot.PersistentVolumeClaimSpec == nil {
+			return nil, fmt.Errorf("cron specified without a persistent volume claim")
+		}
+
+		if df.Spec.Snapshot.PersistentVolumeClaimSpec != nil {
+
+			// attach and use the PVC if specified
+			statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "df",
+					Labels: map[string]string{
+						"app":                     df.Name,
+						KubernetesPartOfLabelKey:  "dragonfly",
+						KubernetesAppNameLabelKey: "dragonfly",
+					},
+				},
+				Spec: *df.Spec.Snapshot.PersistentVolumeClaimSpec,
+			})
+
+			statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+				Name:      "df",
+				MountPath: "/dragonfly/snapshots",
+			})
+		}
+
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, "--dir=/dragonfly/snapshots")
+		if df.Spec.Snapshot.Cron != "" {
+			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--snapshot_cron=%s", df.Spec.Snapshot.Cron))
+		}
 	}
 
 	if df.Spec.Annotations != nil {
