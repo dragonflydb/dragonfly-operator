@@ -142,6 +142,13 @@ var _ = Describe("Dragonfly Reconciler", Ordered, func() {
 
 			// check for env
 			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(Equal(df.Spec.Env))
+
+			stopChan := make(chan struct{}, 1)
+			rc, err := InitRunCmd(ctx, stopChan, name, namespace, "df-pass-1")
+			defer close(stopChan)
+			Expect(err).To(BeNil())
+			err = rc.Start(ctx)
+			Expect(err).To(BeNil())
 		})
 
 		It("Increase in replicas should be propagated successfully", func() {
