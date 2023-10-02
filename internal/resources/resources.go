@@ -158,7 +158,13 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 	}
 
 	if df.Spec.Snapshot != nil {
+		// err if pvc is not specified while cron is specified
+		if df.Spec.Snapshot.Cron != "" && df.Spec.Snapshot.PersistentVolumeClaimSpec == nil {
+			return nil, fmt.Errorf("cron specified without a persistent volume claim")
+		}
+
 		if df.Spec.Snapshot.PersistentVolumeClaimSpec != nil {
+
 			// attach and use the PVC if specified
 			statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
