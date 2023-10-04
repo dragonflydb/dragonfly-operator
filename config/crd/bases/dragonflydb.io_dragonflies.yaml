@@ -1257,6 +1257,21 @@ spec:
                         type: string
                     type: object
                 type: object
+              tlsSecretRef:
+                description: (Optional) Dragonfly TLS secret to used for TLS Connections
+                  to Dragonfly. Dragonfly instance  must have access to this secret
+                  and be in the same namespace
+                properties:
+                  name:
+                    description: name is unique within a namespace to reference a
+                      secret resource.
+                    type: string
+                  namespace:
+                    description: namespace defines the space within which the secret
+                      name must be unique.
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               tolerations:
                 description: (Optional) Dragonfly pod tolerations
                 items:

@@ -32,6 +32,10 @@ var (
 	dflyUserGroup int64 = 999
 )
 
+const (
+	TlsPath = "/etc/dragonfly-tls"
+)
+
 // GetDragonflyResources returns the resources required for a Dragonfly
 // Instance
 func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]client.Object, error) {
@@ -188,6 +192,31 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		if df.Spec.Snapshot.Cron != "" {
 			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--snapshot_cron=%s", df.Spec.Snapshot.Cron))
 		}
+	}
+
+	if df.Spec.TLSSecretRef != nil {
+		statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: "dragonfly-tls",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: df.Spec.TLSSecretRef.Name,
+				},
+			},
+		})
+
+		statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "dragonfly-tls",
+			ReadOnly:  true,
+			MountPath: TlsPath,
+		})
+
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, []string{
+			// no TLS on admin port by default
+			"--no_tls_on_admin_port",
+			"--tls",
+			fmt.Sprintf("--tls_cert_file=%s/tls.crt", TlsPath),
+			fmt.Sprintf("--tls_key_file=%s/tls.key", TlsPath),
+		}...)
 	}
 
 	if df.Spec.Annotations != nil {
