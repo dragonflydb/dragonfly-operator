@@ -7,7 +7,7 @@ spec:
   podMonitorSelector:
     matchLabels:
       group: dragonfly
-      app: dragonfly-monitor
+      app: dragonfly-sample
   resources:
     requests:
       memory: 400Mi

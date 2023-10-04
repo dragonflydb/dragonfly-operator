@@ -1,10 +1,10 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: dragonfly-monitor
+  name: dragonfly-sample
   labels:
     group: dragonfly
-    app: dragonfly-monitor
+    app: dragonfly-sample
 spec:
   selector:
     matchLabels:

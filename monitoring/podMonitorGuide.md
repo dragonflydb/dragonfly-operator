@@ -13,69 +13,17 @@ curl -sL https://github.com/prometheus-operator/prometheus-operator/releases/dow
 ## Step 2:
 Now that we have installed the operator, we can create `prometheus` resources. If you have RBAC enabled, create necessary `serviceaccount`, `clusterrole` and `clusterrolebinding` resources first.
 
-ServiceAccount -
-```yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: prometheus
+```
+$ kubectl apply -f monitoring/promServiceAccount.yaml
+$ kubectl apply -f monitoring/promClusterRole.yaml
+$ kubectl apply -f monitoring/promClusterBinding.yaml
 ```
 
-Create ClusterRole -
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: prometheus
-rules:
-- apiGroups: [""]
-  resources:
-  - nodes
-  - nodes/metrics
-  - services
-  - endpoints
-  - pods
-  verbs: ["get", "list", "watch"]
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses
-  verbs: ["get", "list", "watch"]
-- nonResourceURLs: ["/metrics"]
-  verbs: ["get"]
-```
+This will allow prometheus to scrape data from dragonfly resources. Once we
+configured the RBAC, we can now create a PodMonitor resource.
 
-ClusterRoleBinding -
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: prometheus
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: prometheus
-subjects:
-- kind: ServiceAccount
-  name: prometheus
-  namespace: default
 ```
-
-Once you configured the RBAC, create a ServiceMonitor resource -
-```yaml
-apiVersion: monitoring.coreos.com/v1
-kind: PodMonitor
-metadata:
-  name: dragonfly-monitor
-  labels:
-    group: dragonfly
-    app: dragonfly-monitor
-spec:
-  selector:
-    matchLabels:
-      app: dragonfly-sample
-  podMetricsEndpoints:
-  - port: admin
+kubectl apply -f monitoring/podMonitor.yaml
 ```
 
 Note that we must specify `app` label under the `matchLabels` (`selector`) field. It is used to target the desired dragonfly instances. The value of `app` label is the name of your dragonfly resource name (in this case, `dragonfly-sample`).
