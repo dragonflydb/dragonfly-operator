@@ -264,10 +264,33 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 
-		log.Info("Updated resources for object. Requeing")
+		log.Info("Updated resources for object")
+
+		// perform a rollout only if the pod spec has changed
+		if err := r.Get(ctx, client.ObjectKey{Namespace: df.Namespace, Name: df.Name}, &statefulSet); err != nil {
+			log.Error(err, "could not get statefulset")
+			return ctrl.Result{}, err
+		}
+
+		// Check if the pod spec has changed
+		if statefulSet.Status.UpdatedReplicas != statefulSet.Status.Replicas {
+			log.Info("Pod spec has changed, performing a rollout")
+			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Starting a rollout")
+
+			// Start rollout and update status
+			// update status so that we can track progress
+			df.Status.IsRollingUpdate = true
+			if err := r.Status().Update(ctx, &df); err != nil {
+				log.Error(err, "could not update the Dragonfly object")
+				return ctrl.Result{Requeue: true}, err
+			}
+
+			// requeue so that the rollout is processed
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
 		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Updated resources")
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
