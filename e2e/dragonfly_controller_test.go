@@ -187,7 +187,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			// Authentication
 			// PasswordFromSecret
 			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(ContainElement(corev1.EnvVar{
-				Name: "DFLY_requirepass",
+				Name: "DFLY_PASSWORD",
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: df.Spec.Authentication.PasswordFromSecret,
 				},
