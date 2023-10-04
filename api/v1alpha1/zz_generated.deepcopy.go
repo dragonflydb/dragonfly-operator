@@ -124,6 +124,11 @@ func (in *DragonflySpec) DeepCopyInto(out *DragonflySpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.TLSSecretRef != nil {
+		in, out := &in.TLSSecretRef, &out.TLSSecretRef
+		*out = new(v1.SecretReference)
+		**out = **in
+	}
 	if in.Snapshot != nil {
 		in, out := &in.Snapshot, &out.Snapshot
 		*out = new(Snapshot)

@@ -18,7 +18,13 @@ package e2e
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"time"
 
 	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -35,7 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Dragonfly Reconciler", Ordered, func() {
+var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 	ctx := context.Background()
 	name := "df-test"
 	namespace := "default"
@@ -481,6 +487,111 @@ var _ = Describe("Dragonfly PVC Test", Ordered, func() {
 
 	})
 })
+
+var _ = Describe("Dragonfly TLS tests", Ordered, func() {
+	ctx := context.Background()
+	name := "df-tls"
+	namespace := "default"
+
+	args := []string{
+		"--vmodule=replica=1,server_family=1",
+	}
+
+	df := dragonflydbiov1alpha1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: dragonflydbiov1alpha1.DragonflySpec{
+			Replicas: 2,
+			Args:     args,
+			Env: []corev1.EnvVar{
+				{
+					Name:  "DFLY_PASSWORD",
+					Value: "df-pass-1",
+				},
+			},
+			TLSSecretRef: &corev1.SecretReference{
+				Name: "df-tls",
+			},
+		},
+	}
+
+	Context("Dragonfly TLS creation", func() {
+		It("Should create successfully", func() {
+			// create the secret
+			cert, key, err := generateSelfSignedCert(name)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Create(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "df-tls",
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"tls.crt": cert,
+					"tls.key": key,
+				},
+			})
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Create(ctx, &df)
+			Expect(err).To(BeNil())
+
+			// Wait until Dragonfly object is marked initialized
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+
+			// Check for service and statefulset
+			var ss appsv1.StatefulSet
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &ss)
+			Expect(err).To(BeNil())
+
+			var svc corev1.Service
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &svc)
+			Expect(err).To(BeNil())
+
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--tls"))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--no_tls_on_admin_port"))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_cert_file=%s/tls.crt", resources.TlsPath)))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_key_file=%s/tls.key", resources.TlsPath)))
+		})
+	})
+})
+
+func generateSelfSignedCert(commonName string) ([]byte, []byte, error) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate private key: %v", err)
+	}
+
+	notBefore := time.Now()
+	notAfter := notBefore.Add(365 * 24 * time.Hour)
+
+	template := x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: commonName},
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		BasicConstraintsValid: true,
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create certificate: %v", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+
+	return certPEM, keyPEM, nil
+}
 
 func waitForDragonflyPhase(ctx context.Context, c client.Client, name, namespace, phase string, maxDuration time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, maxDuration)
