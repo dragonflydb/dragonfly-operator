@@ -67,6 +67,11 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 
+	// (Optional) Dragonfly Authentication mechanism
+	// +optional
+	// +kubebuilder:validation:Optional
+	Authentication *Authentication `json:"authentication,omitempty"`
+
 	// (Optional) Dragonfly pod service account name
 	// +optional
 	// +kubebuilder:validation:Optional
@@ -95,6 +100,18 @@ type Snapshot struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
+}
+
+type Authentication struct {
+	// (Optional) Dragonfly Password from Secret as a reference to a specific key
+	// +optional
+	PasswordFromSecret *corev1.SecretKeySelector `json:"passwordFromSecret,omitempty"`
+
+	// (Optional) If specified, the Dragonfly instance will check if the
+	// client certificate is signed by one of this CA. Server TLS must be enabled for this.
+	// Multiple CAs can be specified with various key names.
+	// +optional
+	ClientCaCertSecret *corev1.SecretReference `json:"clientCaCertSecret,omitempty"`
 }
 
 // DragonflyStatus defines the observed state of Dragonfly

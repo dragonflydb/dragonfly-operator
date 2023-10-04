@@ -874,6 +874,46 @@ spec:
                 items:
                   type: string
                 type: array
+              authentication:
+                description: (Optional) Dragonfly Authentication mechanism
+                properties:
+                  clientCaCertSecret:
+                    description: (Optional) If specified, the Dragonfly instance will
+                      check if the client certificate is signed by one of this CA.
+                      Server TLS must be enabled for this. Multiple CAs can be specified
+                      with various key names.
+                    properties:
+                      name:
+                        description: name is unique within a namespace to reference
+                          a secret resource.
+                        type: string
+                      namespace:
+                        description: namespace defines the space within which the
+                          secret name must be unique.
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  passwordFromSecret:
+                    description: (Optional) Dragonfly Password from Secret as a reference
+                      to a specific key
+                    properties:
+                      key:
+                        description: The key of the secret to select from.  Must be
+                          a valid secret key.
+                        type: string
+                      name:
+                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          TODO: Add other useful fields. apiVersion, kind, uid?'
+                        type: string
+                      optional:
+                        description: Specify whether the Secret or its key must be
+                          defined
+                        type: boolean
+                    required:
+                    - key
+                    type: object
+                    x-kubernetes-map-type: atomic
+                type: object
               env:
                 description: (Optional) Env variables to add to the Dragonfly pods.
                 items:

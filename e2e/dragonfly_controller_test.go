@@ -71,8 +71,19 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			Args:      args,
 			Env: []corev1.EnvVar{
 				{
-					Name:  "DFLY_PASSWORD",
-					Value: "df-pass-1",
+					Name:  "ENV-1",
+					Value: "value-1",
+				},
+			},
+			Authentication: &resourcesv1.Authentication{
+				PasswordFromSecret: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "df-secret",
+					},
+					Key: "password",
+				},
+				ClientCaCertSecret: &corev1.SecretReference{
+					Name: "df-client-ca-certs",
 				},
 			},
 			Affinity: &corev1.Affinity{
@@ -98,7 +109,31 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 
 	Context("Dragonfly resource creation", func() {
 		It("Should create successfully", func() {
-			err := k8sClient.Create(ctx, &df)
+			// create the secret
+			err := k8sClient.Create(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "df-client-ca-certs",
+					Namespace: namespace,
+				},
+				StringData: map[string]string{
+					"ca.crt": "foo",
+				},
+			})
+			Expect(err).To(BeNil())
+
+			// create the secret
+			err = k8sClient.Create(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "df-secret",
+					Namespace: namespace,
+				},
+				StringData: map[string]string{
+					"password": "df-pass-1",
+				},
+			})
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Create(ctx, &df)
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked initialized
@@ -124,7 +159,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources).To(Equal(*df.Spec.Resources))
 			// check args of statefulset
 			expectArgs := append(resources.DefaultDragonflyArgs, df.Spec.Args...)
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(Equal(expectArgs))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElements(expectArgs))
 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
@@ -147,7 +182,32 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			Expect(ss.Spec.Template.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(Equal(df.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
 
 			// check for env
-			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(Equal(df.Spec.Env))
+			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(ContainElements(df.Spec.Env))
+
+			// Authentication
+			// PasswordFromSecret
+			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(ContainElement(corev1.EnvVar{
+				Name: "DFLY_PASSWORD",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: df.Spec.Authentication.PasswordFromSecret,
+				},
+			}))
+
+			// ClientCACertSecret
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("%s=%s", resources.TLSCACertDirArg, resources.TLSCACertDir)))
+			Expect(ss.Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
+				Name:      resources.TLSCACertVolumeName,
+				MountPath: resources.TLSCACertDir,
+			}))
+			Expect(ss.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
+				Name: resources.TLSCACertVolumeName,
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName:  df.Spec.Authentication.ClientCaCertSecret.Name,
+						DefaultMode: func() *int32 { i := int32(420); return &i }(),
+					},
+				},
+			}))
 
 			stopChan := make(chan struct{}, 1)
 			rc, err := InitRunCmd(ctx, stopChan, name, namespace, "df-pass-1")
@@ -395,7 +455,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 
 			// check for pod args
 			expectedArgs := append(resources.DefaultDragonflyArgs, newArgs...)
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(Equal(expectedArgs))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElements(expectedArgs))
 
 			// check for pod resources
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU].Equal(newResources.Limits[corev1.ResourceCPU])).To(BeTrue())
