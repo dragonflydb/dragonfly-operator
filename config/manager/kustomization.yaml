@@ -1,8 +1,8 @@
 resources:
-- manager.yaml
+  - manager.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
-- name: controller
-  newName: docker.dragonflydb.io/dragonflydb/operator
-  newTag: v0.0.7
+  - name: controller
+    newName: docker.dragonflydb.io/dragonflydb/operator
+    newTag: v0.0.8
