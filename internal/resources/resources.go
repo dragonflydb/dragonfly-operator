@@ -165,6 +165,10 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 	}
 
 	if df.Spec.Snapshot != nil {
+		if df.Spec.Snapshot.S3 != "" && df.Spec.Snapshot.PersistentVolumeClaimSpec != nil {
+			return nil, fmt.Errorf("s3 and pvc cannot be specified together")
+		}
+
 		// err if pvc is not specified while cron is specified
 		if df.Spec.Snapshot.Cron != "" && df.Spec.Snapshot.PersistentVolumeClaimSpec == nil {
 			return nil, fmt.Errorf("cron specified without a persistent volume claim")
@@ -189,9 +193,14 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 				Name:      "df",
 				MountPath: "/dragonfly/snapshots",
 			})
+
+			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, "--dir=/dragonfly/snapshots")
 		}
 
-		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, "--dir=/dragonfly/snapshots")
+		if df.Spec.Snapshot.S3 != "" {
+			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--dir=s3://%s", df.Spec.Snapshot.S3))
+		}
+
 		if df.Spec.Snapshot.Cron != "" {
 			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--snapshot_cron=%s", df.Spec.Snapshot.Cron))
 		}

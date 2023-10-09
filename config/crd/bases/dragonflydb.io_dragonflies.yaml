@@ -1296,6 +1296,11 @@ spec:
                           backing this claim.
                         type: string
                     type: object
+                  s3:
+                    description: (Optional) S3 URL of the bucket to store snapshots
+                      Make sure the Dragonfly pod service account has access to the
+                      S3 bucket
+                    type: string
                 type: object
               tlsSecretRef:
                 description: (Optional) Dragonfly TLS secret to used for TLS Connections
