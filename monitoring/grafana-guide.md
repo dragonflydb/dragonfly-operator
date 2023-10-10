@@ -66,4 +66,4 @@ First, port-forward the grafana service so that you can access the UI from local
 kubectl port-forward services/grafana-ui 3000:80
 ```
 
-Now go to `localhost:3000` and add a Prometheus data source. Use `http://prometheus-svc:9090` as the datasource url. After that, import `dragonfly-dashboard.json` to the dashboard.
+Now go to `localhost:3000` and add a Prometheus data source. Use `http://prometheus-svc:9090` as the datasource url. After that, import `grafana-dashboard.json` to the dashboard.
