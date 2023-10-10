@@ -99,7 +99,7 @@ func checkAndK8sPortForwardRedis(ctx context.Context, clientset *kubernetes.Clie
 		return nil, fmt.Errorf("no master pod found")
 	}
 
-	fw, err := portForward(ctx, clientset, config, master, stopChan, resources.DragonflyAdminPort)
+	fw, err := portForward(ctx, clientset, config, master, stopChan, resources.DragonflyPort)
 	if err != nil {
 		return nil, err
 	}
