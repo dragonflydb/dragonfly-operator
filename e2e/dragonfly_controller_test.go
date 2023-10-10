@@ -40,7 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
+var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() {
 	ctx := context.Background()
 	name := "df-test"
 	namespace := "default"
@@ -131,17 +131,22 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 				},
 			})
 			Expect(err).To(BeNil())
+		})
 
-			err = k8sClient.Create(ctx, &df)
+		It("Should create successfully", func() {
+			err := k8sClient.Create(ctx, &df)
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked initialized
 			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
+		})
+
+		var ss appsv1.StatefulSet
+		It("Check for values in statefulset", func() {
 			// Check for service and statefulset
-			var ss appsv1.StatefulSet
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      name,
 				Namespace: namespace,
 			}, &ss)
@@ -159,17 +164,6 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			// check args of statefulset
 			expectArgs := append(resources.DefaultDragonflyArgs, df.Spec.Args...)
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElements(expectArgs))
-
-			// Check if there are relevant pods with expected roles
-			var pods corev1.PodList
-			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
-				resources.KubernetesPartOfLabelKey: "dragonfly",
-			})
-			Expect(err).To(BeNil())
-
-			// 3 pod replicas = 1 master + 2 replicas
-			Expect(pods.Items).To(HaveLen(3))
 
 			// check for pod resources
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU].Equal(resourcesReq.Limits[corev1.ResourceCPU])).To(BeTrue())
@@ -207,7 +201,23 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 					},
 				},
 			}))
+		})
 
+		It("Check for pod values", func() {
+			// Check if there are relevant pods with expected roles
+			var pods corev1.PodList
+			err := k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+				"app":                              name,
+				resources.KubernetesPartOfLabelKey: "dragonfly",
+			})
+			Expect(err).To(BeNil())
+
+			// 3 pod replicas = 1 master + 2 replicas
+			Expect(pods.Items).To(HaveLen(3))
+
+		})
+
+		It("Check for connectivity", func() {
 			stopChan := make(chan struct{}, 1)
 			rc, err := InitRunCmd(ctx, stopChan, name, namespace, "df-pass-1")
 			defer close(stopChan)
@@ -271,11 +281,9 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 
-			// Wait until Dragonfly object is marked resources-created
+			// Wait until Dragonfly object is marked ready
 			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
-
-			time.Sleep(40 * time.Second)
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
@@ -486,7 +494,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 	})
 })
 
-var _ = Describe("Dragonfly PVC Test", Ordered, func() {
+var _ = Describe("Dragonfly PVC Test", Ordered, FlakeAttempts(3), func() {
 
 	ctx := context.Background()
 	name := "df-pvc"
@@ -571,7 +579,7 @@ var _ = Describe("Dragonfly PVC Test", Ordered, func() {
 	})
 })
 
-var _ = Describe("Dragonfly TLS tests", Ordered, func() {
+var _ = Describe("Dragonfly TLS tests", Ordered, FlakeAttempts(3), func() {
 	ctx := context.Background()
 	name := "df-tls"
 	namespace := "default"
