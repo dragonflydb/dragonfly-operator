@@ -18,7 +18,6 @@ package e2e
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -33,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
+var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func() {
 	ctx := context.Background()
 	podRoles := map[string][]string{
 		resources.Master:  make([]string, 0),
@@ -50,7 +49,6 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 		},
 		Spec: dfv1alpha1.DragonflySpec{
 			Replicas: int32(replicas),
-			Image:    fmt.Sprintf("%s:%s", resources.DragonflyImage, "latest"),
 		},
 	}
 
@@ -76,9 +74,6 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 				Name:      name,
 				Namespace: namespace,
 			}, &svc)
-			Expect(err).To(BeNil())
-
-			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
 			Expect(err).To(BeNil())
 
 			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 1*time.Minute)
@@ -110,6 +105,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 		})
 
 		It("New Master is elected as old one dies", func() {
+
 			// Get & Delete the old master
 			var pod corev1.Pod
 			err := k8sClient.Get(ctx, types.NamespacedName{

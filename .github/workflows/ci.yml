@@ -78,7 +78,7 @@ jobs:
           DOCKER_BUILDKIT: 1
           DOCKER_USERNAME: ${{ github.actor }}
           DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: publish github release
         uses: softprops/action-gh-release@v1
         with:
