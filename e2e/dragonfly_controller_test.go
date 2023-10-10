@@ -472,6 +472,18 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			// check for affinity
 			Expect(ss.Spec.Template.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(Equal(newAffinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
 		})
+
+		It("Cleanup", func() {
+			var df dragonflydbiov1alpha1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil())
+		})
 	})
 })
 
@@ -543,6 +555,18 @@ var _ = Describe("Dragonfly PVC Test", Ordered, func() {
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--snapshot_cron=%s", schedule)))
 
 			// TODO: Do data insert testing
+		})
+
+		It("Cleanup", func() {
+			var df dragonflydbiov1alpha1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil())
 		})
 
 	})
@@ -621,6 +645,18 @@ var _ = Describe("Dragonfly TLS tests", Ordered, func() {
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--no_tls_on_admin_port"))
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_cert_file=%s/tls.crt", resources.TlsPath)))
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_key_file=%s/tls.key", resources.TlsPath)))
+		})
+
+		It("Cleanup", func() {
+			var df dragonflydbiov1alpha1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil())
 		})
 	})
 })

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/controller"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	. "github.com/onsi/ginkgo/v2"
@@ -203,6 +204,18 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, func() {
 			// One Master & Three Replicas
 			Expect(podRoles[resources.Master]).To(HaveLen(1))
 			Expect(podRoles[resources.Replica]).To(HaveLen(replicas - 1))
+		})
+
+		It("Cleanup", func() {
+			var df dragonflydbiov1alpha1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil())
 		})
 	})
 
