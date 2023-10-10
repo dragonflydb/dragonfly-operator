@@ -27,7 +27,6 @@ import (
 	"math/big"
 	"time"
 
-	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/controller"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
@@ -60,12 +59,12 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 		"--vmodule=replica=1,server_family=1",
 	}
 
-	df := dragonflydbiov1alpha1.Dragonfly{
+	df := resourcesv1.Dragonfly{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: dragonflydbiov1alpha1.DragonflySpec{
+		Spec: resourcesv1.DragonflySpec{
 			Replicas:  3,
 			Resources: &resourcesReq,
 			Args:      args,
@@ -472,6 +471,18 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, func() {
 			// check for affinity
 			Expect(ss.Spec.Template.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(Equal(newAffinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
 		})
+
+		It("Cleanup", func() {
+			var df resourcesv1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil())
+		})
 	})
 })
 
@@ -488,15 +499,15 @@ var _ = Describe("Dragonfly PVC Test", Ordered, func() {
 
 	Context("Dragonfly resource creation and data insertion", func() {
 		It("Should create successfully", func() {
-			err := k8sClient.Create(ctx, &dragonflydbiov1alpha1.Dragonfly{
+			err := k8sClient.Create(ctx, &resourcesv1.Dragonfly{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
 					Namespace: namespace,
 				},
-				Spec: dragonflydbiov1alpha1.DragonflySpec{
+				Spec: resourcesv1.DragonflySpec{
 					Replicas: 1,
 					Args:     args,
-					Snapshot: &dragonflydbiov1alpha1.Snapshot{
+					Snapshot: &resourcesv1.Snapshot{
 						Cron: schedule,
 						PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{
@@ -545,6 +556,18 @@ var _ = Describe("Dragonfly PVC Test", Ordered, func() {
 			// TODO: Do data insert testing
 		})
 
+		It("Cleanup", func() {
+			var df resourcesv1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil())
+		})
+
 	})
 })
 
@@ -557,12 +580,12 @@ var _ = Describe("Dragonfly TLS tests", Ordered, func() {
 		"--vmodule=replica=1,server_family=1",
 	}
 
-	df := dragonflydbiov1alpha1.Dragonfly{
+	df := resourcesv1.Dragonfly{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: dragonflydbiov1alpha1.DragonflySpec{
+		Spec: resourcesv1.DragonflySpec{
 			Replicas: 2,
 			Args:     args,
 			Env: []corev1.EnvVar{
@@ -621,6 +644,18 @@ var _ = Describe("Dragonfly TLS tests", Ordered, func() {
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--no_tls_on_admin_port"))
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_cert_file=%s/tls.crt", resources.TlsPath)))
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_key_file=%s/tls.key", resources.TlsPath)))
+		})
+
+		It("Cleanup", func() {
+			var df resourcesv1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil())
 		})
 	})
 })
