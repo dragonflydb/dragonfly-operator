@@ -550,10 +550,11 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			err = k8sClient.Delete(ctx, &pod)
 			Expect(err).To(BeNil())
 
+			time.Sleep(10 * time.Second)
+
 			// Wait until Dragonfly object is marked initialized
 			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
-
 			// check if the pod is created
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      fmt.Sprintf("%s-0", name),
