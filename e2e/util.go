@@ -78,12 +78,7 @@ func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace st
 	return false, nil
 }
 
-type RunCmd struct {
-	*redis.Client
-	*portforward.PortForwarder
-}
-
-func InitRunCmd(ctx context.Context, stopChan chan struct{}, name, namespace, password string) (*RunCmd, error) {
+func checkAndK8sPortForwardRedis(ctx context.Context, stopChan chan struct{}, name, namespace, password string) (*redis.Client, error) {
 	home := homedir.HomeDir()
 	if home == "" {
 		return nil, fmt.Errorf("can't find kube-config")
@@ -108,6 +103,10 @@ func InitRunCmd(ctx context.Context, stopChan chan struct{}, name, namespace, pa
 		return nil, err
 	}
 
+	if len(pods.Items) == 0 {
+		return nil, fmt.Errorf("no pods found")
+	}
+
 	var master *corev1.Pod
 	for _, pod := range pods.Items {
 		if pod.Labels[resources.Role] == resources.Master {
@@ -116,16 +115,43 @@ func InitRunCmd(ctx context.Context, stopChan chan struct{}, name, namespace, pa
 		}
 	}
 
+	if master == nil {
+		return nil, fmt.Errorf("no master pod found")
+	}
+
 	fw, err := portForward(ctx, clientset, config, master, stopChan, resources.DragonflyPort)
 	if err != nil {
 		return nil, err
 	}
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("localhost:%d", resources.DragonflyPort),
-		Password: password,
-	})
-	return &RunCmd{Client: redisClient, PortForwarder: fw}, nil
+	redisOptions := &redis.Options{
+		Addr: fmt.Sprintf("localhost:%d", resources.DragonflyPort),
+	}
+
+	if password != "" {
+		redisOptions.Password = password
+	}
+
+	redisClient := redis.NewClient(redisOptions)
+
+	errChan := make(chan error, 1)
+	go func() { errChan <- fw.ForwardPorts() }()
+
+	select {
+	case err = <-errChan:
+		return nil, errors.Wrap(err, "unable to forward ports")
+	case <-fw.Ready:
+	}
+
+	pingCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+
+	err = redisClient.Ping(pingCtx).Err()
+	if err != nil {
+		return nil, fmt.Errorf("unable to ping instance: %w", err)
+	}
+
+	return redisClient, nil
 }
 
 func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, stopChan chan struct{}, port int) (*portforward.PortForwarder, error) {
@@ -150,25 +176,4 @@ func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *r
 		return nil, err
 	}
 	return fw, err
-}
-
-func (r *RunCmd) Start(ctx context.Context) error {
-	errChan := make(chan error, 1)
-	var err error
-	go func() { errChan <- r.ForwardPorts() }()
-
-	select {
-	case err = <-errChan:
-		return errors.Wrap(err, "port forwarding failed")
-	case <-r.Ready:
-	}
-
-	pingCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
-
-	err = r.Ping(pingCtx).Err()
-	if err != nil {
-		return fmt.Errorf("unable to ping instance")
-	}
-	return nil
 }
