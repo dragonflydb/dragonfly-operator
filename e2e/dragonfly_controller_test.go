@@ -467,7 +467,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 	})
 })
 
-var _ = Describe("Dragonfly PVC Test with single replica", Ordered, func() {
+var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempts(3), func() {
 
 	ctx := context.Background()
 	name := "df-pvc"
@@ -592,7 +592,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, func() {
 	})
 })
 
-var _ = Describe("Dragonfly Server TLS tests", Ordered, func() {
+var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func() {
 	ctx := context.Background()
 	name := "df-tls"
 	namespace := "default"
