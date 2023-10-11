@@ -1442,29 +1442,49 @@
 	],
 	"templating": {
 	  "list": [
+
 		{
-		  "current": {},
-		  "datasource": {
-			"type": "prometheus",
-			"uid": "${DS_PROMETHEUS}"
-		  },
-		  "definition": "label_values(dragonfly_uptime_in_seconds,pod)",
-		  "hide": 0,
-		  "includeAll": false,
-		  "label": "instance",
-		  "multi": false,
-		  "name": "instance",
-		  "options": [],
-		  "query": {
-			"query": "label_values(dragonfly_uptime_in_seconds,pod)",
-			"refId": "PrometheusVariableQueryEditor-VariableQuery"
-		  },
-		  "refresh": 1,
-		  "regex": "",
-		  "skipUrlSync": false,
-		  "sort": 0,
-		  "type": "query"
-		}
+			"current": {},
+			"definition": "label_values(dragonfly_uptime_in_seconds,app)",
+			"hide": 0,
+			"includeAll": false,
+			"label": "",
+			"multi": false,
+			"name": "Dragonfly",
+			"options": [],
+			"query": {
+			  "query": "label_values(dragonfly_uptime_in_seconds,app)",
+			  "refId": "PrometheusVariableQueryEditor-VariableQuery"
+			},
+			"refresh": 1,
+			"regex": "",
+			"skipUrlSync": false,
+			"sort": 0,
+			"type": "query"
+		},
+		{
+			"current": {},
+			"datasource": {
+			  "type": "prometheus",
+			  "uid": "${DS_PROMETHEUS}"
+			},
+			"definition": "label_values(dragonfly_uptime_in_seconds{app=\"$Dragonfly\"},pod)",
+			"hide": 0,
+			"includeAll": false,
+			"label": "instance",
+			"multi": false,
+			"name": "instance",
+			"options": [],
+			"query": {
+			  "query": "label_values(dragonfly_uptime_in_seconds{app=\"$Dragonfly\"},pod)",
+			  "refId": "PrometheusVariableQueryEditor-VariableQuery"
+			},
+			"refresh": 1,
+			"regex": "",
+			"skipUrlSync": false,
+			"sort": 0,
+			"type": "query"
+		  }
 	  ]
 	},
 	"time": {
