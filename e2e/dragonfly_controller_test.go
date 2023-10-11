@@ -189,14 +189,9 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 
 		It("Check for connectivity", func() {
 			stopChan := make(chan struct{}, 1)
-			_, err := checkAndK8sPortForwardRedis(ctx, stopChan, name, namespace, password)
+			_, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password)
 			Expect(err).To(BeNil())
 			defer close(stopChan)
-			// check for ping
-			stopChan = make(chan struct{}, 1)
-			_, err = checkAndK8sPortForwardRedis(ctx, stopChan, name, namespace, password)
-			Expect(err).To(BeNil())
-
 		})
 
 		It("Increase in replicas should be propagated successfully", func() {
@@ -468,7 +463,6 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 })
 
 var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempts(3), func() {
-
 	ctx := context.Background()
 	name := "df-pvc"
 	namespace := "default"
@@ -504,14 +498,16 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 				},
 			})
 			Expect(err).To(BeNil())
+		})
 
+		It("Resources should exist", func() {
 			// Wait until Dragonfly object is marked initialized
 			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      name,
 				Namespace: namespace,
 			}, &ss)
@@ -536,7 +532,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 
 			// Insert Data
 			stopChan := make(chan struct{}, 1)
-			rc, err := checkAndK8sPortForwardRedis(ctx, stopChan, name, namespace, "")
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "")
 			Expect(err).To(BeNil())
 
 			// Insert test data
@@ -567,7 +563,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 
 			// recreate Redis Client on the new pod
 			stopChan = make(chan struct{}, 1)
-			rc, err = checkAndK8sPortForwardRedis(ctx, stopChan, name, namespace, "df-pass-1")
+			rc, err = checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "")
 			defer close(stopChan)
 			Expect(err).To(BeNil())
 
@@ -609,6 +605,9 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 		Spec: resourcesv1.DragonflySpec{
 			Replicas: 2,
 			Args:     args,
+			TLSSecretRef: &corev1.SecretReference{
+				Name: "df-tls",
+			},
 		},
 	}
 
@@ -633,13 +632,15 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 			err = k8sClient.Create(ctx, &df)
 			Expect(err).To(BeNil())
 
+		})
+		It("Resources should exist", func() {
 			// Wait until Dragonfly object is marked initialized
 			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      name,
 				Namespace: namespace,
 			}, &ss)
