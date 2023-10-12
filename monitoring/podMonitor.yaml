@@ -9,5 +9,7 @@ spec:
   selector:
     matchLabels:
       app: dragonfly-sample
+  podTargetLabels:
+    - app
   podMetricsEndpoints:
   - port: admin
