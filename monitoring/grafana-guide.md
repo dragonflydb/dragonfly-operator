@@ -2,7 +2,9 @@
 
 This doc assumes that you have setup the necessary Prometheus resources
 to monitor dragonfly pods. Please refer to [pod-monitor-guide](podMonitorGuide.md)
-for further information on PodMonitor setup.
+for further information on PodMonitor setup. If you already have Grafana instance
+in your cluster, use `grafana-dashboard.json` to import the dashboard.
+
 
 ## Step 1: Install Grafana helm chart
 
