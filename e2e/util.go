@@ -68,7 +68,7 @@ func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace st
 		return false, nil
 	}
 
-	if statefulSet.Status.ReadyReplicas == *statefulSet.Spec.Replicas && statefulSet.Status.CurrentRevision == statefulSet.Status.UpdateRevision {
+	if statefulSet.Status.ReadyReplicas == *statefulSet.Spec.Replicas {
 		return true, nil
 	}
 
