@@ -81,9 +81,6 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 					},
 					Key: "password",
 				},
-				ClientCaCertSecret: &corev1.SecretReference{
-					Name: "df-client-ca-certs",
-				},
 			},
 			Affinity: &corev1.Affinity{
 				NodeAffinity: &corev1.NodeAffinity{
@@ -107,27 +104,16 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 	}
 
 	Context("Dragonfly resource creation", func() {
+		password := "df-pass-1"
 		It("Should create successfully", func() {
 			// create the secret
 			err := k8sClient.Create(ctx, &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "df-client-ca-certs",
-					Namespace: namespace,
-				},
-				StringData: map[string]string{
-					"ca.crt": "foo",
-				},
-			})
-			Expect(err).To(BeNil())
-
-			// create the secret
-			err = k8sClient.Create(ctx, &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "df-secret",
 					Namespace: namespace,
 				},
 				StringData: map[string]string{
-					"password": "df-pass-1",
+					"password": password,
 				},
 			})
 			Expect(err).To(BeNil())
@@ -185,22 +171,6 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 					SecretKeyRef: df.Spec.Authentication.PasswordFromSecret,
 				},
 			}))
-
-			// ClientCACertSecret
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("%s=%s", resources.TLSCACertDirArg, resources.TLSCACertDir)))
-			Expect(ss.Spec.Template.Spec.Containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
-				Name:      resources.TLSCACertVolumeName,
-				MountPath: resources.TLSCACertDir,
-			}))
-			Expect(ss.Spec.Template.Spec.Volumes).To(ContainElement(corev1.Volume{
-				Name: resources.TLSCACertVolumeName,
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName:  df.Spec.Authentication.ClientCaCertSecret.Name,
-						DefaultMode: func() *int32 { i := int32(420); return &i }(),
-					},
-				},
-			}))
 		})
 
 		It("Check for pod values", func() {
@@ -219,11 +189,9 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 
 		It("Check for connectivity", func() {
 			stopChan := make(chan struct{}, 1)
-			rc, err := InitRunCmd(ctx, stopChan, name, namespace, "df-pass-1")
+			_, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password)
+			Expect(err).To(BeNil())
 			defer close(stopChan)
-			Expect(err).To(BeNil())
-			err = rc.Start(ctx)
-			Expect(err).To(BeNil())
 		})
 
 		It("Increase in replicas should be propagated successfully", func() {
@@ -327,7 +295,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 		})
 
 		It("Update to image should be propagated successfully", func() {
-			newImage := resources.DragonflyImage + ":v1.1.0"
+			newImage := resources.DragonflyImage + ":v1.9.0"
 			// Update df to the latest
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      name,
@@ -494,8 +462,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 	})
 })
 
-var _ = Describe("Dragonfly PVC Test", Ordered, FlakeAttempts(3), func() {
-
+var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempts(3), func() {
 	ctx := context.Background()
 	name := "df-pvc"
 	namespace := "default"
@@ -531,14 +498,16 @@ var _ = Describe("Dragonfly PVC Test", Ordered, FlakeAttempts(3), func() {
 				},
 			})
 			Expect(err).To(BeNil())
+		})
 
+		It("Resources should exist", func() {
 			// Wait until Dragonfly object is marked initialized
 			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      name,
 				Namespace: namespace,
 			}, &ss)
@@ -561,7 +530,48 @@ var _ = Describe("Dragonfly PVC Test", Ordered, FlakeAttempts(3), func() {
 			Expect(pvcs.Items).To(HaveLen(1))
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--snapshot_cron=%s", schedule)))
 
-			// TODO: Do data insert testing
+			// Insert Data
+			stopChan := make(chan struct{}, 1)
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "")
+			Expect(err).To(BeNil())
+
+			// Insert test data
+			Expect(rc.Set(ctx, "foo", "bar", 0).Err()).To(BeNil())
+			close(stopChan)
+
+			// delete the single replica
+			var pod corev1.Pod
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      fmt.Sprintf("%s-0", name),
+				Namespace: namespace,
+			}, &pod)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &pod)
+			Expect(err).To(BeNil())
+
+			time.Sleep(10 * time.Second)
+
+			// Wait until Dragonfly object is marked initialized
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
+			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			// check if the pod is created
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      fmt.Sprintf("%s-0", name),
+				Namespace: namespace,
+			}, &pod)
+			Expect(err).To(BeNil())
+
+			// recreate Redis Client on the new pod
+			stopChan = make(chan struct{}, 1)
+			rc, err = checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "")
+			defer close(stopChan)
+			Expect(err).To(BeNil())
+
+			// check if the Data exists
+			data, err := rc.Get(ctx, "foo").Result()
+			Expect(err).To(BeNil())
+			Expect(data).To(Equal("bar"))
 		})
 
 		It("Cleanup", func() {
@@ -579,7 +589,7 @@ var _ = Describe("Dragonfly PVC Test", Ordered, FlakeAttempts(3), func() {
 	})
 })
 
-var _ = Describe("Dragonfly TLS tests", Ordered, FlakeAttempts(3), func() {
+var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func() {
 	ctx := context.Background()
 	name := "df-tls"
 	namespace := "default"
@@ -596,12 +606,6 @@ var _ = Describe("Dragonfly TLS tests", Ordered, FlakeAttempts(3), func() {
 		Spec: resourcesv1.DragonflySpec{
 			Replicas: 2,
 			Args:     args,
-			Env: []corev1.EnvVar{
-				{
-					Name:  "DFLY_PASSWORD",
-					Value: "df-pass-1",
-				},
-			},
 			TLSSecretRef: &corev1.SecretReference{
 				Name: "df-tls",
 			},
@@ -629,13 +633,15 @@ var _ = Describe("Dragonfly TLS tests", Ordered, FlakeAttempts(3), func() {
 			err = k8sClient.Create(ctx, &df)
 			Expect(err).To(BeNil())
 
+		})
+		It("Resources should exist", func() {
 			// Wait until Dragonfly object is marked initialized
 			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      name,
 				Namespace: namespace,
 			}, &ss)
