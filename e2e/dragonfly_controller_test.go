@@ -295,7 +295,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 		})
 
 		It("Update to image should be propagated successfully", func() {
-			newImage := resources.DragonflyImage + ":v1.9.0"
+			newImage := resources.DragonflyImage + ":v1.10.0"
 			// Update df to the latest
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      name,
