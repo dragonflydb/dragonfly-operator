@@ -120,7 +120,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			} else {
 				log.Info(fmt.Sprintf("Master exists. Configuring %s as replica", pod.Status.PodIP))
 				if err := dfi.configureReplica(ctx, &pod); err != nil {
-					log.Error(err, "could not mark replica from db")
+					log.Error(err, "could not mark replica from db. retrying")
 					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 				}
 
@@ -148,7 +148,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("Non-deletion event for a pod with an existing role. checking if something is wrong", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "role", role)
 
 		if err := dfi.checkAndConfigureReplication(ctx); err != nil {
-			log.Error(err, "could not check and configure replication")
+			log.Error(err, "could not check and configure replication. retrying")
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 		}
 

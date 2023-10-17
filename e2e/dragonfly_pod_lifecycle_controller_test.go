@@ -56,6 +56,9 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 		It("Initial Master is elected", func() {
 			err := k8sClient.Create(ctx, &df)
 			Expect(err).To(BeNil())
+		})
+
+		It("Check for resources, functional pods and status", func() {
 
 			// Wait until Dragonfly object is marked initialized
 			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
@@ -63,7 +66,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      name,
 				Namespace: namespace,
 			}, &ss)
@@ -104,7 +107,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			Expect(podRoles[resources.Replica]).To(HaveLen(replicas - 1))
 		})
 
-		It("New Master is elected as old one dies", func() {
+		It("Delete old master", func() {
 
 			// Get & Delete the old master
 			var pod corev1.Pod
@@ -116,12 +119,15 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 
 			err = k8sClient.Delete(ctx, &pod)
 			Expect(err).To(BeNil())
+		})
+
+		It("New master is elected", func() {
 
 			// Wait until the loop is reconciled. This is needed as status is ready previously
 			// and the test might move forward even before the reconcile loop is triggered
 			time.Sleep(1 * time.Minute)
 
-			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
+			err := waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
 			Expect(err).To(BeNil())
 
 			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 1*time.Minute)

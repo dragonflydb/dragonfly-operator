@@ -189,8 +189,12 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 
 		It("Check for connectivity", func() {
 			stopChan := make(chan struct{}, 1)
-			_, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password)
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password)
 			Expect(err).To(BeNil())
+
+			// Insert test data
+			Expect(rc.Set(ctx, "foo", "bar", 0).Err()).To(BeNil())
+
 			defer close(stopChan)
 		})
 
@@ -294,8 +298,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Expect(podRoles[resources.Replica]).To(HaveLen(2))
 		})
 
-		It("Update to image should be propagated successfully", func() {
-			newImage := resources.DragonflyImage + ":v1.9.0"
+		It("Updates should be propagated successfully", func() {
 			// Update df to the latest
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      name,
@@ -303,14 +306,14 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			}, &df)
 			Expect(err).To(BeNil())
 
-			df.Spec.Image = newImage
+			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.9.0")
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
+		})
 
-			time.Sleep(30 * time.Second)
-
-			// Wait until Dragonfly object is marked resources-created
-			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
+		It("Check for values in statefulset", func() {
+			// Wait until Dragonfly object is marked ready
+			err := waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			Expect(err).To(BeNil())
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
 			Expect(err).To(BeNil())
@@ -323,8 +326,8 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			}, &ss)
 			Expect(err).To(BeNil())
 
-			// check for pod image
-			Expect(ss.Spec.Template.Spec.Containers[0].Image).To(Equal(newImage))
+			// check for env
+			Expect(ss.Spec.Template.Spec.Containers[0].Image).To(Equal(df.Spec.Image))
 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
@@ -337,11 +340,13 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// Get the pods along with their roles
 			podRoles := make(map[string][]string)
 			for _, pod := range pods.Items {
+				Expect(pod.Spec.Containers[0].Image).To(Equal(df.Spec.Image))
 				role, ok := pod.Labels[resources.Role]
 				// error if there is no label
 				Expect(ok).To(BeTrue())
 				// verify the role to match the label
 				podRoles[role] = append(podRoles[role], pod.Name)
+
 			}
 
 			// One Master & Two Replicas
@@ -414,7 +419,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 
-			// Wait until Dragonfly object is marked resources-created
+			// Wait until Dragonfly object is marked ready
 			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			Expect(err).To(BeNil())
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
@@ -446,6 +451,46 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 
 			// check for affinity
 			Expect(ss.Spec.Template.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(Equal(newAffinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
+
+			// check for pods too
+			var pods corev1.PodList
+			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+				"app":                              name,
+				resources.KubernetesPartOfLabelKey: "dragonfly",
+			})
+			Expect(err).To(BeNil())
+
+			for _, pod := range pods.Items {
+				// check for pod args
+				Expect(pod.Spec.Containers[0].Args).To(Equal(expectedArgs))
+
+				// check for pod resources
+				Expect(pod.Spec.Containers[0].Resources.Limits[corev1.ResourceCPU].Equal(newResources.Limits[corev1.ResourceCPU])).To(BeTrue())
+				Expect(pod.Spec.Containers[0].Resources.Limits[corev1.ResourceMemory].Equal(newResources.Limits[corev1.ResourceMemory])).To(BeTrue())
+				Expect(pod.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU].Equal(newResources.Requests[corev1.ResourceCPU])).To(BeTrue())
+				Expect(pod.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory].Equal(newResources.Requests[corev1.ResourceMemory])).To(BeTrue())
+
+				// check for annotations
+				Expect(pod.ObjectMeta.Annotations).To(Equal(newAnnotations))
+
+				// check for tolerations
+				Expect(pod.Spec.Tolerations).To(ContainElements(newTolerations))
+
+				// check for affinity
+				Expect(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(Equal(newAffinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
+			}
+		})
+
+		It("Check for data", func() {
+			stopChan := make(chan struct{}, 1)
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password)
+			Expect(err).To(BeNil())
+
+			// Check for test data
+			data, err := rc.Get(ctx, "foo").Result()
+			Expect(err).To(BeNil())
+			Expect(data).To(Equal("bar"))
+			defer close(stopChan)
 		})
 
 		It("Cleanup", func() {
@@ -609,12 +654,20 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 			TLSSecretRef: &corev1.SecretReference{
 				Name: "df-tls",
 			},
+			Authentication: &resourcesv1.Authentication{
+				PasswordFromSecret: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "df-password",
+					},
+					Key: "password",
+				},
+			},
 		},
 	}
 
 	Context("Dragonfly TLS creation", func() {
 		It("Should create successfully", func() {
-			// create the secret
+			// create the secrets
 			cert, key, err := generateSelfSignedCert(name)
 			Expect(err).To(BeNil())
 
@@ -626,6 +679,17 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 				Data: map[string][]byte{
 					"tls.crt": cert,
 					"tls.key": key,
+				},
+			})
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Create(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "df-password",
+					Namespace: namespace,
+				},
+				StringData: map[string]string{
+					"password": "df-pass-1",
 				},
 			})
 			Expect(err).To(BeNil())
