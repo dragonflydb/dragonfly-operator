@@ -161,7 +161,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 
-		log.Info(fmt.Sprintf("%d/%d are in stable state", fullSyncedUpdatedReplicas, len(replicas)))
+		log.Info(fmt.Sprintf("%d/%d replicas are in stable state", fullSyncedUpdatedReplicas, len(replicas)))
 
 		// if we are here it means that all latest replicas are in stable sync
 		// delete older version replicas
@@ -201,7 +201,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				log.Error(err, "could not delete master")
 				return ctrl.Result{Requeue: true}, err
 			}
-			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Deleting master %s")
+			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", fmt.Sprintf("Deleting master %s", master.Name))
 		}
 
 		// If we are here all are on latest version
@@ -216,7 +216,34 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		return ctrl.Result{}, nil
 	} else {
-		// This is an Update
+		// perform a rollout only if the pod spec has changed
+		var statefulSet appsv1.StatefulSet
+		if err := r.Get(ctx, client.ObjectKey{Namespace: df.Namespace, Name: df.Name}, &statefulSet); err != nil {
+			log.Error(err, "could not get statefulset")
+			return ctrl.Result{}, err
+		}
+
+		// Check if the pod spec has changed
+		log.Info("Checking if pod spec has changed", "updatedReplicas", statefulSet.Status.UpdatedReplicas, "currentReplicas", statefulSet.Status.Replicas)
+		if statefulSet.Status.UpdatedReplicas != statefulSet.Status.Replicas {
+			log.Info("Pod spec has changed, performing a rollout")
+			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Starting a rollout")
+
+			// Start rollout and update status
+			// update status so that we can track progress
+			df.Status.IsRollingUpdate = true
+			if err := r.Status().Update(ctx, &df); err != nil {
+				log.Error(err, "could not update the Dragonfly object")
+				return ctrl.Result{Requeue: true}, err
+			}
+
+			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Performing a rollout")
+
+			// requeue so that the rollout is processed
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+
+		// Is this a Dragonfly object update?
 		log.Info("updating existing resources")
 		newResources, err := resources.GetDragonflyResources(ctx, &df)
 		if err != nil {
@@ -233,32 +260,8 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		log.Info("Updated resources for object")
-
-		// perform a rollout only if the pod spec has changed
-		var statefulSet appsv1.StatefulSet
-		if err := r.Get(ctx, client.ObjectKey{Namespace: df.Namespace, Name: df.Name}, &statefulSet); err != nil {
-			log.Error(err, "could not get statefulset")
-			return ctrl.Result{}, err
-		}
-
-		if statefulSet.Status.UpdatedReplicas != statefulSet.Status.Replicas {
-			log.Info("Pod spec has changed, performing a rollout")
-			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Starting a rollout")
-
-			// Start rollout and update status
-			// update status so that we can track progress
-			df.Status.IsRollingUpdate = true
-			if err := r.Status().Update(ctx, &df); err != nil {
-				log.Error(err, "could not update the Dragonfly object")
-				return ctrl.Result{Requeue: true}, err
-			}
-
-			// requeue so that the rollout is processed
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-		}
-		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Updated resources")
+		return ctrl.Result{Requeue: true}, nil
 	}
-	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
