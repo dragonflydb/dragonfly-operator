@@ -191,10 +191,6 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			stopChan := make(chan struct{}, 1)
 			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password)
 			Expect(err).To(BeNil())
-
-			// Insert test data
-			Expect(rc.Set(ctx, "foo", "bar", 0).Err()).To(BeNil())
-
 			defer close(stopChan)
 
 			// insert test data
@@ -494,18 +490,6 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Expect(err).To(BeNil())
 			Expect(data).To(Equal("bar"))
 			defer close(stopChan)
-		})
-
-		It("Check for data", func() {
-			stopChan := make(chan struct{}, 1)
-			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password)
-			Expect(err).To(BeNil())
-			defer close(stopChan)
-
-			// check if the Data exists
-			data, err := rc.Get(ctx, "foo").Result()
-			Expect(err).To(BeNil())
-			Expect(data).To(Equal("bar"))
 		})
 
 		It("Cleanup", func() {
