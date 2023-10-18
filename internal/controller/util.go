@@ -89,12 +89,12 @@ func getLatestReplica(ctx context.Context, c client.Client, statefulSet *appsv1.
 }
 
 // replTakeover runs the replTakeOver on the given replica pod
-func replTakeover(ctx context.Context, newMaster *corev1.Pod) error {
+func replTakeover(ctx context.Context, c client.Client, newMaster *corev1.Pod) error {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:%d", newMaster.Status.PodIP, resources.DragonflyAdminPort),
 	})
 
-	resp, err := redisClient.Do(ctx, "repltakeover 10000").Result()
+	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
 	if err != nil {
 		return fmt.Errorf("error running REPLTAKEOVER command: %w", err)
 	}
@@ -103,6 +103,11 @@ func replTakeover(ctx context.Context, newMaster *corev1.Pod) error {
 		return fmt.Errorf("response of `REPLTAKEOVER` on replica is not OK: %s", resp)
 	}
 
+	// update the label on the pod
+	newMaster.Labels[resources.Role] = resources.Master
+	if err := c.Update(ctx, newMaster); err != nil {
+		return fmt.Errorf("error updating the role label on the pod: %w", err)
+	}
 	return nil
 }
 

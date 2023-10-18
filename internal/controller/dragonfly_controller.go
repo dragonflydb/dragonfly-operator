@@ -202,11 +202,17 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// are on latest version
 		if !masterOnLatest {
 			// Update master now
-			if err := replTakeover(ctx, latestReplica); err != nil {
+			if err := replTakeover(ctx, r.Client, latestReplica); err != nil {
 				log.Error(err, "could not update master")
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 			}
 			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", fmt.Sprintf("Shutting down master %s", master.Name))
+
+			// delete the old master, so that it gets recreated with the new version
+			if err := r.Delete(ctx, &master); err != nil {
+				log.Error(err, "could not delete pod")
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+			}
 		}
 
 		// If we are here all are on latest version

@@ -134,7 +134,13 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("Pod is being deleted", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name))
 		// Check if there is an active master
 		if pod.Labels[resources.Role] == resources.Master {
-			log.Info("master is being removed. re-configuring replication")
+			log.Info("master is being removed")
+			if dfi.df.Status.IsRollingUpdate {
+				log.Info("rolling update in progress. nothing to do")
+				return ctrl.Result{}, nil
+			}
+
+			log.Info("master is being removed. configuring replication")
 			if err := dfi.configureReplication(ctx); err != nil {
 				log.Error(err, "couldn't find healthy and mark active")
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
@@ -144,6 +150,11 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			log.Info("replica is being deleted. nothing to do")
 		}
 	} else {
+		if dfi.df.Status.IsRollingUpdate {
+			log.Info("rolling update in progress. nothing to do")
+			return ctrl.Result{}, nil
+		}
+
 		// is something wrong? check if all pods have a matching role and revamp accordingly
 		log.Info("Non-deletion event for a pod with an existing role. checking if something is wrong", "pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "role", role)
 
