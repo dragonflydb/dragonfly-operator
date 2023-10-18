@@ -34,8 +34,6 @@ import (
 const (
 	PhaseResourcesCreated string = "resources-created"
 
-	PhaseResourcesUpdated string = "resources-updated"
-
 	PhaseReady string = "ready"
 )
 

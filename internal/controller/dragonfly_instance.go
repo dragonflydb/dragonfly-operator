@@ -144,6 +144,14 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {
 }
 
 func (dfi *DragonflyInstance) updateStatus(ctx context.Context, phase string) error {
+	// get latest df object first
+	if err := dfi.client.Get(ctx, types.NamespacedName{
+		Name:      dfi.df.Name,
+		Namespace: dfi.df.Namespace,
+	}, dfi.df); err != nil {
+		return err
+	}
+
 	dfi.log.Info("Updating status", "phase", phase)
 	dfi.df.Status.Phase = phase
 	if err := dfi.client.Status().Update(ctx, dfi.df); err != nil {
@@ -250,6 +258,14 @@ func (dfi *DragonflyInstance) checkAndConfigureReplication(ctx context.Context) 
 	pods, err := dfi.getPods(ctx)
 	if err != nil {
 		return err
+	}
+
+	// retry if there are pods that are not running
+	for _, pod := range pods.Items {
+		if pod.Status.Phase != corev1.PodRunning {
+			dfi.log.Info("not all pods are running. retrying", "pod", pod.Name)
+			return nil
+		}
 	}
 
 	// check for one master and all replicas
