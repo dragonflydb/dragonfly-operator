@@ -326,7 +326,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			}, &ss)
 			Expect(err).To(BeNil())
 
-			// check for env
+			// check for image
 			Expect(ss.Spec.Template.Spec.Containers[0].Image).To(Equal(df.Spec.Image))
 
 			// Check if there are relevant pods with expected roles
