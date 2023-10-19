@@ -27,6 +27,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -52,6 +53,62 @@ func isPodOnLatestVersion(ctx context.Context, c client.Client, pod *corev1.Pod,
 	}
 
 	return false, nil
+}
+
+// getLatestReplica returns a replica pod which is on the latest version
+// of the given statefulset
+func getLatestReplica(ctx context.Context, c client.Client, statefulSet *appsv1.StatefulSet) (*corev1.Pod, error) {
+	// Get the list of pods
+	podList := &corev1.PodList{}
+	err := c.List(ctx, podList, &client.ListOptions{
+		Namespace: statefulSet.Namespace,
+		LabelSelector: labels.SelectorFromValidatedSet(map[string]string{
+			"app":                              statefulSet.Name,
+			resources.KubernetesPartOfLabelKey: "dragonfly",
+		}),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Iterate over the pods and find a replica which is on the latest version
+	for _, pod := range podList.Items {
+
+		isLatest, err := isPodOnLatestVersion(ctx, c, &pod, statefulSet)
+		if err != nil {
+			return nil, err
+		}
+
+		if isLatest && pod.Labels[resources.Role] == resources.Replica {
+			return &pod, nil
+		}
+	}
+
+	return nil, errors.New("no replica pod found on latest version")
+
+}
+
+// replTakeover runs the replTakeOver on the given replica pod
+func replTakeover(ctx context.Context, c client.Client, newMaster *corev1.Pod) error {
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: fmt.Sprintf("%s:%d", newMaster.Status.PodIP, resources.DragonflyAdminPort),
+	})
+
+	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
+	if err != nil {
+		return fmt.Errorf("error running REPLTAKEOVER command: %w", err)
+	}
+
+	if resp != "OK" {
+		return fmt.Errorf("response of `REPLTAKEOVER` on replica is not OK: %s", resp)
+	}
+
+	// update the label on the pod
+	newMaster.Labels[resources.Role] = resources.Master
+	if err := c.Update(ctx, newMaster); err != nil {
+		return fmt.Errorf("error updating the role label on the pod: %w", err)
+	}
+	return nil
 }
 
 func waitForStatefulSetReady(ctx context.Context, c client.Client, name, namespace string, maxDuration time.Duration) error {

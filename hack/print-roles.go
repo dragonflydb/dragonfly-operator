@@ -68,7 +68,7 @@ func main() {
 			panic(err.Error())
 		}
 
-		fmt.Printf("%s, %s: %s\n", pod.Name, pod.Status.PodIP, role)
+		fmt.Printf("%s, %s, %s: %s\n", pod.Name, pod.Status.PodIP, pod.Labels["role"], role)
 	}
 }
 
@@ -87,7 +87,7 @@ func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *r
 	}
 
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", url)
-	ports := []string{fmt.Sprintf("%d:%d", port, 6379)}
+	ports := []string{fmt.Sprintf("%d:%d", port, 9999)}
 	readyChan := make(chan struct{}, 1)
 	stopChan := make(chan struct{}, 1)
 

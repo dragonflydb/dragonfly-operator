@@ -99,13 +99,13 @@ func checkAndK8sPortForwardRedis(ctx context.Context, clientset *kubernetes.Clie
 		return nil, fmt.Errorf("no master pod found")
 	}
 
-	fw, err := portForward(ctx, clientset, config, master, stopChan, resources.DragonflyAdminPort)
+	fw, err := portForward(ctx, clientset, config, master, stopChan, resources.DragonflyPort)
 	if err != nil {
 		return nil, err
 	}
 
 	redisOptions := &redis.Options{
-		Addr: fmt.Sprintf("localhost:9998"),
+		Addr: fmt.Sprintf("localhost:%d", resources.DragonflyPort),
 	}
 
 	if password != "" {
@@ -148,7 +148,7 @@ func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *r
 	}
 
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", url)
-	ports := []string{fmt.Sprintf("%d:%d", 9998, resources.DragonflyPort)}
+	ports := []string{fmt.Sprintf("%d:%d", port, resources.DragonflyPort)}
 	readyChan := make(chan struct{}, 1)
 
 	fw, err := portforward.New(dialer, ports, stopChan, readyChan, io.Discard, os.Stderr)

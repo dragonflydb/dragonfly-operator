@@ -186,6 +186,12 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 
+		latestReplica, err := getLatestReplica(ctx, r.Client, &updatedStatefulset)
+		if err != nil {
+			log.Error(err, "could not get latest replica")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+		}
+
 		masterOnLatest, err := isPodOnLatestVersion(ctx, r.Client, &master, &updatedStatefulset)
 		if err != nil {
 			log.Error(err, "could not check if pod is on latest version")
@@ -195,13 +201,20 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// If we are here it means that all replicas
 		// are on latest version
 		if !masterOnLatest {
-			// Update Master now
-			log.Info("deleting master")
-			if err := r.Delete(ctx, &master); err != nil {
-				log.Error(err, "could not delete master")
-				return ctrl.Result{Requeue: true}, err
+			// Update master now
+			log.Info("Running REPLTAKEOVER on replica", "pod", master.Name)
+			if err := replTakeover(ctx, r.Client, latestReplica); err != nil {
+				log.Error(err, "could not update master")
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 			}
-			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", fmt.Sprintf("Deleting master %s", master.Name))
+			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", fmt.Sprintf("Shutting down master %s", master.Name))
+
+			// delete the old master, so that it gets recreated with the new version
+			log.Info("deleting master", "pod", master.Name)
+			if err := r.Delete(ctx, &master); err != nil {
+				log.Error(err, "could not delete pod")
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+			}
 		}
 
 		// If we are here all are on latest version
@@ -260,6 +273,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		log.Info("Updated resources for object")
+		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Updated resources")
 		return ctrl.Result{Requeue: true}, nil
 	}
 }
