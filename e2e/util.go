@@ -105,7 +105,7 @@ func checkAndK8sPortForwardRedis(ctx context.Context, clientset *kubernetes.Clie
 	}
 
 	redisOptions := &redis.Options{
-		Addr: fmt.Sprintf("localhost:9998"),
+		Addr: fmt.Sprintf("localhost:%d", resources.DragonflyPort),
 	}
 
 	if password != "" {
@@ -148,7 +148,7 @@ func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *r
 	}
 
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", url)
-	ports := []string{fmt.Sprintf("%d:%d", 9998, resources.DragonflyPort)}
+	ports := []string{fmt.Sprintf("%d:%d", port, resources.DragonflyPort)}
 	readyChan := make(chan struct{}, 1)
 
 	fw, err := portforward.New(dialer, ports, stopChan, readyChan, io.Discard, os.Stderr)
