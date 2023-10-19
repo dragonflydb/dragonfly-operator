@@ -187,15 +187,14 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 
 		})
 
-		It("Check for connectivity", func() {
+		It("Check for connectivity and insert data", func() {
 			stopChan := make(chan struct{}, 1)
 			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password)
 			Expect(err).To(BeNil())
-
-			// Insert test data
-			Expect(rc.Set(ctx, "foo", "bar", 0).Err()).To(BeNil())
-
 			defer close(stopChan)
+
+			// insert test data
+			Expect(rc.Set(ctx, "foo", "bar", 0).Err()).To(BeNil())
 		})
 
 		It("Increase in replicas should be propagated successfully", func() {
