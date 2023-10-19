@@ -71,7 +71,7 @@ func getLatestReplica(ctx context.Context, c client.Client, statefulSet *appsv1.
 		return nil, err
 	}
 
-	// Iterate over the pods and find the one which is on the latest version
+	// Iterate over the pods and find a replica which is on the latest version
 	for _, pod := range podList.Items {
 
 		isLatest, err := isPodOnLatestVersion(ctx, c, &pod, statefulSet)
