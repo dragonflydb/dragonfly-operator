@@ -91,11 +91,12 @@ type DragonflySpec struct {
 }
 
 type Snapshot struct {
-	// (Optional) S3 URL of the bucket to store snapshots
-	// Make sure the Dragonfly pod service account has access to the S3 bucket
+	// (Optional) The path to the snapshot directory
+	// This can also be an S3 URI with the prefix `s3://` when
+	// using S3 as the snapshot backend
 	// +optional
 	// +kubebuilder:validation:Optional
-	S3 string `json:"s3,omitempty"`
+	Dir string `json:"dir,omitempty"`
 
 	// (Optional) Dragonfly snapshot schedule
 	// +optional
