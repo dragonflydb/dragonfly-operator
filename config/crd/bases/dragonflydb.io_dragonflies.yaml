@@ -1093,6 +1093,11 @@ spec:
                   cron:
                     description: (Optional) Dragonfly snapshot schedule
                     type: string
+                  dir:
+                    description: (Optional) The path to the snapshot directory This
+                      can also be an S3 URI with the prefix `s3://` when using S3
+                      as the snapshot backend
+                    type: string
                   persistentVolumeClaimSpec:
                     description: (Optional) Dragonfly PVC spec
                     properties:
