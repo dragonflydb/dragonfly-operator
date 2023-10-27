@@ -193,9 +193,9 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 				Name:      "df",
 				MountPath: dir,
 			})
-
-			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--dir=%s", dir))
 		}
+
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--dir=%s", dir))
 
 		if df.Spec.Snapshot.Cron != "" {
 			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--snapshot_cron=%s", df.Spec.Snapshot.Cron))
