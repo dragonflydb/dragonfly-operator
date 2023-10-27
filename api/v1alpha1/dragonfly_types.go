@@ -108,10 +108,9 @@ type Authentication struct {
 	PasswordFromSecret *corev1.SecretKeySelector `json:"passwordFromSecret,omitempty"`
 
 	// (Optional) If specified, the Dragonfly instance will check if the
-	// client certificate is signed by one of this CA. Server TLS must be enabled for this.
-	// Multiple CAs can be specified with various key names.
+	// client certificate is signed by this CA. Server TLS must be enabled for this.
 	// +optional
-	ClientCaCertSecret *corev1.SecretReference `json:"clientCaCertSecret,omitempty"`
+	ClientCaCertSecret *corev1.SecretKeySelector `json:"clientCaCertSecret,omitempty"`
 }
 
 // DragonflyStatus defines the observed state of Dragonfly
