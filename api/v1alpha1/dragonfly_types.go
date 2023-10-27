@@ -91,6 +91,13 @@ type DragonflySpec struct {
 }
 
 type Snapshot struct {
+	// (Optional) The path to the snapshot directory
+	// This can also be an S3 URI with the prefix `s3://` when
+	// using S3 as the snapshot backend
+	// +optional
+	// +kubebuilder:validation:Optional
+	Dir string `json:"dir,omitempty"`
+
 	// (Optional) Dragonfly snapshot schedule
 	// +optional
 	// +kubebuilder:validation:Optional

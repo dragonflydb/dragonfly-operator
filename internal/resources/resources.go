@@ -165,13 +165,17 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 	}
 
 	if df.Spec.Snapshot != nil {
-		// err if pvc is not specified while cron is specified
-		if df.Spec.Snapshot.Cron != "" && df.Spec.Snapshot.PersistentVolumeClaimSpec == nil {
+		// err if pvc is not specified & s3 sir is not present while cron is specified
+		if df.Spec.Snapshot.Cron != "" && df.Spec.Snapshot.PersistentVolumeClaimSpec == nil && df.Spec.Snapshot.Dir == "" {
 			return nil, fmt.Errorf("cron specified without a persistent volume claim")
 		}
 
-		if df.Spec.Snapshot.PersistentVolumeClaimSpec != nil {
+		dir := "/dragonfly/snapshots"
+		if df.Spec.Snapshot.Dir != "" {
+			dir = df.Spec.Snapshot.Dir
+		}
 
+		if df.Spec.Snapshot.PersistentVolumeClaimSpec != nil {
 			// attach and use the PVC if specified
 			statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -187,11 +191,12 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 
 			statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
 				Name:      "df",
-				MountPath: "/dragonfly/snapshots",
+				MountPath: dir,
 			})
 		}
 
-		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, "--dir=/dragonfly/snapshots")
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--dir=%s", dir))
+
 		if df.Spec.Snapshot.Cron != "" {
 			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--snapshot_cron=%s", df.Spec.Snapshot.Cron))
 		}
