@@ -492,6 +492,33 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			defer close(stopChan)
 		})
 
+		It("Change Service specification to LoadBalancer", func() {
+			df.Spec.ServiceSpec.Type = corev1.ServiceTypeLoadBalancer
+			newAnnotations := map[string]string{
+				"service-annotaions": "true",
+			}
+			df.Spec.ServiceSpec.Annotations = newAnnotations
+
+			err := k8sClient.Update(ctx, &df)
+			Expect(err).To(BeNil())
+
+			// Wait until Dragonfly object is marked ready
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
+			Expect(err).To(BeNil())
+			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
+			Expect(err).To(BeNil())
+
+			var svc corev1.Service
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &svc)
+			Expect(err).To(BeNil())
+
+			Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeLoadBalancer))
+			Expect(svc.Annotations).To(Equal(newAnnotations))
+		})
+
 		It("Cleanup", func() {
 			var df resourcesv1.Dragonfly
 			err := k8sClient.Get(ctx, types.NamespacedName{
