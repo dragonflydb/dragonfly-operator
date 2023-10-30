@@ -22,9 +22,18 @@ jobs:
         with:
           submodules: true
 
-      - name: Docker Build
-        run: |
-          make docker-build
+      - name: Build and Publish image into GHCR
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: |
+            ghcr.io/dragonflydb/operator:${{ github.ref_name }}
+          platforms: |
+            linux/amd64
+            linux/arm64
+        env:
+          DOCKER_BUILDKIT: 1
 
       - uses: helm/kind-action@v1.7.0
         with:
@@ -73,7 +82,11 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ghcr.io/dragonflydb/operator:${{ github.ref_name }}
+          tags: |
+            ghcr.io/dragonflydb/operator:${{ github.ref_name }}
+          platforms: |
+            linux/amd64
+            linux/arm64
         env:
           DOCKER_BUILDKIT: 1
           DOCKER_USERNAME: ${{ github.actor }}
