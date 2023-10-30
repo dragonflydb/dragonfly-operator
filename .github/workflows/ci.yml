@@ -28,7 +28,7 @@ jobs:
           context: .
           file: ./Dockerfile
           tags: |
-            ghcr.io/dragonflydb/operator:${{ github.ref_name }}
+            ghcr.io/dragonflydb/operator:${{ github.sha }}
           platforms: |
             linux/amd64
             linux/arm64
