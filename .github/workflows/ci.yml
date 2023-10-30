@@ -33,6 +33,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
+          load: true
           tags: |
             ghcr.io/dragonflydb/operator:${{ github.sha }}
           platforms: |
