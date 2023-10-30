@@ -22,7 +22,7 @@ jobs:
         with:
           submodules: true
 
-      - name: Build and Publish image into GHCR
+      - name: Docker Build
         uses: docker/build-push-action@v2
         with:
           context: .
