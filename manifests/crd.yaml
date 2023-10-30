@@ -878,18 +878,23 @@ spec:
                 properties:
                   clientCaCertSecret:
                     description: (Optional) If specified, the Dragonfly instance will
-                      check if the client certificate is signed by one of this CA.
-                      Server TLS must be enabled for this. Multiple CAs can be specified
-                      with various key names.
+                      check if the client certificate is signed by this CA. Server
+                      TLS must be enabled for this.
                     properties:
+                      key:
+                        description: The key of the secret to select from.  Must be
+                          a valid secret key.
+                        type: string
                       name:
-                        description: name is unique within a namespace to reference
-                          a secret resource.
+                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          TODO: Add other useful fields. apiVersion, kind, uid?'
                         type: string
-                      namespace:
-                        description: namespace defines the space within which the
-                          secret name must be unique.
-                        type: string
+                      optional:
+                        description: Specify whether the Secret or its key must be
+                          defined
+                        type: boolean
+                    required:
+                    - key
                     type: object
                     x-kubernetes-map-type: atomic
                   passwordFromSecret:
@@ -1086,6 +1091,11 @@ spec:
                 properties:
                   cron:
                     description: (Optional) Dragonfly snapshot schedule
+                    type: string
+                  dir:
+                    description: (Optional) The path to the snapshot directory This
+                      can also be an S3 URI with the prefix `s3://` when using S3
+                      as the snapshot backend
                     type: string
                   persistentVolumeClaimSpec:
                     description: (Optional) Dragonfly PVC spec
