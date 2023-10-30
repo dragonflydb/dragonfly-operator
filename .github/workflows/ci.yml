@@ -82,8 +82,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: |
-            ghcr.io/dragonflydb/operator:${{ github.ref_name }}
+          tags: ghcr.io/dragonflydb/operator:${{ github.ref_name }}
           platforms: |
             linux/amd64
             linux/arm64
