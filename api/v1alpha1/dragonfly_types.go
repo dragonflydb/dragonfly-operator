@@ -88,6 +88,23 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	Snapshot *Snapshot `json:"snapshot,omitempty"`
+
+	// (Optional) Dragonfly Service configuration
+	// +optional
+	// +kubebuilder:validation:Optional
+	ServiceSpec *ServiceSpec `json:"serviceSpec,omitempty"`
+}
+
+type ServiceSpec struct {
+	// (Optional) Dragonfly Service type
+	// +optional
+	// +kubebuilder:validation:Optional
+	Type corev1.ServiceType `json:"type,omitempty"`
+
+	// (Optional) Dragonfly Service Annotations
+	// +optional
+	// +kubebuilder:validation:Optional
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 type Snapshot struct {
