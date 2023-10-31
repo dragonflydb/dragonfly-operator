@@ -323,6 +323,11 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		},
 	}
 
+	if df.Spec.ServiceSpec != nil {
+		service.Spec.Type = df.Spec.ServiceSpec.Type
+		service.Annotations = df.Spec.ServiceSpec.Annotations
+	}
+
 	resources = append(resources, &service)
 
 	return resources, nil
