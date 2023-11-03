@@ -1099,6 +1099,18 @@ spec:
               serviceAccountName:
                 description: (Optional) Dragonfly pod service account name
                 type: string
+              serviceSpec:
+                description: (Optional) Dragonfly Service configuration
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: (Optional) Dragonfly Service Annotations
+                    type: object
+                  type:
+                    description: (Optional) Dragonfly Service type
+                    type: string
+                type: object
               snapshot:
                 description: (Optional) Dragonfly Snapshot configuration
                 properties:
@@ -1726,7 +1738,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: docker.dragonflydb.io/dragonflydb/operator:v0.0.10
+        image: docker.dragonflydb.io/dragonflydb/operator:v1.0.0
         livenessProbe:
           httpGet:
             path: /healthz
