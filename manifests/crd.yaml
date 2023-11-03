@@ -1086,6 +1086,18 @@ spec:
               serviceAccountName:
                 description: (Optional) Dragonfly pod service account name
                 type: string
+              serviceSpec:
+                description: (Optional) Dragonfly Service configuration
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: (Optional) Dragonfly Service Annotations
+                    type: object
+                  type:
+                    description: (Optional) Dragonfly Service type
+                    type: string
+                type: object
               snapshot:
                 description: (Optional) Dragonfly Snapshot configuration
                 properties:
