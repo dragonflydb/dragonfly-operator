@@ -231,6 +231,13 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		statefulset.Spec.Template.ObjectMeta.Annotations = df.Spec.Annotations
 	}
 
+	for key := range df.Spec.Labels {
+		// Make sure we do not overwrite any existing labels
+		if _, ok := statefulset.Spec.Template.ObjectMeta.Labels[key]; !ok {
+			statefulset.Spec.Template.ObjectMeta.Labels[key] = df.Spec.Labels[key]
+		}
+	}
+
 	if df.Spec.Affinity != nil {
 		statefulset.Spec.Template.Spec.Affinity = df.Spec.Affinity
 	}
