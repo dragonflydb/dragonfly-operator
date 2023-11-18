@@ -32,6 +32,18 @@ const (
 	// DragonflyOperatorName is the name of the operator
 	DragonflyOperatorName = "dragonfly-operator"
 
+	// DragonflyAdminPasswordOperatorEnvVar is the name of the dragonfly operator
+	// environment variable in which a password may optionally be provided for
+	// authentication to managed dragonfly instance admin ports
+	//
+	// If this is set in the dragonfly operator's environment, it will be used
+	// by the operator to authenticate to dragonfly instances on their admin ports,
+	// using the "default" username.
+	//
+	// Replicas will also be configured by the operator to use this password to
+	// authenticate with the master instance
+	DragonflyAdminPasswordOperatorEnvVar = "DFLY_ADMIN_PASSWORD"
+
 	// DragonflyPasswordEnvVar is the name of the dragonfly instance environment variable
 	// in which the requirepass password will be stored, if provided
 	//
