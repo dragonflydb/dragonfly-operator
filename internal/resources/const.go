@@ -32,6 +32,12 @@ const (
 	// DragonflyOperatorName is the name of the operator
 	DragonflyOperatorName = "dragonfly-operator"
 
+	// DragonflyPasswordEnvVar is the name of the dragonfly instance environment variable
+	// in which the requirepass password will be stored, if provided
+	//
+	// todo: switch to DFLY_requirepass once a new version is released
+	DragonflyPasswordEnvVar = "DFLY_PASSWORD"
+
 	// DragonflyImage is the default image of the Dragonfly to use
 	DragonflyImage = "docker.dragonflydb.io/dragonflydb/dragonfly"
 
