@@ -93,6 +93,7 @@ func replTakeover(ctx context.Context, c client.Client, newMaster *corev1.Pod) e
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:%d", newMaster.Status.PodIP, resources.DragonflyAdminPort),
 	})
+	defer redisClient.Close()
 
 	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
 	if err != nil {
@@ -156,6 +157,7 @@ func isStableState(ctx context.Context, c client.Client, pod *corev1.Pod) (bool,
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
 	})
+	defer redisClient.Close()
 
 	_, err := redisClient.Ping(ctx).Result()
 	if err != nil {
