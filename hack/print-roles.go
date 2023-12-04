@@ -112,6 +112,7 @@ func getRole(ctx context.Context, url string) (string, error) {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: url,
 	})
+	defer redisClient.Close()
 
 	resp, err := redisClient.Info(ctx, "replication").Result()
 	if err != nil {
