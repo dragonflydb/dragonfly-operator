@@ -83,10 +83,7 @@ kubectl patch dragonfly dragonfly-sample --type merge -p '{"spec":{"resources":{
 
 ### Configuring instance authentication
 
-To add authentication to the dragonfly pods, you can do any of the following: 
-- Set the `DFLY_PASSWORD` environment variable
-- Add the `--requirepass` argument to the spec argument list
-- Fill the `authentication` section of the spec, e.g.:
+To add authentication to the dragonfly pods, you must fill the `authentication` section of the spec, e.g.:
 ```yaml
 spec:
   authentication:
@@ -94,36 +91,12 @@ spec:
       name: dragonfly-secret
       key: password
 ```
-Note that, by default, pods will be configured with the `--admin_nopass` argument, which disables authentication on the admin port.  If you want to also password-protect the admin port, you'll need to perform the following steps:
 
-Toggle `--admin_nopass` off in the pod spec:
-```yaml
-spec:
-  args:
-    - --admin_nopass=false
-```
+The dragonfly operator will also use this secret, if present, to authenticate to the admin port of dragonfly pods so it can run admin commands.  Furthermore, it will configure replicas to use this password to authenticate to the master on its admin port.
 
-Next, if the `dragonfly-operator-system` namespace does not already exist (you haven't already installed the operator), create it now:
-```shell
-kubectl apply -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/dragonfly-operator-namespace.yaml
-```
-Next, create a secret in the `dragonfly-operator-system` namespace (note that the name `dragonfly-admin-secret` and key `password:` of the below secret are expected and must be used), e.g.:
-```yaml
-apiVersion: v1
-kind: Secret
-type: Opaque
-metadata:
-  name: dragonfly-admin-secret
-  namespace: dragonfly-operator-system
-data:
-  password: c29tZS1wYXNzd29yZA==
-```
-The dragonfly operator will use this secret to authenticate on the admin port of dragonfly pods so it can run admin commands.  It will also use this password to allow replicas to connect to the master on the authenticated admin port.  A duplicate secret must be created in the `dragonfly-operator-system` namespace because the operator will usually run in a namespace separate from the dragonfly pods, and kubernetes disallows access to cross-namespace secrets.
-Finally, if a dragonfly operator was already running, delete its pods so it will restart with access to the secret you just created, e.g.:
-```shell
-kubectl -n dragonfly-operator-system delete po <pod name>
-```
-If no operator was running, apply the remaining manifests like you would normally and continue with the regular installation.
+If the `authentication` section of the spec is not filled, the dragonfly operator and replicas will not use authentication.
+
+When changing the password, due to rolling update behavior, you must restart all instances (deleting all dragonfly pods will cause the operator to recreate them).  If a full restart is not performed, replication will fail to work because new replica instances will be using the updated password, while the not yet restarted master instance will still be using the old password.  A full restart will ensure that the new password is synchronized across all instances.
 
 ### Deleting a Dragonfly instance
 
