@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -33,26 +32,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// DragonflyAdminCredentials are the optionally provided credentials
-// that the operator should use for authentication on the admin port of
-// managed dragonfly instances
-//
-// If set, these credentials will also be provided to replicas so they
-// can authenticate to the master instance
-type DragonflyAdminCredentials struct {
-	username string
-	password string
-}
-
 // DragonflyInstance is an abstraction over the `Dragonfly` CRD
 // and provides methods to handle replication.
 type DragonflyInstance struct {
 	// Dragonfly is the relevant Dragonfly CRD that it performs actions over
 	df *resourcesv1.Dragonfly
 
-	client       client.Client
-	log          logr.Logger
-	dfAdminCreds DragonflyAdminCredentials
+	client client.Client
+	log    logr.Logger
 }
 
 func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *corev1.Pod, log logr.Logger) (*DragonflyInstance, error) {
@@ -71,17 +58,10 @@ func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *core
 		return nil, err
 	}
 
-	// Retrieve admin credentials from environment, if present
-	dfAdminCreds := DragonflyAdminCredentials{
-		username: "default",
-		password: os.Getenv(resources.DragonflyAdminPasswordOperatorEnvVar),
-	}
-
 	return &DragonflyInstance{
-		df:           &df,
-		client:       c,
-		log:          log,
-		dfAdminCreds: dfAdminCreds,
+		df:     &df,
+		client: c,
+		log:    log,
 	}, nil
 }
 
@@ -236,10 +216,14 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 // checkReplicaRole checks if the given pod is a replica and if it is
 // connected to the right master
 func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.Pod, masterIp string) (bool, error) {
+	password, err := getDragonflyPasswordFromPod(ctx, dfi.client, pod)
+	if err != nil {
+		return false, err
+	}
+
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
-		Username: dfi.dfAdminCreds.username,
-		Password: dfi.dfAdminCreds.password,
+		Password: password,
 	})
 
 	resp, err := redisClient.Info(ctx, "replication").Result()
@@ -361,16 +345,20 @@ func (dfi *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, err
 // replicaOf configures the pod as a replica
 // to the given master instance
 func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
+	password, err := getDragonflyPasswordFromPod(ctx, dfi.client, pod)
+	if err != nil {
+		return err
+	}
+
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
-		Username: dfi.dfAdminCreds.username,
-		Password: dfi.dfAdminCreds.password,
+		Password: password,
 	})
 
-	// if admin credentials are defined, set masterauth so slave
+	// if credentials are defined, set masterauth so slave
 	// can talk to master over an authenticated connection
-	if dfi.dfAdminCreds.password != "" {
-		if err := redisClient.ConfigSet(ctx, "masterauth", dfi.dfAdminCreds.password).Err(); err != nil {
+	if password != "" {
+		if err := redisClient.ConfigSet(ctx, "masterauth", password).Err(); err != nil {
 			return fmt.Errorf("error setting masterauth on SLAVE: %s", err)
 		}
 	}
@@ -398,10 +386,14 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 // replicaOfNoOne configures the pod as a master
 // along while updating other pods to be replicas
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
+	password, err := getDragonflyPasswordFromPod(ctx, dfi.client, pod)
+	if err != nil {
+		return err
+	}
+
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
-		Username: dfi.dfAdminCreds.username,
-		Password: dfi.dfAdminCreds.password,
+		Password: password,
 	})
 
 	dfi.log.Info("Running SLAVE OF NO ONE command", "pod", pod.Name, "addr", redisClient.Options().Addr)

@@ -1494,6 +1494,14 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - services
   verbs:
   - create
@@ -1739,13 +1747,6 @@ spec:
         command:
         - /manager
         image: docker.dragonflydb.io/dragonflydb/operator:v1.0.0
-        env:
-          - name: DFLY_ADMIN_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: dragonfly-admin-secret
-                key: password
-                optional: true
         livenessProbe:
           httpGet:
             path: /healthz

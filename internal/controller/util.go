@@ -90,10 +90,18 @@ func getLatestReplica(ctx context.Context, c client.Client, statefulSet *appsv1.
 
 // replTakeover runs the replTakeOver on the given replica pod
 func replTakeover(ctx context.Context, c client.Client, newMaster *corev1.Pod) error {
+	// get dragonfly credentials and create client
+	password, err := getDragonflyPasswordFromPod(ctx, c, newMaster)
+	if err != nil {
+		return err
+	}
+
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%d", newMaster.Status.PodIP, resources.DragonflyAdminPort),
+		Addr:     fmt.Sprintf("%s:%d", newMaster.Status.PodIP, resources.DragonflyAdminPort),
+		Password: password,
 	})
 
+	// perform take over
 	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
 	if err != nil {
 		return fmt.Errorf("error running REPLTAKEOVER command: %w", err)
@@ -153,20 +161,30 @@ func isStableState(ctx context.Context, c client.Client, pod *corev1.Pod) (bool,
 		return false, nil
 	}
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
-	})
-
-	_, err := redisClient.Ping(ctx).Result()
+	// get dragonfly credentials and create client
+	password, err := getDragonflyPasswordFromPod(ctx, c, pod)
 	if err != nil {
 		return false, err
 	}
 
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
+		Password: password,
+	})
+
+	// check connection
+	_, err = redisClient.Ping(ctx).Result()
+	if err != nil {
+		return false, err
+	}
+
+	// get replication information
 	info, err := redisClient.Info(ctx, "replication").Result()
 	if err != nil {
 		return false, err
 	}
 
+	// check information
 	if info == "" {
 		return false, errors.New("empty info")
 	}
@@ -193,4 +211,62 @@ func isStableState(ctx context.Context, c client.Client, pod *corev1.Pod) (bool,
 	}
 
 	return true, nil
+}
+
+// getDragonflyPasswordFromPod attempts to read the dragonfly password for
+// the instance running in the provided pod
+//
+// this function will check to see if any containers in the provided pod contain
+// a known password environment variable (DragonflyPasswordEnvVar)
+//
+// if present, the *secret* (no other source will be checked) referenced by the
+// env var will be read
+//
+// if successful, this function will the dragonfly password as a string
+//
+// if no password is set but nothing went wrong during the lookup, an empty string
+// will be returned with a nil error
+func getDragonflyPasswordFromPod(ctx context.Context, c client.Client, pod *corev1.Pod) (string, error) {
+	if pod == nil {
+		return "", fmt.Errorf("pod was nil")
+	}
+
+	// search every container in the pod for a known env var that should contain
+	// the dragonfly password
+	for _, container := range pod.Spec.Containers {
+		for _, e := range container.Env {
+			// if the desired env var is found, try to read the password from it
+			if e.Name == resources.DragonflyPasswordEnvVar {
+				valFrom := e.ValueFrom
+				if valFrom == nil {
+					return "", fmt.Errorf("dragonfly instance password env var was set, but value could not be read")
+				}
+
+				secretRef := valFrom.SecretKeyRef
+				if secretRef == nil {
+					return "", fmt.Errorf("dragonfly instance password was set in the environment, but not via a secret which is the only currently supported method")
+				}
+
+				// attempt to read the secret
+				var secret corev1.Secret
+				err := c.Get(ctx, types.NamespacedName{
+					Name:      secretRef.Name,
+					Namespace: pod.Namespace,
+				}, &secret)
+				if err != nil {
+					return "", err
+				}
+
+				// extract the password from the secret
+				password, ok := secret.Data[secretRef.Key]
+				if !ok {
+					return "", fmt.Errorf("failed to read dragonfly instance password from secret with key %s", secretRef.Key)
+				}
+
+				return string(password), nil
+			}
+		}
+	}
+
+	return "", nil
 }
