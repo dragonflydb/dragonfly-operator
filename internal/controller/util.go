@@ -90,16 +90,11 @@ func getLatestReplica(ctx context.Context, c client.Client, statefulSet *appsv1.
 
 // replTakeover runs the replTakeOver on the given replica pod
 func replTakeover(ctx context.Context, c client.Client, newMaster *corev1.Pod) error {
-	// get dragonfly credentials and create client
-	password, err := getDragonflyPasswordFromPod(ctx, c, newMaster)
+	// create dragonfly client
+	redisClient, err := newRedisClient(ctx, c, newMaster, newMaster.Status.PodIP, resources.DragonflyAdminPort)
 	if err != nil {
 		return err
 	}
-
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", newMaster.Status.PodIP, resources.DragonflyAdminPort),
-		Password: password,
-	})
 
 	// perform take over
 	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
@@ -161,16 +156,11 @@ func isStableState(ctx context.Context, c client.Client, pod *corev1.Pod) (bool,
 		return false, nil
 	}
 
-	// get dragonfly credentials and create client
-	password, err := getDragonflyPasswordFromPod(ctx, c, pod)
+	// create client
+	redisClient, err := newRedisClient(ctx, c, pod, pod.Status.PodIP, resources.DragonflyAdminPort)
 	if err != nil {
 		return false, err
 	}
-
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
-		Password: password,
-	})
 
 	// check connection
 	_, err = redisClient.Ping(ctx).Result()
@@ -269,4 +259,18 @@ func getDragonflyPasswordFromPod(ctx context.Context, c client.Client, pod *core
 	}
 
 	return "", nil
+}
+
+// newRedisClient creates an authenticated (if required) dragonfly/redis client
+// for the instance of dragonfly running in the provided pod
+func newRedisClient(ctx context.Context, c client.Client, pod *corev1.Pod, host string, port int) (*redis.Client, error) {
+	password, err := getDragonflyPasswordFromPod(ctx, c, pod)
+	if err != nil {
+		return nil, err
+	}
+
+	return redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%d", host, port),
+		Password: password,
+	}), nil
 }

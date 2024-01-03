@@ -26,7 +26,6 @@ import (
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/go-logr/logr"
-	"github.com/redis/go-redis/v9"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -216,15 +215,10 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 // checkReplicaRole checks if the given pod is a replica and if it is
 // connected to the right master
 func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.Pod, masterIp string) (bool, error) {
-	password, err := getDragonflyPasswordFromPod(ctx, dfi.client, pod)
+	redisClient, err := newRedisClient(ctx, dfi.client, pod, pod.Status.PodIP, resources.DragonflyAdminPort)
 	if err != nil {
 		return false, err
 	}
-
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
-		Password: password,
-	})
 
 	resp, err := redisClient.Info(ctx, "replication").Result()
 	if err != nil {
@@ -345,15 +339,15 @@ func (dfi *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, err
 // replicaOf configures the pod as a replica
 // to the given master instance
 func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
-	password, err := getDragonflyPasswordFromPod(ctx, dfi.client, pod)
+	redisClient, err := newRedisClient(ctx, dfi.client, pod, pod.Status.PodIP, resources.DragonflyAdminPort)
 	if err != nil {
 		return err
 	}
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
-		Password: password,
-	})
+	password, err := getDragonflyPasswordFromPod(ctx, dfi.client, pod)
+	if err != nil {
+		return err
+	}
 
 	// if credentials are defined, set masterauth so slave
 	// can talk to master over an authenticated connection
@@ -386,15 +380,10 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 // replicaOfNoOne configures the pod as a master
 // along while updating other pods to be replicas
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
-	password, err := getDragonflyPasswordFromPod(ctx, dfi.client, pod)
+	redisClient, err := newRedisClient(ctx, dfi.client, pod, pod.Status.PodIP, resources.DragonflyAdminPort)
 	if err != nil {
 		return err
 	}
-
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
-		Password: password,
-	})
 
 	dfi.log.Info("Running SLAVE OF NO ONE command", "pod", pod.Name, "addr", redisClient.Options().Addr)
 	resp, err := redisClient.SlaveOf(ctx, "NO", "ONE").Result()
