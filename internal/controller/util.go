@@ -95,6 +95,7 @@ func replTakeover(ctx context.Context, c client.Client, newMaster *corev1.Pod) e
 	if err != nil {
 		return err
 	}
+	defer redisClient.Close()
 
 	// perform take over
 	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
@@ -161,6 +162,7 @@ func isStableState(ctx context.Context, c client.Client, pod *corev1.Pod) (bool,
 	if err != nil {
 		return false, err
 	}
+	defer redisClient.Close()
 
 	// check connection
 	_, err = redisClient.Ping(ctx).Result()
