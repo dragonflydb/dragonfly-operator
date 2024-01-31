@@ -254,7 +254,6 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		if df.Spec.Authentication.PasswordFromSecret != nil {
 			// load the secret key as a password into env
 			statefulset.Spec.Template.Spec.Containers[0].Env = append(statefulset.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
-				// todo: switch to DFLY_requirepass once a new version is released
 				Name: "DFLY_requirepass",
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: df.Spec.Authentication.PasswordFromSecret,
