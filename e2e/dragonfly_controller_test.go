@@ -557,9 +557,9 @@ var _ = Describe("Dragonfly Acl file secret key test", Ordered, FlakeAttempts(3)
 					Name:      "df-acl",
 					Namespace: namespace,
 				},
-				StringData: map[string]string{
-					"df-acl": `USER default ON nopass +@ALL +ALL ~*
-USER John ON #89e01536ac207279409d4de1e5253e01f4a1769e696db0d6062ca9b8f56767c8 +@ADMIN +SET`,
+				Data: map[string][]byte{
+					"df-acl": []byte(`USER default ON nopass +@ALL +ALL ~*
+USER John ON #89e01536ac207279409d4de1e5253e01f4a1769e696db0d6062ca9b8f56767c8 +@ADMIN +SET`),
 				},
 			})
 			Expect(err).To(BeNil())
