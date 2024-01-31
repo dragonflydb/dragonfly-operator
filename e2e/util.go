@@ -75,7 +75,7 @@ func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace st
 	return false, nil
 }
 
-func checkAndK8sPortForwardRedis(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, stopChan chan struct{}, name, namespace, password string) (*redis.Client, error) {
+func checkAndK8sPortForwardRedis(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, stopChan chan struct{}, name, namespace, password string, port int) (*redis.Client, error) {
 	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("app=%s", name),
 	})
@@ -99,13 +99,13 @@ func checkAndK8sPortForwardRedis(ctx context.Context, clientset *kubernetes.Clie
 		return nil, fmt.Errorf("no master pod found")
 	}
 
-	fw, err := portForward(ctx, clientset, config, master, stopChan, resources.DragonflyPort)
+	fw, err := portForward(ctx, clientset, config, master, stopChan, port)
 	if err != nil {
 		return nil, err
 	}
 
 	redisOptions := &redis.Options{
-		Addr: fmt.Sprintf("localhost:%d", resources.DragonflyPort),
+		Addr: fmt.Sprintf("localhost:%d", port),
 	}
 
 	if password != "" {
