@@ -166,7 +166,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// Authentication
 			// PasswordFromSecret
 			Expect(ss.Spec.Template.Spec.Containers[0].Env).To(ContainElement(corev1.EnvVar{
-				Name: "DFLY_PASSWORD",
+				Name: "DFLY_requirepass",
 				ValueFrom: &corev1.EnvVarSource{
 					SecretKeyRef: df.Spec.Authentication.PasswordFromSecret,
 				},
@@ -189,7 +189,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 
 		It("Check for connectivity and insert data", func() {
 			stopChan := make(chan struct{}, 1)
-			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password)
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password, 6391)
 			Expect(err).To(BeNil())
 			defer close(stopChan)
 
@@ -305,7 +305,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			}, &df)
 			Expect(err).To(BeNil())
 
-			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.9.0")
+			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.14.0")
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 		})
@@ -482,7 +482,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 
 		It("Check for data", func() {
 			stopChan := make(chan struct{}, 1)
-			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password)
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password, 6395)
 			Expect(err).To(BeNil())
 
 			// Check for test data
@@ -611,7 +611,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 
 			// Insert Data
 			stopChan := make(chan struct{}, 1)
-			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "")
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6393)
 			Expect(err).To(BeNil())
 
 			// Insert test data
@@ -643,7 +643,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 
 			// recreate Redis Client on the new pod
 			stopChan = make(chan struct{}, 1)
-			rc, err = checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "")
+			rc, err = checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6394)
 			defer close(stopChan)
 			Expect(err).To(BeNil())
 

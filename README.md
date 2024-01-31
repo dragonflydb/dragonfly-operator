@@ -83,7 +83,7 @@ kubectl patch dragonfly dragonfly-sample --type merge -p '{"spec":{"resources":{
 
 ### Configuring instance authentication
 
-To add authentication to the dragonfly pods, you either set the `DFLY_PASSWORD` environment variable, or add the `--requirepass` argument.
+To add authentication to the dragonfly pods, you either set the `DFLY_requirepass` environment variable, or add the `--requirepass` argument.
 
 ### Deleting a Dragonfly instance
 
