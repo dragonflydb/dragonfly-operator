@@ -65,7 +65,7 @@ metadata:
   name: dragonfly-sample
 spec:
     env:
-    - name: DFLY_PASSWORD
+    - name: DFLY_requirepass
       value: "dragonfly"
     replicas: 3
     tlsSecretRef: dragonfly-sample
