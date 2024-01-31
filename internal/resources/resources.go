@@ -35,7 +35,7 @@ var (
 const (
 	TlsPath             = "/etc/dragonfly-tls"
 	TLSCACertDirArg     = "--tls_ca_cert_file"
-	TLSCACertDir        = "/etc/dragonfly/client-ca-cert"
+	TLSCACertDir        = "/etc/dragonfly/tls"
 	TLSCACertVolumeName = "client-ca-cert"
 )
 
