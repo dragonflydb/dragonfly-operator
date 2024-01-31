@@ -22,6 +22,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"math/big"
@@ -552,14 +553,19 @@ var _ = Describe("Dragonfly Acl file secret key test", Ordered, FlakeAttempts(3)
 
 	Context("Dragonfly resource creation with acl file", func() {
 		It("Should create successfully", func() {
+			multiLineString := `USER default ON nopass +@ALL +ALL ~*
+USER John ON #89e01536ac207279409d4de1e5253e01f4a1769e696db0d6062ca9b8f56767c8 +@ADMIN +SET`
+
+			// Base64 encode the multi-line string
+			encodedString := base64.StdEncoding.EncodeToString([]byte(multiLineString))
+
 			err := k8sClient.Create(ctx, &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "df-acl",
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
-					"df-acl": []byte(`USER default ON nopass +@ALL +ALL ~*
-USER John ON #89e01536ac207279409d4de1e5253e01f4a1769e696db0d6062ca9b8f56767c8 +@ADMIN +SET`),
+					"df-acl": []byte(encodedString),
 				},
 			})
 			Expect(err).To(BeNil())
