@@ -596,6 +596,7 @@ USER John ON #89e01536ac207279409d4de1e5253e01f4a1769e696db0d6062ca9b8f56767c8 +
 
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--aclfile=%s/dragonfly.acl", resources.AclPath)))
 			stopChan := make(chan struct{}, 1)
+			defer close(stopChan)
 			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "")
 			Expect(err).To(BeNil())
 			defer rc.Close()
