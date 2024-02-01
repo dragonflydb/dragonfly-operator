@@ -44,7 +44,7 @@ type DragonflySpec struct {
 	// (Optional) Acl file Secret to pass to the container
 	// +optional
 	// +kubebuilder:validation:Optional
-	AclFromSecret *corev1.SecretKeySelector `json:"aclSecretRef,omitempty"`
+	AclFromSecret *corev1.SecretKeySelector `json:"aclFromSecret,omitempty"`
 
 	// (Optional) Annotations to add to the Dragonfly pods.
 	// +optional

@@ -22,7 +22,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"math/big"
@@ -554,18 +553,16 @@ var _ = Describe("Dragonfly Acl file secret key test", Ordered, FlakeAttempts(3)
 	Context("Dragonfly resource creation with acl file", func() {
 		It("Should create successfully", func() {
 			multiLineString := `USER default ON nopass +@ALL +ALL ~*
-USER John ON #89e01536ac207279409d4de1e5253e01f4a1769e696db0d6062ca9b8f56767c8 +@ADMIN +SET`
-
-			// Base64 encode the multi-line string
-			encodedString := base64.StdEncoding.EncodeToString([]byte(multiLineString))
+USER John ON #89e01536ac207279409d4de1e5253e01f4a1769e696db0d6062ca9b8f56767c8 +@ADMIN +SET
+`
 
 			err := k8sClient.Create(ctx, &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "df-acl",
 					Namespace: namespace,
 				},
-				Data: map[string][]byte{
-					"df-acl": []byte(encodedString),
+				StringData: map[string]string{
+					"df-acl": multiLineString,
 				},
 			})
 			Expect(err).To(BeNil())
@@ -603,7 +600,7 @@ USER John ON #89e01536ac207279409d4de1e5253e01f4a1769e696db0d6062ca9b8f56767c8 +
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--aclfile=%s/dragonfly.acl", resources.AclPath)))
 			stopChan := make(chan struct{}, 1)
 			defer close(stopChan)
-			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "")
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6392)
 			Expect(err).To(BeNil())
 			defer rc.Close()
 			result, err := rc.Do(ctx, "acl", "list").StringSlice()
