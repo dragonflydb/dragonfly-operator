@@ -41,6 +41,11 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	Args []string `json:"args,omitempty"`
 
+	// (Optional) Acl file Secret to pass to the container
+	// +optional
+	// +kubebuilder:validation:Optional
+	AclFromSecret *corev1.SecretKeySelector `json:"aclFromSecret,omitempty"`
+
 	// (Optional) Annotations to add to the Dragonfly pods.
 	// +optional
 	// +kubebuilder:validation:Optional

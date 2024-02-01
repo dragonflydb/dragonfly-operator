@@ -47,6 +47,24 @@ spec:
           spec:
             description: DragonflySpec defines the desired state of Dragonfly
             properties:
+              aclFromSecret:
+                description: (Optional) Acl file Secret to pass to the container
+                properties:
+                  key:
+                    description: The key of the secret to select from.  Must be a
+                      valid secret key.
+                    type: string
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      TODO: Add other useful fields. apiVersion, kind, uid?'
+                    type: string
+                  optional:
+                    description: Specify whether the Secret or its key must be defined
+                    type: boolean
+                required:
+                - key
+                type: object
+                x-kubernetes-map-type: atomic
               affinity:
                 description: (Optional) Dragonfly pod affinity
                 properties:
@@ -1043,6 +1061,11 @@ spec:
               image:
                 description: Image is the Dragonfly image to use
                 type: string
+              labels:
+                additionalProperties:
+                  type: string
+                description: (Optional) Labels to add to the Dragonfly pods.
+                type: object
               replicas:
                 description: Replicas is the total number of Dragonfly instances including
                   the master

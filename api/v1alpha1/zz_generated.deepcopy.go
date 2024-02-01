@@ -118,6 +118,11 @@ func (in *DragonflySpec) DeepCopyInto(out *DragonflySpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.AclFromSecret != nil {
+		in, out := &in.AclFromSecret, &out.AclFromSecret
+		*out = new(v1.SecretKeySelector)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.Annotations != nil {
 		in, out := &in.Annotations, &out.Annotations
 		*out = make(map[string]string, len(*in))

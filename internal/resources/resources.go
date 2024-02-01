@@ -34,6 +34,7 @@ var (
 
 const (
 	TlsPath             = "/etc/dragonfly-tls"
+	AclPath             = "/var/lib/dragonfly"
 	TLSCACertDirArg     = "--tls_ca_cert_file"
 	TLSCACertDir        = "/etc/dragonfly/tls"
 	TLSCACertVolumeName = "client-ca-cert"
@@ -162,6 +163,30 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 
 	if df.Spec.Args != nil {
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, df.Spec.Args...)
+	}
+
+	if df.Spec.AclFromSecret != nil {
+		statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: "dragonfly-acl",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: df.Spec.AclFromSecret.Name,
+					Items: []corev1.KeyToPath{
+						{
+							Key:  df.Spec.AclFromSecret.Key,
+							Path: "dragonfly.acl",
+						},
+					},
+				},
+			},
+		})
+
+		statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "dragonfly-acl",
+			MountPath: AclPath,
+		})
+
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--aclfile=%s/dragonfly.acl", AclPath))
 	}
 
 	if df.Spec.Snapshot != nil {

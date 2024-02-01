@@ -541,6 +541,90 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 	})
 })
 
+var _ = Describe("Dragonfly Acl file secret key test", Ordered, FlakeAttempts(3), func() {
+	ctx := context.Background()
+	name := "df-acl"
+	namespace := "default"
+
+	args := []string{
+		"--vmodule=replica=1,server_family=1",
+	}
+
+	Context("Dragonfly resource creation with acl file", func() {
+		It("Should create successfully", func() {
+			multiLineString := `USER default ON nopass +@ALL +ALL ~*
+USER John ON #89e01536ac207279409d4de1e5253e01f4a1769e696db0d6062ca9b8f56767c8 +@ADMIN +SET
+`
+
+			err := k8sClient.Create(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "df-acl",
+					Namespace: namespace,
+				},
+				StringData: map[string]string{
+					"df-acl": multiLineString,
+				},
+			})
+			Expect(err).To(BeNil())
+			err = k8sClient.Create(ctx, &resourcesv1.Dragonfly{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: namespace,
+				},
+				Spec: resourcesv1.DragonflySpec{
+					Replicas: 1,
+					Args:     args,
+					AclFromSecret: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: "df-acl",
+						},
+						Key: "df-acl",
+					},
+				},
+			})
+			Expect(err).To(BeNil())
+		})
+		It("Resource should exist", func() {
+			// Wait until Dragonfly object is marked initialized
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+
+			// Check for statefulset
+			var ss appsv1.StatefulSet
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &ss)
+			Expect(err).To(BeNil())
+
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--aclfile=%s/dragonfly.acl", resources.AclPath)))
+			stopChan := make(chan struct{}, 1)
+			defer close(stopChan)
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6392)
+			Expect(err).To(BeNil())
+			defer rc.Close()
+			result, err := rc.Do(ctx, "acl", "list").StringSlice()
+			Expect(err).To(BeNil())
+			Expect(result).To(HaveLen(2))
+			Expect(result).To(ContainElements(
+				"user default on nopass +@ALL +ALL ~*",
+				"user John on 89e01536ac20727 +@ADMIN +SET",
+			))
+		})
+		It("Cleanup", func() {
+			var df resourcesv1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil())
+		})
+	})
+})
+
 var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempts(3), func() {
 	ctx := context.Background()
 	name := "df-pvc"
