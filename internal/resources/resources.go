@@ -275,6 +275,10 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		statefulset.Spec.Template.Spec.ServiceAccountName = df.Spec.ServiceAccountName
 	}
 
+	if df.Spec.PriorityClassName != "" {
+		statefulset.Spec.Template.Spec.PriorityClassName = df.Spec.PriorityClassName
+	}
+
 	if df.Spec.Authentication != nil {
 		if df.Spec.Authentication.PasswordFromSecret != nil {
 			// load the secret key as a password into env
