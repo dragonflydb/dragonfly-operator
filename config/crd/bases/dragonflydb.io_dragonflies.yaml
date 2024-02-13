@@ -1054,6 +1054,11 @@ spec:
                   type: string
                 description: (Optional) Labels to add to the Dragonfly pods.
                 type: object
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                description: (Optional) Dragonfly pod node selector
+                type: object
               replicas:
                 description: Replicas is the total number of Dragonfly instances including
                   the master

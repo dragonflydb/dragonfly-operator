@@ -72,6 +72,11 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
 
+	// (Optional) Dragonfly pod node selector
+	// +optional
+	// +kubebuilder:validation:Optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
 	// (Optional) Dragonfly pod tolerations
 	// +optional
 	// +kubebuilder:validation:Optional
