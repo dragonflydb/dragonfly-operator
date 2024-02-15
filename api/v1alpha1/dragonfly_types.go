@@ -77,6 +77,11 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 
+	// (Optional) Dragonfly pod topologySpreadConstraints
+	// +optional
+	// +kubebuilder:validation:Optional
+	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
+
 	// (Optional) Dragonfly Authentication mechanism
 	// +optional
 	// +kubebuilder:validation:Optional
