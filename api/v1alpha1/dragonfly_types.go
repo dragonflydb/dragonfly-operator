@@ -87,7 +87,7 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
-	// (Optional) Dragonfly pod service account name
+	// (Optional) Dragonfly pod priority class name
 	// +optional
 	// +kubebuilder:validation:Optional
 	PriorityClassName string `json:"PriorityClassName,omitempty"`
