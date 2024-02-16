@@ -1114,6 +1114,9 @@ spec:
               serviceAccountName:
                 description: (Optional) Dragonfly pod service account name
                 type: string
+              priorityClassName:
+                description: (Optional) Dragonfly pod service account name
+                type: string
               serviceSpec:
                 description: (Optional) Dragonfly Service configuration
                 properties:

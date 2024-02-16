@@ -36,7 +36,7 @@ spec:
             description: DragonflySpec defines the desired state of Dragonfly
             properties:
               PriorityClassName:
-                description: (Optional) Dragonfly pod service account name
+                description: (Optional) Dragonfly pod priority class name
                 type: string
               aclFromSecret:
                 description: (Optional) Acl file Secret to pass to the container
