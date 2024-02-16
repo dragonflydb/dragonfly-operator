@@ -267,6 +267,10 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		statefulset.Spec.Template.Spec.Affinity = df.Spec.Affinity
 	}
 
+	if df.Spec.NodeSelector != nil {
+		statefulset.Spec.Template.Spec.NodeSelector = df.Spec.NodeSelector
+	}
+
 	if df.Spec.Tolerations != nil {
 		statefulset.Spec.Template.Spec.Tolerations = df.Spec.Tolerations
 	}
