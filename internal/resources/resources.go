@@ -275,6 +275,10 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		statefulset.Spec.Template.Spec.Tolerations = df.Spec.Tolerations
 	}
 
+	if df.Spec.TopologySpreadConstraints != nil {
+		statefulset.Spec.Template.Spec.TopologySpreadConstraints = df.Spec.TopologySpreadConstraints
+	}
+
 	if df.Spec.ServiceAccountName != "" {
 		statefulset.Spec.Template.Spec.ServiceAccountName = df.Spec.ServiceAccountName
 	}
