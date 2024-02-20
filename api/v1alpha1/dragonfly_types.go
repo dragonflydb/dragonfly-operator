@@ -97,6 +97,11 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
+	// (Optional) Dragonfly pod priority class name
+	// +optional
+	// +kubebuilder:validation:Optional
+	PriorityClassName string `json:"priorityClassName,omitempty"`
+
 	// (Optional) Dragonfly TLS secret to used for TLS
 	// Connections to Dragonfly. Dragonfly instance  must
 	// have access to this secret and be in the same namespace

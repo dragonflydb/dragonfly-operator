@@ -1071,6 +1071,9 @@ spec:
                   type: string
                 description: (Optional) Dragonfly pod node selector
                 type: object
+              priorityClassName:
+                description: (Optional) Dragonfly pod priority class name
+                type: string
               replicas:
                 description: Replicas is the total number of Dragonfly instances including
                   the master
