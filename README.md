@@ -9,9 +9,15 @@ Dragonfly Operator is a Kubernetes operator used to deploy and manage [Dragonfly
 Main features include:
 
 - Automatic failover
-- Scaling up/down the number of instances
+- Scaling horizontally and vertically with custom rollout strategy
+- Authentication and server TLS
+- Automatic snapshots to PVCs and S3
+- Monitoring with Prometheus and Grafana
+- Comprehensive configuration options
 
-Currently, Dragonfly Operator is in **Alpha**. You can find more information about Dragonfly in the [official documentation](https://dragonflydb.io/docs/).
+You can find more information about Dragonfly in the [official documentation](https://dragonflydb.io/docs/).
+There is also a dedicated [Dragonfly Operator section](https://www.dragonflydb.io/docs/managing-dragonfly/operator/installation)
+that contains more details and examples on how to use the operator.
 
 ## Installation
 
