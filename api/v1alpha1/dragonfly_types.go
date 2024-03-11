@@ -114,6 +114,11 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	Snapshot *Snapshot `json:"snapshot,omitempty"`
 
+	// (Optional) Skip Assigning FileSystem Group. Required for platforms such as Openshift that require IDs to not be set, as it injects a fixed randomized ID per namespace into all pods.
+	// +optional
+	// +kubebuilder:validation:Optional
+	SkipFSGroup bool `json:"skipFSGroup,omitempty"`
+
 	// (Optional) Dragonfly Service configuration
 	// +optional
 	// +kubebuilder:validation:Optional

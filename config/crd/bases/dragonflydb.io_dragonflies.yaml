@@ -1130,6 +1130,11 @@ spec:
                     description: (Optional) Dragonfly Service type
                     type: string
                 type: object
+              skipFSGroup:
+                description: (Optional) Skip Assigning FileSystem Group. Required
+                  for platforms such as Openshift that require IDs to not be set,
+                  as it injects a fixed randomized ID per namespace into all pods.
+                type: boolean
               snapshot:
                 description: (Optional) Dragonfly Snapshot configuration
                 properties:
