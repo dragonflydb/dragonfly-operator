@@ -81,7 +81,7 @@ kubectl patch dragonfly dragonfly-sample --type merge -p '{"spec":{"replicas":5}
 
 ### Vertically scaling the instance
 
-To vertically scale the instance, you can edit the `spec.resources` field in the Dragonfly instance. For example, to increase the CPU limit to 2 cores, you can run
+To vertically scale the instance, you can edit the `spec.resources` field in the Dragonfly instance. For example, to increase the memory limit to 2GiB, you can run
 
 ```sh
 kubectl patch dragonfly dragonfly-sample --type merge -p '{"spec":{"resources":{"requests":{"memory":"1Gi"},"limits":{"memory":"2Gi"}}}}'
