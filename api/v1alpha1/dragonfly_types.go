@@ -77,6 +77,11 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
+	// (Optional) Dragonfly memcached port
+	// +optional
+	// +kubebuilder:validation:Optional
+	MemcachedPort int32 `json:"memcachedPort,omitempty"`
+
 	// (Optional) Dragonfly pod tolerations
 	// +optional
 	// +kubebuilder:validation:Optional
