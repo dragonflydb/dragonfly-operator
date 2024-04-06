@@ -4,6 +4,7 @@ metadata:
   name: {{ include "dragonfly-operator.fullname" . }}
   labels:
     {{- include "dragonfly-operator.labels" . | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:

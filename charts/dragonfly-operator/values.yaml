@@ -7,7 +7,7 @@ replicaCount: 1
 ## Custom resource configuration
 crds:
   # -- Install and upgrade CRDs
-  install: true
+  install: false
   # -- Keep CRDs on chart uninstall
   keep: true
 
@@ -31,11 +31,9 @@ podAnnotations:
 
 podLabels: {}
 
-podSecurityContext: {}
+podSecurityContext:
+  runAsNonRoot: true
   # fsGroup: 2000
-
-securityContext:
-   runAsNonRoot: true
 
 service:
   type: ClusterIP
