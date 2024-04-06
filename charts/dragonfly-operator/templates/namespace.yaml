@@ -1,9 +1,0 @@
-{{- if .Values.createOperatorNamespace -}}
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: {{ .Release.Namespace }}
-  labels:
-    {{- include "dragonfly-operator.labels" . | nindent 4 }}
-{{- end -}}
