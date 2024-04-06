@@ -62,7 +62,7 @@ spec:
             - /manager
           securityContext:
             {{- toYaml .Values.manager.securityContext | nindent 12 }}
-          image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag  }}"
+          image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag | default .Chart.AppVersion  }}"
           imagePullPolicy: {{ .Values.manager.image.pullPolicy }}
           livenessProbe:
             {{- toYaml .Values.manager.livenessProbe | nindent 12 }}
