@@ -2,8 +2,9 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  creationTimestamp: null
-  name: dragonfly-operator-manager-role
+  name: {{ include "dragonfly-operator.fullname" . }}-manager-role
+  labels:
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
 rules:
   - apiGroups:
       - ""
@@ -78,14 +79,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-metrics-reader
   labels:
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: kube-rbac-proxy
-    app.kubernetes.io/created-by: dragonfly-operator
     app.kubernetes.io/instance: metrics-reader
-    app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: clusterrole
-    app.kubernetes.io/part-of: dragonfly-operator
-  name: dragonfly-operator-metrics-reader
 rules:
   - nonResourceURLs:
       - /metrics
@@ -95,14 +93,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-proxy-role
   labels:
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: kube-rbac-proxy
-    app.kubernetes.io/created-by: dragonfly-operator
     app.kubernetes.io/instance: proxy-role
-    app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: clusterrole
-    app.kubernetes.io/part-of: dragonfly-operator
-  name: dragonfly-operator-proxy-role
 rules:
   - apiGroups:
       - authentication.k8s.io

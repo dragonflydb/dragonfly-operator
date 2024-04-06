@@ -2,15 +2,11 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-leader-election-role
   labels:
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: dragonfly-operator
-    app.kubernetes.io/instance: leader-election-role
-    app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: role
-    app.kubernetes.io/part-of: dragonfly-operator
-  name: dragonfly-operator-leader-election-role
-  namespace: dragonfly-operator-system
+  namespace: {{ .Release.Namespace | quote }}
 rules:
   - apiGroups:
       - ""

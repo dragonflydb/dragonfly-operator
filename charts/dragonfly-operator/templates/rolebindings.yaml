@@ -1,21 +1,16 @@
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-leader-election-rolebinding
   labels:
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: dragonfly-operator
-    app.kubernetes.io/instance: leader-election-rolebinding
-    app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: rolebinding
-    app.kubernetes.io/part-of: dragonfly-operator
-  name: dragonfly-operator-leader-election-rolebinding
-  namespace: dragonfly-operator-system
+  namespace: {{ .Release.Namespace | quote }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: dragonfly-operator-leader-election-role
+  name: {{ include "dragonfly-operator.fullname" . }}-leader-election-role
 subjects:
   - kind: ServiceAccount
-    name: dragonfly-operator-controller-manager
-    namespace: dragonfly-operator-system
+    name: {{ include "dragonfly-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}

@@ -1,12 +1,10 @@
+{{- if .Values.createOperatorNamespace -}}
+---
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: dragonfly-operator
-    app.kubernetes.io/instance: system
-    app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/name: namespace
-    app.kubernetes.io/part-of: dragonfly-operator
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
     control-plane: controller-manager
-  name: dragonfly-operator-system
+{{- end -}}
