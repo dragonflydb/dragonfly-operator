@@ -33,7 +33,6 @@ podLabels: {}
 
 podSecurityContext:
   runAsNonRoot: true
-  # fsGroup: 2000
 
 service:
   type: ClusterIP
