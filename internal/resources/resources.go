@@ -114,7 +114,10 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 								},
 							},
 							Args: DefaultDragonflyArgs,
-							Env:  df.Spec.Env,
+							Env: append(df.Spec.Env, corev1.EnvVar{
+								Name:  "HEALTHCHECK_PORT",
+								Value: fmt.Sprintf("%d", DragonflyAdminPort),
+							}),
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
