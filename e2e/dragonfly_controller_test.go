@@ -837,7 +837,7 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 			Expect(err).To(BeNil())
 
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--tls"))
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--no_tls_on_admin_port"))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--tls_replication"))
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_cert_file=%s/tls.crt", resources.TlsPath)))
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_key_file=%s/tls.key", resources.TlsPath)))
 		})

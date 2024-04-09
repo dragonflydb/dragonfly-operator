@@ -251,9 +251,8 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		})
 
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, []string{
-			// no TLS on admin port by default
-			"--no_tls_on_admin_port",
 			"--tls",
+			"--tls_replication",
 			fmt.Sprintf("--tls_cert_file=%s/tls.crt", TlsPath),
 			fmt.Sprintf("--tls_key_file=%s/tls.key", TlsPath),
 		}...)
