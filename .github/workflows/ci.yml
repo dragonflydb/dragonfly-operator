@@ -73,6 +73,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install helm
+        uses: azure/setup-helm@v4
+
+      - name: Update helm chart
+        if: env.IS_PRERELEASE != 'true'
+        run: |
+          git checkout main
+          sed -Ei \
+           -e 's/^(version\:) .*/\1 '${{ env.VERSION }}'/g' \
+           -e 's/^(appVersion\:) .*/\1 "'${{ env.VERSION }}'"/g' \
+           charts/dragonfly-operator/Chart.yaml          
+          
+          git commit \
+          -m 'chore(helm-chart): update to ${{ env.VERSION }}' \
+          charts/dragonfly-operator/Chart.yaml
+
+      - name: Push Helm chart as OCI to Github
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+          helm registry login -u ${{ github.actor }} --password-stdin ghcr.io
+          
+          helm package charts/dragonfly-operator
+          
+          helm push dragonfly-${{ env.VERSION }}.tgz oci://ghcr.io/${{ github.repository }}/helm
+
       - name: Build and Publish image into GHCR
         uses: docker/build-push-action@v5
         with:
