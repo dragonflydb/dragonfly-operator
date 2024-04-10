@@ -77,7 +77,6 @@ jobs:
         uses: azure/setup-helm@v4
 
       - name: Update helm chart
-        if: env.IS_PRERELEASE != 'true'
         run: |
           git checkout main
           sed -Ei \
