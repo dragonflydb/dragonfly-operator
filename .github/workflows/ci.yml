@@ -96,7 +96,7 @@ jobs:
           
           helm package charts/dragonfly-operator
           
-          helm push dragonfly-${{ env.VERSION }}.tgz oci://ghcr.io/${{ github.repository }}/helm
+          helm push dragonfly-operator-${{ env.VERSION }}.tgz oci://ghcr.io/${{ github.repository }}/helm
 
       - name: Build and Publish image into GHCR
         uses: docker/build-push-action@v5
