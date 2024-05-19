@@ -504,6 +504,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			}
 			df.Spec.ServiceSpec = &resourcesv1.ServiceSpec{
 				Type:        corev1.ServiceTypeLoadBalancer,
+				Name:        "test-svc",
 				Annotations: newAnnotations,
 			}
 
@@ -518,7 +519,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 
 			var svc corev1.Service
 			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      name,
+				Name:      "test-svc",
 				Namespace: namespace,
 			}, &svc)
 			Expect(err).To(BeNil())

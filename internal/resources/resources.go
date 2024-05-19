@@ -338,9 +338,14 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 
 	resources = append(resources, &statefulset)
 
+	serviceName := df.Name
+	if df.Spec.ServiceSpec != nil && df.Spec.ServiceSpec.Name != "" {
+		serviceName = df.Spec.ServiceSpec.Name
+	}
+
 	service := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      df.Name,
+			Name:      serviceName,
 			Namespace: df.Namespace,
 			// Useful for automatically deleting the resources when the Dragonfly object is deleted
 			OwnerReferences: []metav1.OwnerReference{
