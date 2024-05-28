@@ -58,15 +58,42 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// check for pod readiness
-	if pod.Status.PodIP == "" || pod.Status.Phase != corev1.PodRunning || !pod.Status.ContainerStatuses[0].Ready {
-		log.Info("Pod is not ready yet")
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	isPodReady := false
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			isPodReady = true
+			break
+		}
 	}
 
 	dfi, err := GetDragonflyInstanceFromPod(ctx, r.Client, &pod, log)
 	if err != nil {
 		log.Info("Pod does not belong to a Dragonfly instance")
 		return ctrl.Result{}, nil
+	}
+
+	// Get the role of the pod
+	role, roleExists := pod.Labels[resources.Role]
+	if !isPodReady {
+		restartCount := getRestartCount(pod)
+		if roleExists && role == "master" {
+			// If the master Pod is not ready and has restarted multiple times, initiate failover
+			if restartCount > 5 {
+				log.Info("Master pod is not starting after multiple attempts, initiating failover", "pod", req.NamespacedName, "restarts", restartCount)
+				err := dfi.configureReplication(ctx)
+				if err != nil {
+					log.Error(err, "Failed to initiate failover")
+					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+				}
+				return ctrl.Result{}, nil
+			} else {
+				log.Info("Master pod is not ready yet, will requeue", "pod", req.NamespacedName, "restarts", restartCount)
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+		} else {
+			log.Info("Pod is not ready yet", "pod", req.NamespacedName, "restarts", restartCount)
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
 	}
 
 	if dfi.df.Status.Phase == "" {
@@ -169,29 +196,30 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, nil
 }
 
+// getRestartCount fetches the restart count for the given dragonfly pod.
+func getRestartCount(pod corev1.Pod) int32 {
+	var restartCount int32 = 0
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Name == "dragonfly" {
+			restartCount += cs.RestartCount
+		}
+	}
+	return restartCount
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *DfPodLifeCycleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		WithEventFilter(
 			predicate.Funcs{
 				UpdateFunc: func(e event.UpdateEvent) bool {
-					if e.ObjectNew.GetLabels()[resources.KubernetesAppNameLabelKey] == "dragonfly" {
-						return true
-					}
-
-					return false
+					return e.ObjectNew.GetLabels()[resources.KubernetesAppNameLabelKey] == "dragonfly"
 				},
 				CreateFunc: func(e event.CreateEvent) bool {
-					if e.Object.GetLabels()[resources.KubernetesAppNameLabelKey] == "dragonfly" {
-						return true
-					}
-					return false
+					return e.Object.GetLabels()[resources.KubernetesAppNameLabelKey] == "dragonfly"
 				},
 				DeleteFunc: func(e event.DeleteEvent) bool {
-					if e.Object.GetLabels()[resources.KubernetesAppNameLabelKey] == "dragonfly" {
-						return true
-					}
-					return false
+					return e.Object.GetLabels()[resources.KubernetesAppNameLabelKey] == "dragonfly"
 				},
 			}).
 		For(&corev1.Pod{}).
