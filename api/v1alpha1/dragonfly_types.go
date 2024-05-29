@@ -136,6 +136,11 @@ type ServiceSpec struct {
 	// +kubebuilder:validation:Optional
 	Type corev1.ServiceType `json:"type,omitempty"`
 
+	// (Optional) Dragonfly Service name
+	// +optional
+	// +kubebuilder:validation:Optional
+	Name string `json:"name,omitempty"`
+
 	// (Optional) Dragonfly Service Annotations
 	// +optional
 	// +kubebuilder:validation:Optional
