@@ -1,0 +1,127 @@
+# Default values for dragonfly-operator.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+## Custom resource configuration
+crds:
+  # -- Install and upgrade CRDs
+  install: false
+  # -- Keep CRDs on chart uninstall
+  keep: true
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: dragonfly-operator-controller-manager
+
+podAnnotations:
+  kubectl.kubernetes.io/default-container: manager
+
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+
+service:
+  type: ClusterIP
+  port: 8443
+
+terminationGracePeriodSeconds: 10
+
+rbacProxy:
+  image:
+    repository: gcr.io/kubebuilder/kube-rbac-proxy
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: v0.13.1
+
+  resources: {}
+#    limits:
+#      cpu: 500m
+#      memory: 128Mi
+#    requests:
+#      cpu: 10m
+#      memory: 64Mi
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+manager:
+  image:
+    repository: docker.dragonflydb.io/dragonflydb/operator
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+
+
+  resources: {}
+#    limits:
+#      cpu: 500m
+#      memory: 128Mi
+#    requests:
+#      cpu: 10m
+#      memory: 64Mi
+
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: 8081
+    initialDelaySeconds: 15
+    periodSeconds: 20
+
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: 8081
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+  nodeSelector: {}
+
+  tolerations: []
+
+
+  # -- Assign custom [TopologySpreadConstraints] rules to the application controller
+  # @default -- `[]` (defaults to global.topologySpreadConstraints)
+  ## Ref: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+  ## If labelSelector is left out, it will default to the labelSelector configuration of the deployment
+  topologySpreadConstraints: []
+    # - maxSkew: 1
+    #   topologyKey: topology.kubernetes.io/zone
+  #   whenUnsatisfiable: DoNotSchedule
+  affinity: {}
+#    nodeAffinity:
+#      requiredDuringSchedulingIgnoredDuringExecution:
+#        nodeSelectorTerms:
+#          - matchExpressions:
+#              - key: kubernetes.io/arch
+#                operator: In
+#                values:
+#                  - amd64
+#                  - arm64
+#                  - ppc64le
+#                  - s390x
+#              - key: kubernetes.io/os
+#                operator: In
+#                values:
+#                  - linux

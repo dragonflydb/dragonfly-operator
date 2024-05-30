@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-controller-manager-metrics-service
+  labels:
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kube-rbac-proxy
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: https
+      protocol: TCP
+      name: https
+  selector:
+    {{- include "dragonfly-operator.selectorLabels" . | nindent 4 }}
