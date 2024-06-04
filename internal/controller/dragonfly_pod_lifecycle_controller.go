@@ -77,8 +77,8 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if !isPodReady {
 		restartCount := getRestartCount(pod)
 		if roleExists && role == "master" {
-			// If the master Pod is not ready and has restarted multiple times, initiate failover
-			if restartCount > 5 {
+			// If the master Pod is not ready and has restarted atleast once, initiate failover
+			if restartCount > 0 {
 				log.Info("Master pod is not starting after multiple attempts, initiating failover", "pod", req.NamespacedName, "restarts", restartCount)
 				err := dfi.configureReplication(ctx)
 				if err != nil {
