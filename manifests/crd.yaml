@@ -1129,6 +1129,9 @@ spec:
                       type: string
                     description: (Optional) Dragonfly Service Annotations
                     type: object
+                  name:
+                    description: (Optional) Dragonfly Service name
+                    type: string
                   type:
                     description: (Optional) Dragonfly Service type
                     type: string

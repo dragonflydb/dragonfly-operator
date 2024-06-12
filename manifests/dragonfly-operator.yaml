@@ -1142,6 +1142,9 @@ spec:
                       type: string
                     description: (Optional) Dragonfly Service Annotations
                     type: object
+                  name:
+                    description: (Optional) Dragonfly Service name
+                    type: string
                   type:
                     description: (Optional) Dragonfly Service type
                     type: string
@@ -1922,7 +1925,7 @@ spec:
         - --upstream=http://127.0.0.1:8080/
         - --logtostderr=true
         - --v=0
-        image: gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1
+        image: gcr.io/kubebuilder/kube-rbac-proxy:v0.16.0
         name: kube-rbac-proxy
         ports:
         - containerPort: 8443
@@ -1946,7 +1949,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: docker.dragonflydb.io/dragonflydb/operator:v1.1.2
+        image: docker.dragonflydb.io/dragonflydb/operator:v1.1.3
         livenessProbe:
           httpGet:
             path: /healthz
