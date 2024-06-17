@@ -21,14 +21,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -40,7 +38,7 @@ const (
 
 // isPodOnLatestVersion returns if the Given pod is on the updatedRevision
 // of the given statefulset or not
-func isPodOnLatestVersion(ctx context.Context, c client.Client, pod *corev1.Pod, statefulSet *appsv1.StatefulSet) (bool, error) {
+func isPodOnLatestVersion(pod *corev1.Pod, statefulSet *appsv1.StatefulSet) (bool, error) {
 	// Get the pod's revision
 	podRevision, ok := pod.Labels[appsv1.StatefulSetRevisionLabel]
 	if !ok {
@@ -74,7 +72,7 @@ func getLatestReplica(ctx context.Context, c client.Client, statefulSet *appsv1.
 	// Iterate over the pods and find a replica which is on the latest version
 	for _, pod := range podList.Items {
 
-		isLatest, err := isPodOnLatestVersion(ctx, c, &pod, statefulSet)
+		isLatest, err := isPodOnLatestVersion(&pod, statefulSet)
 		if err != nil {
 			return nil, err
 		}
@@ -112,43 +110,7 @@ func replTakeover(ctx context.Context, c client.Client, newMaster *corev1.Pod) e
 	return nil
 }
 
-func waitForStatefulSetReady(ctx context.Context, c client.Client, name, namespace string, maxDuration time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, maxDuration)
-	defer cancel()
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for statefulset to be ready")
-		default:
-			// Check if the statefulset is ready
-			ready, err := isStatefulSetReady(ctx, c, name, namespace)
-			if err != nil {
-				return err
-			}
-			if ready {
-				return nil
-			}
-		}
-	}
-}
-
-func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace string) (bool, error) {
-	var statefulSet appsv1.StatefulSet
-	if err := c.Get(ctx, types.NamespacedName{
-		Name:      name,
-		Namespace: namespace,
-	}, &statefulSet); err != nil {
-		return false, nil
-	}
-
-	if statefulSet.Status.ReadyReplicas == *statefulSet.Spec.Replicas {
-		return true, nil
-	}
-
-	return false, nil
-}
-
-func isStableState(ctx context.Context, c client.Client, pod *corev1.Pod) (bool, error) {
+func isStableState(ctx context.Context, pod *corev1.Pod) (bool, error) {
 	// wait until pod IP is ready
 	if pod.Status.PodIP == "" || pod.Status.Phase != corev1.PodRunning {
 		return false, nil
