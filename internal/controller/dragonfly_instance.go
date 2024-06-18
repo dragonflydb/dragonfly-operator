@@ -23,7 +23,6 @@ import (
 	"strings"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
-	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
@@ -36,7 +35,7 @@ import (
 // and provides methods to handle replication.
 type DragonflyInstance struct {
 	// Dragonfly is the relevant Dragonfly CRD that it performs actions over
-	df *resourcesv1.Dragonfly
+	df *dfv1alpha1.Dragonfly
 
 	client client.Client
 	log    logr.Logger
@@ -63,17 +62,6 @@ func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *core
 		client: c,
 		log:    log,
 	}, nil
-}
-
-func (dfi *DragonflyInstance) getStatus(ctx context.Context) (string, error) {
-	if err := dfi.client.Get(ctx, types.NamespacedName{
-		Name:      dfi.df.Name,
-		Namespace: dfi.df.Namespace,
-	}, dfi.df); err != nil {
-		return "", err
-	}
-
-	return dfi.df.Status.Phase, nil
 }
 
 func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {

@@ -138,7 +138,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		fullSyncedUpdatedReplicas := 0
 		for _, replica := range replicas {
 			// Check only with latest replicas
-			onLatestVersion, err := isPodOnLatestVersion(ctx, r.Client, &replica, &updatedStatefulset)
+			onLatestVersion, err := isPodOnLatestVersion(&replica, &updatedStatefulset)
 			if err != nil {
 				log.Error(err, "could not check if pod is on latest version")
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
@@ -146,7 +146,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			if onLatestVersion {
 				// check if the replica had a full sync
 				log.Info("New Replica found. Checking if replica had a full sync", "pod", replica.Name)
-				isStableState, err := isStableState(ctx, r.Client, &replica)
+				isStableState, err := isStableState(ctx, &replica)
 				if err != nil {
 					log.Error(err, "could not check if pod is in stable state")
 					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
@@ -167,7 +167,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// delete older version replicas
 		for _, replica := range replicas {
 			// Check if pod is on latest version
-			onLatestVersion, err := isPodOnLatestVersion(ctx, r.Client, &replica, &updatedStatefulset)
+			onLatestVersion, err := isPodOnLatestVersion(&replica, &updatedStatefulset)
 			if err != nil {
 				log.Error(err, "could not check if pod is on latest version")
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
@@ -186,13 +186,17 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 		}
 
-		latestReplica, err := getLatestReplica(ctx, r.Client, &updatedStatefulset)
-		if err != nil {
-			log.Error(err, "could not get latest replica")
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+		var latestReplica *corev1.Pod
+		var err error
+		if len(replicas) > 0 {
+			latestReplica, err = getLatestReplica(ctx, r.Client, &updatedStatefulset)
+			if err != nil {
+				log.Error(err, "could not get latest replica")
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+			}
 		}
 
-		masterOnLatest, err := isPodOnLatestVersion(ctx, r.Client, &master, &updatedStatefulset)
+		masterOnLatest, err := isPodOnLatestVersion(&master, &updatedStatefulset)
 		if err != nil {
 			log.Error(err, "could not check if pod is on latest version")
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, err
@@ -202,10 +206,12 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// are on latest version
 		if !masterOnLatest {
 			// Update master now
-			log.Info("Running REPLTAKEOVER on replica", "pod", master.Name)
-			if err := replTakeover(ctx, r.Client, latestReplica); err != nil {
-				log.Error(err, "could not update master")
-				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+			if latestReplica != nil {
+				log.Info("Running REPLTAKEOVER on replica", "pod", master.Name)
+				if err := replTakeover(ctx, r.Client, latestReplica); err != nil {
+					log.Error(err, "could not update master")
+					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+				}
 			}
 			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", fmt.Sprintf("Shutting down master %s", master.Name))
 
