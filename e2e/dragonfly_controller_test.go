@@ -502,10 +502,14 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			newAnnotations := map[string]string{
 				"service-annotaions": "true",
 			}
+			newLabels := map[string]string{
+				"service-labels": "true",
+			}
 			df.Spec.ServiceSpec = &resourcesv1.ServiceSpec{
 				Type:        corev1.ServiceTypeLoadBalancer,
 				Name:        "test-svc",
 				Annotations: newAnnotations,
+				Labels:      newLabels,
 			}
 
 			err = k8sClient.Update(ctx, &df)
@@ -526,6 +530,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 
 			Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeLoadBalancer))
 			Expect(svc.Annotations).To(Equal(newAnnotations))
+			Expect(svc.Labels).To(Equal(newLabels))
 		})
 
 		It("Cleanup", func() {

@@ -145,6 +145,11 @@ type ServiceSpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// (Optional) Dragonfly Service Labels
+	// +optional
+	// +kubebuilder:validation:Optional
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 type Snapshot struct {
