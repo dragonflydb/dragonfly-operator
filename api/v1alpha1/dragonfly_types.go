@@ -141,6 +141,11 @@ type ServiceSpec struct {
 	// +kubebuilder:validation:Optional
 	Name string `json:"name,omitempty"`
 
+	// (Optional) Dragonfly Service nodePort
+	// +optional
+	// +kubebuilder:validation:Optional
+	NodePort int32 `json:"nodePort,omitempty"`
+
 	// (Optional) Dragonfly Service Annotations
 	// +optional
 	// +kubebuilder:validation:Optional
