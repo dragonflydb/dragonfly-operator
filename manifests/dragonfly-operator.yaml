@@ -1142,6 +1142,11 @@ spec:
                       type: string
                     description: (Optional) Dragonfly Service Annotations
                     type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    description: (Optional) Dragonfly Service Labels
+                    type: object
                   name:
                     description: (Optional) Dragonfly Service name
                     type: string
@@ -1949,7 +1954,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: docker.dragonflydb.io/dragonflydb/operator:v1.1.3
+        image: docker.dragonflydb.io/dragonflydb/operator:v1.1.4
         livenessProbe:
           httpGet:
             path: /healthz
