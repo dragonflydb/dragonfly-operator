@@ -1142,6 +1142,11 @@ spec:
                       type: string
                     description: (Optional) Dragonfly Service Annotations
                     type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    description: (Optional) Dragonfly Service Labels
+                    type: object
                   name:
                     description: (Optional) Dragonfly Service name
                     type: string
