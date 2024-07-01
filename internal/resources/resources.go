@@ -385,6 +385,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		service.Spec.Type = df.Spec.ServiceSpec.Type
 		service.Annotations = df.Spec.ServiceSpec.Annotations
 		service.Labels = df.Spec.ServiceSpec.Labels
+		service.Spec.Ports[0].NodePort = df.Spec.ServiceSpec.NodePort
 	}
 	if df.Spec.MemcachedPort != 0 {
 		service.Spec.Ports = append(service.Spec.Ports, corev1.ServicePort{

@@ -1138,6 +1138,10 @@ spec:
                   name:
                     description: (Optional) Dragonfly Service name
                     type: string
+                  nodePort:
+                    description: (Optional) Dragonfly Service nodePort
+                    format: int32
+                    type: integer
                   type:
                     description: (Optional) Dragonfly Service type
                     type: string
