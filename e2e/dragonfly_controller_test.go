@@ -657,7 +657,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 							AccessModes: []corev1.PersistentVolumeAccessMode{
 								corev1.ReadWriteOnce,
 							},
-							Resources: corev1.ResourceRequirements{
+							Resources: corev1.VolumeResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceStorage: resource.MustParse("1Gi"),
 								},
