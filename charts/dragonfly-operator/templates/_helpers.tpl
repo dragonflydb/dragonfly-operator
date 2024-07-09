@@ -48,7 +48,9 @@ app.kubernetes.io/part-of: {{ include "dragonfly-operator.name" . }}
 Selector labels
 */}}
 {{- define "dragonfly-operator.selectorLabels" -}}
-control-plane: controller-manager
+app.kubernetes.io/name: {{ include "dragonfly-operator.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+
 {{- end }}
 
 {{/*
