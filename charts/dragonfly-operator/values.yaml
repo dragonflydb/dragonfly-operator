@@ -125,3 +125,19 @@ manager:
 #                operator: In
 #                values:
 #                  - linux
+
+grafanaDashboard:
+  enabled: false
+  folder: database
+  # -- Grafana dashboard configmap annotations.
+  annotations:
+    name: grafana_folder
+  # -- Grafana dashboard configmap labels
+  labels:
+    name: grafana_dashboard
+  grafanaOperator:
+    enabled: false
+    allowCrossNamespaceImport: true
+    # -- Selected labels for Grafana instance
+    matchLabels:
+      dashboards: grafana
