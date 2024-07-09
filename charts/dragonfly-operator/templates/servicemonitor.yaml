@@ -1,0 +1,40 @@
+{{- if .Values.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller-manager-metrics
+    {{- if .Values.serviceMonitor.labels }}
+    {{- toYaml .Values.serviceMonitor.labels | nindent 4}}
+    {{- end }}
+  name: {{ include "dragonfly-operator.fullname" . }}-controller-manager-metrics
+spec:
+  endpoints:
+  - targetPort: {{ .Values.service.port }}
+    {{- if .Values.serviceMonitor.interval }}
+    interval: {{ .Values.serviceMonitor.interval }}
+    {{- end }}
+    {{- if .Values.serviceMonitor.telemetryPath }}
+    path: {{ .Values.serviceMonitor.path }}
+    {{- end }}
+    {{- if .Values.serviceMonitor.timeout }}
+    scrapeTimeout: {{ .Values.serviceMonitor.timeout }}
+    {{- end }}
+    {{- if .Values.serviceMonitor.relabelings }}
+    relabelings: 
+    {{ toYaml .Values.serviceMonitor.relabelings | indent 6 }}
+    {{- end }}
+    {{- if .Values.serviceMonitor.metricRelabelings }}
+    metricRelabelings: 
+    {{ toYaml .Values.serviceMonitor.metricRelabelings | indent 6 }}
+    {{- end }}
+  jobLabel: {{ template "dragonfly-operator.fullname" . }}
+  namespaceSelector:
+    matchNames:
+    - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      {{- include "dragonfly-operator.selectorLabels" . | nindent 6 }}
+{{- end }}
