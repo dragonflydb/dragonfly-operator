@@ -411,7 +411,7 @@
 			"disableTextWrap": false,
 			"editorMode": "code",
 			"exemplar": false,
-			"expr": "dragonfly_role{pod=\"$instance\", role=\"master\"}",
+			"expr": "dragonfly_master{pod=\"$instance\"}",
 			"fullMetaSearch": false,
 			"includeNullMetadata": true,
 			"instant": true,
