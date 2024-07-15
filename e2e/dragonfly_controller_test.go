@@ -305,7 +305,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			}, &df)
 			Expect(err).To(BeNil())
 
-			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.19.0")
+			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.20.1")
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 		})
@@ -558,8 +558,8 @@ var _ = Describe("Dragonfly Acl file secret key test", Ordered, FlakeAttempts(3)
 
 	Context("Dragonfly resource creation with acl file", func() {
 		It("Should create successfully", func() {
-			multiLineString := `USER default ON nopass +@ALL +ALL ~*
-USER John ON #89e01536ac207279409d4de1e5253e01f4a1769e696db0d6062ca9b8f56767c8 +@ADMIN +SET
+			multiLineString := `user default on nopass ~* +@all
+user john on #0c8e2b662f1c0f1 -@all +@string +hset
 `
 
 			err := k8sClient.Create(ctx, &corev1.Secret{
@@ -613,8 +613,8 @@ USER John ON #89e01536ac207279409d4de1e5253e01f4a1769e696db0d6062ca9b8f56767c8 +
 			Expect(err).To(BeNil())
 			Expect(result).To(HaveLen(2))
 			Expect(result).To(ContainElements(
-				"user default on nopass +@ALL +ALL ~*",
-				"user John on 89e01536ac20727 +@ADMIN +SET",
+				"user default on nopass ~* +@all",
+				"user john on #0c8e2b662f1c0f -@all +@string +hset",
 			))
 		})
 		It("Cleanup", func() {
