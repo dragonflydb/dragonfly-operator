@@ -77,22 +77,6 @@ jobs:
       - name: Install helm
         uses: azure/setup-helm@v4
 
-      - name: Update helm chart version and publish it to main branch
-        run: |
-          git checkout main
-          sed -Ei \
-           -e 's/^(version\:) .*/\1 '${{ env.VERSION }}'/g' \
-           -e 's/^(appVersion\:) .*/\1 "'${{ env.VERSION }}'"/g' \
-           charts/dragonfly-operator/Chart.yaml          
-          
-          git config user.name "${{ github.actor }}"
-          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"          
-
-          git commit \
-          -m 'chore(helm-chart): update to ${{ env.VERSION }}' \
-          charts/dragonfly-operator/Chart.yaml
-
-          git push
       - name: Push Helm chart as OCI to Github
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
