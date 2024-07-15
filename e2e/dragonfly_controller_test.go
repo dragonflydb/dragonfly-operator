@@ -559,7 +559,7 @@ var _ = Describe("Dragonfly Acl file secret key test", Ordered, FlakeAttempts(3)
 	Context("Dragonfly resource creation with acl file", func() {
 		It("Should create successfully", func() {
 			multiLineString := `user default on nopass ~* +@all
-user john on >ea71c25a7a60224 -@all +@string +hset
+user john on #0c8e2b662f1c0f1 -@all +@string +hset
 `
 
 			err := k8sClient.Create(ctx, &corev1.Secret{
@@ -614,7 +614,7 @@ user john on >ea71c25a7a60224 -@all +@string +hset
 			Expect(result).To(HaveLen(2))
 			Expect(result).To(ContainElements(
 				"user default on nopass ~* +@all",
-				"user John on ea71c25a7a60224 -@all +@string +hset",
+				"user john on #0c8e2b662f1c0f -@all +@string +hset",
 			))
 		})
 		It("Cleanup", func() {
