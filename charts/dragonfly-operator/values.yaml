@@ -7,7 +7,7 @@ replicaCount: 1
 ## Custom resource configuration
 crds:
   # -- Install and upgrade CRDs
-  install: false
+  install: true
   # -- Keep CRDs on chart uninstall
   keep: true
 
@@ -129,3 +129,26 @@ manager:
 #                operator: In
 #                values:
 #                  - linux
+
+
+serviceMonitor:
+  # When set true then use a ServiceMonitor to configure scraping
+  enabled: false
+  # Set how frequently Prometheus should scrape
+  interval: 30s
+  # Set path to cloudwatch-exporter telemtery-path
+  path: /metrics
+  # Set labels for the ServiceMonitor, use this to define your scrape label for Prometheus Operator
+  labels: {}
+  # Set timeout for scrape
+  timeout: 10s
+  # Set relabelings for the ServiceMonitor, use to apply to samples before scraping
+  relabelings: []
+  # Set metricRelabelings for the ServiceMonitor, use to apply to samples for ingestion
+  metricRelabelings: []
+  # Example - note the Kubernetes convention of camelCase instead of Prometheus' snake_case
+  # metricRelabelings:
+  #   - sourceLabels: [dbinstance_identifier]
+  #     action: replace
+  #     replacement: mydbname
+  #     targetLabel: dbname

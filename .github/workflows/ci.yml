@@ -55,6 +55,7 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: true
+          fetch-depth: 0
 
       - name: Build
         run: |
@@ -72,6 +73,18 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install helm
+        uses: azure/setup-helm@v4
+
+      - name: Push Helm chart as OCI to Github
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+          helm registry login -u ${{ github.actor }} --password-stdin ghcr.io
+          
+          helm package charts/dragonfly-operator
+          
+          helm push dragonfly-operator-${{ env.VERSION }}.tgz oci://ghcr.io/dragonflydb/dragonfly-operator/helm
 
       - name: Build and Publish image into GHCR
         uses: docker/build-push-action@v5
@@ -100,4 +113,5 @@ jobs:
             Release ${{ github.ref_name }}
 
             Docker image: ghcr.io/dragonflydb/operator:${{ github.ref_name }}
+            Helm chart: oci://ghcr.io/dragonflydb/dragonfly-operator/helm
           draft: true
