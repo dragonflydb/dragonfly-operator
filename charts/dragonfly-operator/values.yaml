@@ -126,7 +126,6 @@ manager:
 #                values:
 #                  - linux
 
-
 serviceMonitor:
   # When set true then use a ServiceMonitor to configure scraping
   enabled: false
@@ -148,3 +147,19 @@ serviceMonitor:
   #     action: replace
   #     replacement: mydbname
   #     targetLabel: dbname
+
+grafanaDashboard:
+  enabled: false
+  folder: database
+  # -- Grafana dashboard configmap annotations.
+  annotations:
+    name: grafana_folder
+  # -- Grafana dashboard configmap labels
+  labels:
+    name: grafana_dashboard
+  grafanaOperator:
+    enabled: false
+    allowCrossNamespaceImport: true
+    # -- Selected labels for Grafana instance
+    matchLabels:
+      dashboards: grafana
