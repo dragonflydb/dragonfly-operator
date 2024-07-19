@@ -5,6 +5,7 @@ metadata:
   name: {{ include "dragonfly-operator.fullname" . }}-manager-role
   labels:
     {{- include "dragonfly-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
 rules:
   - apiGroups:
       - ""

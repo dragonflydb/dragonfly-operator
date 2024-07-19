@@ -14,6 +14,10 @@ crds:
 nameOverride: ""
 fullnameOverride: ""
 
+# -- Additional labels to add to all resources
+additionalLabels: {}
+  # app: dragonfly-operator
+
 serviceAccount:
   # Specifies whether a service account should be created
   create: true

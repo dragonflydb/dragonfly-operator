@@ -42,13 +42,18 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/created-by: {{ include "dragonfly-operator.name" . }}
 app.kubernetes.io/part-of: {{ include "dragonfly-operator.name" . }}
+{{- if .Values.additionalLabels }}
+{{ toYaml .Values.additionalLabels }}
+{{- end }}
 {{- end }}
 
 {{/*
 Selector labels
 */}}
 {{- define "dragonfly-operator.selectorLabels" -}}
-control-plane: controller-manager
+app.kubernetes.io/name: {{ include "dragonfly-operator.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+
 {{- end }}
 
 {{/*

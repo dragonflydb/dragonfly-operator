@@ -14,3 +14,4 @@ spec:
       name: https
   selector:
     {{- include "dragonfly-operator.selectorLabels" . | nindent 4 }}
+    control-plane: controller-manager
