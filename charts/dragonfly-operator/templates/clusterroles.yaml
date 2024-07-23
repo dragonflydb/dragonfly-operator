@@ -84,7 +84,6 @@ metadata:
   labels:
     {{- include "dragonfly-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: kube-rbac-proxy
-    app.kubernetes.io/instance: metrics-reader
 rules:
   - nonResourceURLs:
       - /metrics
@@ -98,7 +97,6 @@ metadata:
   labels:
     {{- include "dragonfly-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: kube-rbac-proxy
-    app.kubernetes.io/instance: proxy-role
 rules:
   - apiGroups:
       - authentication.k8s.io
