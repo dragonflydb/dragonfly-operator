@@ -50,12 +50,7 @@ spec:
               name: https
               protocol: TCP
           resources:
-            limits:
-              cpu: 500m
-              memory: 128Mi
-            requests:
-              cpu: 5m
-              memory: 64Mi
+            {{- toYaml .Values.rbacProxy.resources | nindent 12 }}
 
         - name: manager
           args:
