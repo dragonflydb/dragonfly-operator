@@ -143,6 +143,24 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
+	// perform a rollout only if the pod spec has changed
+	// Check if the pod spec has changed
+	log.Info("Checking if pod spec has changed", "updatedReplicas", statefulSet.Status.UpdatedReplicas, "currentReplicas", statefulSet.Status.Replicas)
+	if statefulSet.Status.UpdatedReplicas != statefulSet.Status.Replicas {
+		log.Info("Pod spec has changed, performing a rollout")
+		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Starting a rollout")
+
+		// Start rollout and update status
+		// update status so that we can track progress
+		df.Status.IsRollingUpdate = true
+		if err := r.Status().Update(ctx, &df); err != nil {
+			log.Error(err, "could not update the Dragonfly object")
+			return ctrl.Result{Requeue: true}, err
+		}
+
+		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Performing a rollout")
+	}
+
 	log.Info("Updated resources for object")
 	r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Updated resources")
 
@@ -182,6 +200,14 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				}
 			} else {
 				log.Info("found pod without label", "pod", pod.Name)
+				if isFailedToStart(&pod) {
+					// This is a new pod which is trying to be ready, but couldn't start due to misconfig.
+					// Delete the pod and create a new one.
+					if err := r.Delete(ctx, &pod); err != nil {
+						log.Error(err, "could not delete pod")
+						return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+					}
+				}
 				// retry after they are ready
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 			}
@@ -289,29 +315,26 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		return ctrl.Result{}, nil
-	} else {
-		// perform a rollout only if the pod spec has changed
-		// Check if the pod spec has changed
-		log.Info("Checking if pod spec has changed", "updatedReplicas", statefulSet.Status.UpdatedReplicas, "currentReplicas", statefulSet.Status.Replicas)
-		if statefulSet.Status.UpdatedReplicas != statefulSet.Status.Replicas {
-			log.Info("Pod spec has changed, performing a rollout")
-			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Starting a rollout")
-
-			// Start rollout and update status
-			// update status so that we can track progress
-			df.Status.IsRollingUpdate = true
-			if err := r.Status().Update(ctx, &df); err != nil {
-				log.Error(err, "could not update the Dragonfly object")
-				return ctrl.Result{Requeue: true}, err
-			}
-
-			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Performing a rollout")
-
-			// requeue so that the rollout is processed
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-		}
 	}
 	return ctrl.Result{Requeue: true}, nil
+}
+
+func isFailedToStart(pod *corev1.Pod) bool {
+	for _, containerStatus := range pod.Status.ContainerStatuses {
+		if (containerStatus.State.Waiting != nil && isFailureReason(containerStatus.State.Waiting.Reason)) ||
+			(containerStatus.State.Terminated != nil && isFailureReason(containerStatus.State.Terminated.Reason)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isFailureReason checks if the given reason indicates a failure.
+func isFailureReason(reason string) bool {
+	return reason == "ErrImagePull" ||
+		reason == "ImagePullBackOff" ||
+		reason == "CrashLoopBackOff" ||
+		reason == "RunContainerError"
 }
 
 func (r *DragonflyReconciler) getMissingResources(ctx context.Context, df *dfv1alpha1.Dragonfly) ([]client.Object, error) {
