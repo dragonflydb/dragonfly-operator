@@ -51,12 +51,12 @@ rbacProxy:
     tag: v0.13.1
 
   resources: {}
-#    limits:
-#      cpu: 500m
-#      memory: 128Mi
-#    requests:
-#      cpu: 10m
-#      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
 
   securityContext:
     allowPrivilegeEscalation: false
