@@ -407,8 +407,8 @@ func (r *DragonflyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		// Listen only to spec changes
 		For(&dfv1alpha1.Dragonfly{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Owns(&appsv1.StatefulSet{}).
-		Owns(&corev1.Service{}).
+		Owns(&appsv1.StatefulSet{}, builder.MatchEveryOwner).
+		Owns(&corev1.Service{}, builder.MatchEveryOwner).
 		Named("Dragonfly").
 		Complete(r)
 }
