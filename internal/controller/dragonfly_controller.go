@@ -19,16 +19,13 @@ package controller
 import (
 	"context"
 	"fmt"
-	"slices"
 	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
-	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -115,16 +112,6 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err := r.Get(ctx, client.ObjectKey{Namespace: df.Namespace, Name: df.Name}, &statefulSet); err != nil {
 		log.Error(err, "could not get statefulset")
 		return ctrl.Result{}, err
-	}
-
-	// If df updates an immutable field, delete the statefulset with Orphan propagation policy
-	// and recreate the statefulset in the next loop.
-	if r.cantUpdateStatefulSet(&df, &statefulSet) {
-		var err error
-		if err = r.Delete(ctx, &statefulSet, client.PropagationPolicy(v1.DeletePropagationOrphan)); err != nil {
-			log.Error(err, fmt.Sprintf("could not delete statefulset %s/%s", statefulSet.GetNamespace(), statefulSet.GetName()))
-		}
-		return ctrl.Result{Requeue: true}, err
 	}
 
 	// Update all resources even if the df is in rollout state to ensure
@@ -361,46 +348,46 @@ func (r *DragonflyReconciler) getMissingResources(ctx context.Context, df *dfv1a
 	return missingResources, nil
 }
 
-func (r *DragonflyReconciler) isPVCSpecChanged(df *dfv1alpha1.Dragonfly, sts *appsv1.StatefulSet) bool {
-	dfPVCSpec := getPVCSpecFromDragonfly(df)
-	stsPVCSpec := getPVCSpecFromStatefulSet(sts)
+// func (r *DragonflyReconciler) isPVCSpecChanged(df *dfv1alpha1.Dragonfly, sts *appsv1.StatefulSet) bool {
+// 	dfPVCSpec := getPVCSpecFromDragonfly(df)
+// 	stsPVCSpec := getPVCSpecFromStatefulSet(sts)
 
-	return !isPVCSpecEqual(dfPVCSpec, stsPVCSpec)
-}
+// 	return !isPVCSpecEqual(dfPVCSpec, stsPVCSpec)
+// }
 
-func getPVCSpecFromDragonfly(df *dfv1alpha1.Dragonfly) *corev1.PersistentVolumeClaimSpec {
-	if df.Spec.Snapshot != nil {
-		return df.Spec.Snapshot.PersistentVolumeClaimSpec
-	}
-	return nil
-}
+// func getPVCSpecFromDragonfly(df *dfv1alpha1.Dragonfly) *corev1.PersistentVolumeClaimSpec {
+// 	if df.Spec.Snapshot != nil {
+// 		return df.Spec.Snapshot.PersistentVolumeClaimSpec
+// 	}
+// 	return nil
+// }
 
-func getPVCSpecFromStatefulSet(sts *appsv1.StatefulSet) *corev1.PersistentVolumeClaimSpec {
-	for i := range sts.Spec.VolumeClaimTemplates {
-		if sts.Spec.VolumeClaimTemplates[i].Name == "df" {
-			return &sts.Spec.VolumeClaimTemplates[i].Spec
-		}
-	}
-	return nil
-}
+// func getPVCSpecFromStatefulSet(sts *appsv1.StatefulSet) *corev1.PersistentVolumeClaimSpec {
+// 	for i := range sts.Spec.VolumeClaimTemplates {
+// 		if sts.Spec.VolumeClaimTemplates[i].Name == "df" {
+// 			return &sts.Spec.VolumeClaimTemplates[i].Spec
+// 		}
+// 	}
+// 	return nil
+// }
 
-func isPVCSpecEqual(spec1, spec2 *corev1.PersistentVolumeClaimSpec) bool {
-	if spec1 == nil && spec2 == nil {
-		return true
-	}
-	if spec1 == nil || spec2 == nil {
-		return false
-	}
+// func isPVCSpecEqual(spec1, spec2 *corev1.PersistentVolumeClaimSpec) bool {
+// 	if spec1 == nil && spec2 == nil {
+// 		return true
+// 	}
+// 	if spec1 == nil || spec2 == nil {
+// 		return false
+// 	}
 
-	// Compare essential fields
-	return slices.Equal(spec1.AccessModes, spec2.AccessModes) &&
-		lo.FromPtr(spec1.StorageClassName) == lo.FromPtr(spec2.StorageClassName) &&
-		spec1.Resources.Requests.Storage().Equal(*spec2.Resources.Requests.Storage())
-}
+// 	// Compare essential fields
+// 	return slices.Equal(spec1.AccessModes, spec2.AccessModes) &&
+// 		lo.FromPtr(spec1.StorageClassName) == lo.FromPtr(spec2.StorageClassName) &&
+// 		spec1.Resources.Requests.Storage().Equal(*spec2.Resources.Requests.Storage())
+// }
 
-func (r *DragonflyReconciler) cantUpdateStatefulSet(df *dfv1alpha1.Dragonfly, sts *appsv1.StatefulSet) bool {
-	return r.isPVCSpecChanged(df, sts)
-}
+// func (r *DragonflyReconciler) cantUpdateStatefulSet(df *dfv1alpha1.Dragonfly, sts *appsv1.StatefulSet) bool {
+// 	return r.isPVCSpecChanged(df, sts)
+// }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DragonflyReconciler) SetupWithManager(mgr ctrl.Manager) error {
