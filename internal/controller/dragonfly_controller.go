@@ -24,6 +24,7 @@ import (
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
+	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -393,8 +394,7 @@ func isPVCSpecEqual(spec1, spec2 *corev1.PersistentVolumeClaimSpec) bool {
 
 	// Compare essential fields
 	return slices.Equal(spec1.AccessModes, spec2.AccessModes) &&
-		spec1.StorageClassName != nil && spec2.StorageClassName != nil &&
-		*spec1.StorageClassName == *spec2.StorageClassName &&
+		lo.FromPtr(spec1.StorageClassName) == lo.FromPtr(spec2.StorageClassName) &&
 		spec1.Resources.Requests.Storage().Equal(*spec2.Resources.Requests.Storage())
 }
 
