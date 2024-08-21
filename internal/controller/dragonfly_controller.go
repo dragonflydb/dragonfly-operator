@@ -131,24 +131,6 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
-	// perform a rollout only if the pod spec has changed
-	// Check if the pod spec has changed
-	log.Info("Checking if pod spec has changed", "updatedReplicas", statefulSet.Status.UpdatedReplicas, "currentReplicas", statefulSet.Status.Replicas)
-	if statefulSet.Status.UpdatedReplicas != statefulSet.Status.Replicas {
-		log.Info("Pod spec has changed, performing a rollout")
-		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Starting a rollout")
-
-		// Start rollout and update status
-		// update status so that we can track progress
-		df.Status.IsRollingUpdate = true
-		if err := r.Status().Update(ctx, &df); err != nil {
-			log.Error(err, "could not update the Dragonfly object")
-			return ctrl.Result{Requeue: true}, err
-		}
-
-		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Performing a rollout")
-	}
-
 	log.Info("Updated resources for object")
 	r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Updated resources")
 
@@ -303,6 +285,22 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		return ctrl.Result{}, nil
+	} else if statefulSet.Status.UpdatedReplicas != statefulSet.Status.Replicas {
+		// perform a rollout only if the pod spec has changed
+		// Check if the pod spec has changed
+		log.Info("Checking if pod spec has changed", "updatedReplicas", statefulSet.Status.UpdatedReplicas, "currentReplicas", statefulSet.Status.Replicas)
+		log.Info("Pod spec has changed, performing a rollout")
+		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Starting a rollout")
+
+		// Start rollout and update status
+		// update status so that we can track progress
+		df.Status.IsRollingUpdate = true
+		if err := r.Status().Update(ctx, &df); err != nil {
+			log.Error(err, "could not update the Dragonfly object")
+			return ctrl.Result{Requeue: true}, err
+		}
+
+		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Performing a rollout")
 	}
 	return ctrl.Result{Requeue: true}, nil
 }

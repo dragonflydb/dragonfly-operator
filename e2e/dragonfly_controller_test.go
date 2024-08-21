@@ -418,11 +418,13 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 
+			GinkgoLogr.Info("start timestamp", "timestamp", time.Now().UTC())
 			// Wait until Dragonfly object is marked ready
 			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			Expect(err).To(BeNil())
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
 			Expect(err).To(BeNil())
+			GinkgoLogr.Info("end timestamp", "timestamp", time.Now().UTC())
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
@@ -524,11 +526,11 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 
-			// // Wait until Dragonfly object is marked ready
-			// err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 1*time.Minute)
-			// Expect(err).To(BeNil())
-			// err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
-			// Expect(err).To(BeNil())
+			// Wait until Dragonfly object is marked ready
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 1*time.Minute)
+			Expect(err).To(BeNil())
+			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
+			Expect(err).To(BeNil())
 
 			var svc corev1.Service
 			err = k8sClient.Get(ctx, types.NamespacedName{
