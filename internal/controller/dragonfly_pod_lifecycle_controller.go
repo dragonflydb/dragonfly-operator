@@ -75,23 +75,16 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Get the role of the pod
 	role, roleExists := pod.Labels[resources.Role]
 	if !isPodReady {
-		restartCount := getRestartCount(pod)
 		if roleExists && role == "master" {
-			// If the master Pod is not ready and has restarted atleast once, initiate failover
-			if restartCount > 0 {
-				log.Info("Master pod is not starting after multiple attempts, initiating failover", "pod", req.NamespacedName, "restarts", restartCount)
-				err := dfi.configureReplication(ctx)
-				if err != nil {
-					log.Error(err, "Failed to initiate failover")
-					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
-				}
-				return ctrl.Result{}, nil
-			} else {
-				log.Info("Master pod is not ready yet, will requeue", "pod", req.NamespacedName, "restarts", restartCount)
-				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			log.Info("Master pod is not ready, initiating failover", "pod", req.NamespacedName)
+			err := dfi.configureReplication(ctx)
+			if err != nil {
+				log.Error(err, "Failed to initiate failover")
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 			}
+			return ctrl.Result{}, nil
 		} else {
-			log.Info("Pod is not ready yet", "pod", req.NamespacedName, "restarts", restartCount)
+			log.Info("Pod is not ready yet", "pod", req.NamespacedName)
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 	}
@@ -109,9 +102,9 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// - If the Dragonfly object status is Ready, Then this is a pod restart.
 	// 	- If there is master already, add this as replica
 	//	- If there is no master, find a healthy instance and mark it as master
-	role, ok := pod.Labels[resources.Role]
+	//
 	// New pod with No resources.Role
-	if !ok {
+	if !roleExists {
 		log.Info("No replication role was set yet", "phase", dfi.df.Status.Phase)
 		if dfi.df.Status.Phase == PhaseResourcesCreated {
 			// Make it ready
@@ -194,17 +187,6 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// getRestartCount fetches the restart count for the given dragonfly pod.
-func getRestartCount(pod corev1.Pod) int32 {
-	var restartCount int32 = 0
-	for _, cs := range pod.Status.ContainerStatuses {
-		if cs.Name == "dragonfly" {
-			restartCount += cs.RestartCount
-		}
-	}
-	return restartCount
 }
 
 // SetupWithManager sets up the controller with the Manager.
