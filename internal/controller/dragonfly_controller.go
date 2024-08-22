@@ -25,6 +25,7 @@ import (
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -91,7 +92,49 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Created resources")
 		return ctrl.Result{}, nil
-	} else if df.Status.IsRollingUpdate {
+	}
+
+	// Ensure all resources exist before moving forward.
+	missingResources, err := r.getMissingResources(ctx, &df)
+	if err != nil {
+		log.Error(err, "could not get resources")
+		return ctrl.Result{}, err
+	}
+	for _, resource := range missingResources {
+		// recreate missing resources
+		if err := r.Create(ctx, resource); err != nil {
+			log.Error(err, fmt.Sprintf("could not create resource %s/%s/%s", resource.GetObjectKind(), resource.GetNamespace(), resource.GetName()))
+			return ctrl.Result{}, err
+		}
+	}
+
+	var statefulSet appsv1.StatefulSet
+	if err := r.Get(ctx, client.ObjectKey{Namespace: df.Namespace, Name: df.Name}, &statefulSet); err != nil {
+		log.Error(err, "could not get statefulset")
+		return ctrl.Result{}, err
+	}
+
+	// Update all resources even if the df is in rollout state to ensure
+	// that newer updates don't get blocked by failed update attempts.
+	log.Info("updating existing resources")
+	newResources, err := resources.GetDragonflyResources(ctx, &df)
+	if err != nil {
+		log.Error(err, "could not get resources")
+		return ctrl.Result{}, err
+	}
+
+	// update all resources
+	for _, resource := range newResources {
+		if err := r.Update(ctx, resource); err != nil {
+			log.Error(err, fmt.Sprintf("could not update resource %s/%s/%s", resource.GetObjectKind(), resource.GetNamespace(), resource.GetName()))
+			return ctrl.Result{}, err
+		}
+	}
+
+	log.Info("Updated resources for object")
+	r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Updated resources")
+
+	if df.Status.IsRollingUpdate {
 		// This is a Rollout
 		log.Info("Rolling out new version")
 		var updatedStatefulset appsv1.StatefulSet
@@ -127,6 +170,14 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				}
 			} else {
 				log.Info("found pod without label", "pod", pod.Name)
+				if isFailedToStart(&pod) {
+					// This is a new pod which is trying to be ready, but couldn't start due to misconfig.
+					// Delete the pod and create a new one.
+					if err := r.Delete(ctx, &pod); err != nil {
+						log.Error(err, "could not delete pod")
+						return ctrl.Result{RequeueAfter: 5 * time.Second}, err
+					}
+				}
 				// retry after they are ready
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 			}
@@ -234,62 +285,114 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		return ctrl.Result{}, nil
-	} else {
+	} else if statefulSet.Status.UpdatedReplicas != statefulSet.Status.Replicas {
 		// perform a rollout only if the pod spec has changed
-		var statefulSet appsv1.StatefulSet
-		if err := r.Get(ctx, client.ObjectKey{Namespace: df.Namespace, Name: df.Name}, &statefulSet); err != nil {
-			log.Error(err, "could not get statefulset")
-			return ctrl.Result{}, err
-		}
-
 		// Check if the pod spec has changed
 		log.Info("Checking if pod spec has changed", "updatedReplicas", statefulSet.Status.UpdatedReplicas, "currentReplicas", statefulSet.Status.Replicas)
-		if statefulSet.Status.UpdatedReplicas != statefulSet.Status.Replicas {
-			log.Info("Pod spec has changed, performing a rollout")
-			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Starting a rollout")
+		log.Info("Pod spec has changed, performing a rollout")
+		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Starting a rollout")
 
-			// Start rollout and update status
-			// update status so that we can track progress
-			df.Status.IsRollingUpdate = true
-			if err := r.Status().Update(ctx, &df); err != nil {
-				log.Error(err, "could not update the Dragonfly object")
-				return ctrl.Result{Requeue: true}, err
-			}
-
-			r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Performing a rollout")
-
-			// requeue so that the rollout is processed
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		// Start rollout and update status
+		// update status so that we can track progress
+		df.Status.IsRollingUpdate = true
+		if err := r.Status().Update(ctx, &df); err != nil {
+			log.Error(err, "could not update the Dragonfly object")
+			return ctrl.Result{Requeue: true}, err
 		}
 
-		// Is this a Dragonfly object update?
-		log.Info("updating existing resources")
-		newResources, err := resources.GetDragonflyResources(ctx, &df)
-		if err != nil {
-			log.Error(err, "could not get resources")
-			return ctrl.Result{}, err
-		}
-
-		// update all resources
-		for _, resource := range newResources {
-			if err := r.Update(ctx, resource); err != nil {
-				log.Error(err, fmt.Sprintf("could not update resource %s/%s/%s", resource.GetObjectKind(), resource.GetNamespace(), resource.GetName()))
-				return ctrl.Result{}, err
-			}
-		}
-
-		log.Info("Updated resources for object")
-		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Updated resources")
-		return ctrl.Result{Requeue: true}, nil
+		r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Resources", "Performing a rollout")
 	}
+	return ctrl.Result{Requeue: true}, nil
 }
+
+func isFailedToStart(pod *corev1.Pod) bool {
+	for _, containerStatus := range pod.Status.ContainerStatuses {
+		if (containerStatus.State.Waiting != nil && isFailureReason(containerStatus.State.Waiting.Reason)) ||
+			(containerStatus.State.Terminated != nil && isFailureReason(containerStatus.State.Terminated.Reason)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isFailureReason checks if the given reason indicates a failure.
+func isFailureReason(reason string) bool {
+	return reason == "ErrImagePull" ||
+		reason == "ImagePullBackOff" ||
+		reason == "CrashLoopBackOff" ||
+		reason == "RunContainerError"
+}
+
+func (r *DragonflyReconciler) getMissingResources(ctx context.Context, df *dfv1alpha1.Dragonfly) ([]client.Object, error) {
+	resources, err := resources.GetDragonflyResources(ctx, df)
+	if err != nil {
+		return nil, err
+	}
+	missingResources := make([]client.Object, 0)
+	for _, resource := range resources {
+		obj := resource.DeepCopyObject().(client.Object)
+
+		err := r.Get(ctx, client.ObjectKey{
+			Namespace: df.Namespace,
+			Name:      resource.GetName(),
+		}, obj)
+
+		if errors.IsNotFound(err) {
+			missingResources = append(missingResources, resource)
+		} else if err != nil {
+			return nil, fmt.Errorf("failed to get resource %s/%s: %w", df.Namespace, resource.GetName(), err)
+		}
+	}
+	return missingResources, nil
+}
+
+// func (r *DragonflyReconciler) isPVCSpecChanged(df *dfv1alpha1.Dragonfly, sts *appsv1.StatefulSet) bool {
+// 	dfPVCSpec := getPVCSpecFromDragonfly(df)
+// 	stsPVCSpec := getPVCSpecFromStatefulSet(sts)
+
+// 	return !isPVCSpecEqual(dfPVCSpec, stsPVCSpec)
+// }
+
+// func getPVCSpecFromDragonfly(df *dfv1alpha1.Dragonfly) *corev1.PersistentVolumeClaimSpec {
+// 	if df.Spec.Snapshot != nil {
+// 		return df.Spec.Snapshot.PersistentVolumeClaimSpec
+// 	}
+// 	return nil
+// }
+
+// func getPVCSpecFromStatefulSet(sts *appsv1.StatefulSet) *corev1.PersistentVolumeClaimSpec {
+// 	for i := range sts.Spec.VolumeClaimTemplates {
+// 		if sts.Spec.VolumeClaimTemplates[i].Name == "df" {
+// 			return &sts.Spec.VolumeClaimTemplates[i].Spec
+// 		}
+// 	}
+// 	return nil
+// }
+
+// func isPVCSpecEqual(spec1, spec2 *corev1.PersistentVolumeClaimSpec) bool {
+// 	if spec1 == nil && spec2 == nil {
+// 		return true
+// 	}
+// 	if spec1 == nil || spec2 == nil {
+// 		return false
+// 	}
+
+// 	// Compare essential fields
+// 	return slices.Equal(spec1.AccessModes, spec2.AccessModes) &&
+// 		lo.FromPtr(spec1.StorageClassName) == lo.FromPtr(spec2.StorageClassName) &&
+// 		spec1.Resources.Requests.Storage().Equal(*spec2.Resources.Requests.Storage())
+// }
+
+// func (r *DragonflyReconciler) cantUpdateStatefulSet(df *dfv1alpha1.Dragonfly, sts *appsv1.StatefulSet) bool {
+// 	return r.isPVCSpecChanged(df, sts)
+// }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *DragonflyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		// Listen only to spec changes
 		For(&dfv1alpha1.Dragonfly{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Owns(&appsv1.StatefulSet{}).
-		Owns(&corev1.Service{}).
+		Owns(&appsv1.StatefulSet{}, builder.MatchEveryOwner).
+		Owns(&corev1.Service{}, builder.MatchEveryOwner).
 		Complete(r)
 }
