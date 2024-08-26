@@ -25,7 +25,7 @@ Make sure to have your Kubernetes cluster up and running. Dragonfly Operator can
 
 ```sh
 # Install the CRD and Operator
-kubectl apply -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/dragonfly-operator.yaml
+kubectl apply -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/operator/dragonfly-operator.yaml
 ```
 
 By default, the operator will be installed in the `dragonfly-operator-system` namespace.
@@ -106,7 +106,7 @@ This will automatically delete all the resources (i.e pods and services) associa
 To uninstall the operator, you can run
 
 ```sh
-kubectl delete -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/dragonfly-operator.yaml
+kubectl delete -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/operator/dragonfly-operator.yaml
 ```
 
 ## License
