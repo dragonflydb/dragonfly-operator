@@ -116,8 +116,8 @@ install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~
 .PHONY: generate-manifests
 generate-manifests: manifests kustomize ## Generate manifests e.g. CRD, RBAC etc.
 	mkdir -p manifests
-	$(KUSTOMIZE) build config/default > manifests/dragonfly-operator.yaml
-	$(KUSTOMIZE) build config/crd > manifests/crd.yaml
+	$(KUSTOMIZE) build config/default > manifests/operator/dragonfly-operator.yaml
+	$(KUSTOMIZE) build config/crd > manifests/crds/crd.yaml
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
