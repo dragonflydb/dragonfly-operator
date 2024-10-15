@@ -173,6 +173,10 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 	}
 	if df.Spec.MemcachedPort != 0 {
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--memcached_port=%d", df.Spec.MemcachedPort))
+		statefulset.Spec.Template.Spec.Containers[0].Ports = append(statefulset.Spec.Template.Spec.Containers[0].Ports, corev1.ContainerPort{
+			Name:          "memcached",
+			ContainerPort: df.Spec.MemcachedPort,
+		})
 	}
 
 	if df.Spec.AclFromSecret != nil {
