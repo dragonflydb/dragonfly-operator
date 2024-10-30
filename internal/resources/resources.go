@@ -148,7 +148,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 								SuccessThreshold:    1,
 								TimeoutSeconds:      5,
 							},
-							ImagePullPolicy: corev1.PullAlways,
+							ImagePullPolicy: df.Spec.ImagePullPolicy,
 						},
 					},
 				},
