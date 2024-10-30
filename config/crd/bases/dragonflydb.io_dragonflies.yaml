@@ -1180,6 +1180,11 @@ spec:
               image:
                 description: Image is the Dragonfly image to use
                 type: string
+              imagePullPolicy:
+                default: Always
+                description: (Optional) imagePullPolicy to set to Dragonfly, default
+                  is Always
+                type: string
               initContainers:
                 description: (Optional) Dragonfly pod init containers
                 items:
