@@ -21,7 +21,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -193,6 +193,13 @@ func (in *DragonflySpec) DeepCopyInto(out *DragonflySpec) {
 		in, out := &in.ServiceSpec, &out.ServiceSpec
 		*out = new(ServiceSpec)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.InitContainers != nil {
+		in, out := &in.InitContainers, &out.InitContainers
+		*out = make([]v1.Container, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
 	}
 }
 
