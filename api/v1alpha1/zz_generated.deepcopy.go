@@ -179,6 +179,16 @@ func (in *DragonflySpec) DeepCopyInto(out *DragonflySpec) {
 		*out = new(Authentication)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.ContainerSecurityContext != nil {
+		in, out := &in.ContainerSecurityContext, &out.ContainerSecurityContext
+		*out = new(v1.SecurityContext)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.PodSecurityContext != nil {
+		in, out := &in.PodSecurityContext, &out.PodSecurityContext
+		*out = new(v1.PodSecurityContext)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.TLSSecretRef != nil {
 		in, out := &in.TLSSecretRef, &out.TLSSecretRef
 		*out = new(v1.SecretReference)
