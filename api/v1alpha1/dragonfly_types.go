@@ -97,6 +97,16 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	Authentication *Authentication `json:"authentication,omitempty"`
 
+	// (Optional) Dragonfly container security context
+	// +optional
+	// +kubebuilder:validation:Optional
+	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
+
+	// (Optional) Dragonfly pod security context
+	// +optional
+	// +kubebuilder:validation:Optional
+	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
+
 	// (Optional) Dragonfly pod service account name
 	// +optional
 	// +kubebuilder:validation:Optional
