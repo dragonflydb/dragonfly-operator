@@ -35,6 +35,12 @@ type DragonflySpec struct {
 	// Image is the Dragonfly image to use
 	Image string `json:"image,omitempty"`
 
+	// (Optional) imagePullPolicy to set to Dragonfly, default is Always
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default:="Always"
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+
 	// (Optional) Dragonfly container args to pass to the container
 	// Refer to the Dragonfly documentation for the list of supported args
 	// +optional
