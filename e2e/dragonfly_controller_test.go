@@ -305,7 +305,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			}, &df)
 			Expect(err).To(BeNil())
 
-			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.21.2")
+			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.23.2")
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 		})
@@ -613,8 +613,8 @@ user john on #0c8e2b662f1c0f1 -@all +@string +hset
 			Expect(err).To(BeNil())
 			Expect(result).To(HaveLen(2))
 			Expect(result).To(ContainElements(
-				"user default on nopass ~* +@all",
-				"user john on #0c8e2b662f1c0f -@all +@string +hset",
+				"user default on nopass ~* resetchannels +@all",
+				"user john on #0c8e2b662f1c0f resetchannels -@all +@string +hset",
 			))
 		})
 		It("Cleanup", func() {
