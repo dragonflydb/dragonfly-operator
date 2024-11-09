@@ -613,8 +613,8 @@ user john on #0c8e2b662f1c0f1 -@all +@string +hset
 			Expect(err).To(BeNil())
 			Expect(result).To(HaveLen(2))
 			Expect(result).To(ContainElements(
-				"user default on nopass ~* +@all",
-				"user john on #0c8e2b662f1c0f -@all +@string +hset",
+				"user default on nopass ~* resetchannels +@all",
+				"user john on #0c8e2b662f1c0f resetchannels -@all +@string +hset",
 			))
 		})
 		It("Cleanup", func() {
