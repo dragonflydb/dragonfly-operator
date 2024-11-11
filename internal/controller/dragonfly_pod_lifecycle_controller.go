@@ -204,6 +204,7 @@ func (r *DfPodLifeCycleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					return e.Object.GetLabels()[resources.KubernetesAppNameLabelKey] == "dragonfly"
 				},
 			}).
+		Named("DragonflyPodLifecycle").
 		For(&corev1.Pod{}).
 		Complete(r)
 }
