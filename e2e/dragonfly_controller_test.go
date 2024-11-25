@@ -544,6 +544,19 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Expect(svc.Labels).To(Equal(newLabels))
 		})
 
+		It("Should recreate missing statefulset", func() {
+			var ss appsv1.StatefulSet
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &ss)
+			Expect(err).To(BeNil())
+
+			Expect(k8sClient.Delete(ctx, &ss)).To(BeNil())
+			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(err).To(BeNil())
+		})
+
 		It("Cleanup", func() {
 			var df resourcesv1.Dragonfly
 			err := k8sClient.Get(ctx, types.NamespacedName{
