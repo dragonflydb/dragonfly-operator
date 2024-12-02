@@ -346,47 +346,6 @@ func (r *DragonflyReconciler) getMissingResources(ctx context.Context, df *dfv1a
 	return missingResources, nil
 }
 
-// func (r *DragonflyReconciler) isPVCSpecChanged(df *dfv1alpha1.Dragonfly, sts *appsv1.StatefulSet) bool {
-// 	dfPVCSpec := getPVCSpecFromDragonfly(df)
-// 	stsPVCSpec := getPVCSpecFromStatefulSet(sts)
-
-// 	return !isPVCSpecEqual(dfPVCSpec, stsPVCSpec)
-// }
-
-// func getPVCSpecFromDragonfly(df *dfv1alpha1.Dragonfly) *corev1.PersistentVolumeClaimSpec {
-// 	if df.Spec.Snapshot != nil {
-// 		return df.Spec.Snapshot.PersistentVolumeClaimSpec
-// 	}
-// 	return nil
-// }
-
-// func getPVCSpecFromStatefulSet(sts *appsv1.StatefulSet) *corev1.PersistentVolumeClaimSpec {
-// 	for i := range sts.Spec.VolumeClaimTemplates {
-// 		if sts.Spec.VolumeClaimTemplates[i].Name == "df" {
-// 			return &sts.Spec.VolumeClaimTemplates[i].Spec
-// 		}
-// 	}
-// 	return nil
-// }
-
-// func isPVCSpecEqual(spec1, spec2 *corev1.PersistentVolumeClaimSpec) bool {
-// 	if spec1 == nil && spec2 == nil {
-// 		return true
-// 	}
-// 	if spec1 == nil || spec2 == nil {
-// 		return false
-// 	}
-
-// 	// Compare essential fields
-// 	return slices.Equal(spec1.AccessModes, spec2.AccessModes) &&
-// 		lo.FromPtr(spec1.StorageClassName) == lo.FromPtr(spec2.StorageClassName) &&
-// 		spec1.Resources.Requests.Storage().Equal(*spec2.Resources.Requests.Storage())
-// }
-
-// func (r *DragonflyReconciler) cantUpdateStatefulSet(df *dfv1alpha1.Dragonfly, sts *appsv1.StatefulSet) bool {
-// 	return r.isPVCSpecChanged(df, sts)
-// }
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *DragonflyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
