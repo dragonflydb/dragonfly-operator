@@ -45,7 +45,7 @@ terminationGracePeriodSeconds: 10
 
 rbacProxy:
   image:
-    repository: gcr.io/kubebuilder/kube-rbac-proxy
+    repository: quay.io/brancz/kube-rbac-proxy
     pullPolicy: IfNotPresent
     # Overrides the image tag whose default is the chart appVersion.
     tag: v0.13.1
