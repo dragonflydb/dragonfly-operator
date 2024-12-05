@@ -168,15 +168,25 @@ func (dfi *DragonflyInstance) masterExists(ctx context.Context) (bool, error) {
 }
 
 func (dfi *DragonflyInstance) getMasterIp(ctx context.Context) (string, error) {
-	dfi.log.Info("retrieving ip of the master")
+	dfi.log.Info("retrieving IP of the master")
 	pods, err := dfi.getPods(ctx)
 	if err != nil {
 		return "", err
 	}
 
 	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] == resources.Master && pod.DeletionTimestamp == nil {
-			return pod.Status.PodIP, nil
+		if pod.Status.Phase == corev1.PodRunning &&
+			pod.Status.ContainerStatuses[0].Ready &&
+			pod.Labels[resources.Role] == resources.Master {
+
+			masterIp, hasMasterIp := pod.Annotations[resources.MasterIp]
+			if hasMasterIp {
+				dfi.log.Info("Retrieved Master IP from annotation", "masterIp", masterIp)
+				return masterIp, nil
+			}
+
+			masterIp = pod.Status.PodIP
+			return masterIp, nil
 		}
 	}
 
@@ -207,7 +217,7 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 // connected to the right master
 func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.Pod, masterIp string) (bool, error) {
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
+		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 	})
 	defer redisClient.Close()
 
@@ -262,7 +272,8 @@ func (dfi *DragonflyInstance) checkAndConfigureReplication(ctx context.Context) 
 	// check for one master and all replicas
 	podRoles := make(map[string][]string)
 	for _, pod := range pods.Items {
-		podRoles[pod.Labels[resources.Role]] = append(podRoles[pod.Labels[resources.Role]], pod.Name)
+		role := pod.Labels[resources.Role]
+		podRoles[role] = append(podRoles[role], pod.Name)
 	}
 
 	if len(podRoles[resources.Master]) != 1 {
@@ -299,7 +310,7 @@ func (dfi *DragonflyInstance) checkAndConfigureReplication(ctx context.Context) 
 				return err
 			}
 
-			// configuring to the right master
+			// Configure to the right master if not correct
 			if !ok {
 				dfi.log.Info("configuring pod as replica to the right master", "pod", pod.Name)
 				if err := dfi.configureReplica(ctx, &pod); err != nil {
@@ -309,7 +320,7 @@ func (dfi *DragonflyInstance) checkAndConfigureReplication(ctx context.Context) 
 		}
 	}
 
-	dfi.log.Info("all pods are configured correctly", "dfi", dfi.df.Name)
+	dfi.log.Info("All pods are configured correctly", "dfi", dfi.df.Name)
 	return nil
 }
 
@@ -335,8 +346,11 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	})
 	defer redisClient.Close()
 
+	// Sanitize masterIp in case ipv6
+	masterIp = sanitizeIp(masterIp)
+
 	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp, "addr", redisClient.Options().Addr)
-	resp, err := redisClient.SlaveOf(ctx, masterIp, fmt.Sprint(resources.DragonflyAdminPort)).Result()
+	resp, err := redisClient.SlaveOf(ctx, masterIp, strconv.Itoa(resources.DragonflyAdminPort)).Result()
 	if err != nil {
 		return fmt.Errorf("error running SLAVE OF command: %s", err)
 	}
@@ -345,11 +359,14 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		return fmt.Errorf("response of `SLAVE OF` on replica is not OK: %s", resp)
 	}
 
-	dfi.log.Info("Marking pod role as replica", "pod", pod.Name)
+	dfi.log.Info("Marking pod role as replica", "pod", pod.Name, "masterIp", masterIp)
 	pod.Labels[resources.Role] = resources.Replica
-	pod.Labels[resources.MasterIp] = masterIp
+	if pod.Annotations == nil {
+		pod.Annotations = make(map[string]string)
+	}
+	pod.Annotations[resources.MasterIp] = masterIp
 	if err := dfi.client.Update(ctx, pod); err != nil {
-		return fmt.Errorf("could not update replica label")
+		return fmt.Errorf("could not update replica annotation: %w", err)
 	}
 
 	return nil
@@ -373,8 +390,14 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 		return fmt.Errorf("response of `SLAVE OF NO ONE` on master is not OK: %s", resp)
 	}
 
-	dfi.log.Info("Marking pod role as master", "pod", pod.Name)
+	masterIp := pod.Status.PodIP
+
+	dfi.log.Info("Marking pod role as master", "pod", pod.Name, "masterIp", masterIp)
 	pod.Labels[resources.Role] = resources.Master
+	if pod.Annotations == nil {
+		pod.Annotations = make(map[string]string)
+	}
+	pod.Annotations[resources.MasterIp] = masterIp
 	if err := dfi.client.Update(ctx, pod); err != nil {
 		return err
 	}

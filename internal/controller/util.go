@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
@@ -89,7 +91,7 @@ func getLatestReplica(ctx context.Context, c client.Client, statefulSet *appsv1.
 // replTakeover runs the replTakeOver on the given replica pod
 func replTakeover(ctx context.Context, c client.Client, newMaster *corev1.Pod) error {
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%d", newMaster.Status.PodIP, resources.DragonflyAdminPort),
+		Addr: net.JoinHostPort(newMaster.Status.PodIP, strconv.Itoa(resources.DragonflyPort)),
 	})
 	defer redisClient.Close()
 
@@ -111,13 +113,13 @@ func replTakeover(ctx context.Context, c client.Client, newMaster *corev1.Pod) e
 }
 
 func isStableState(ctx context.Context, pod *corev1.Pod) (bool, error) {
-	// wait until pod IP is ready
+	// Ensure PodIP and Pod Phase are ready
 	if pod.Status.PodIP == "" || pod.Status.Phase != corev1.PodRunning {
 		return false, nil
 	}
 
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
+		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 	})
 	defer redisClient.Close()
 
@@ -135,14 +137,7 @@ func isStableState(ctx context.Context, pod *corev1.Pod) (bool, error) {
 		return false, errors.New("empty info")
 	}
 
-	data := map[string]string{}
-	for _, line := range strings.Split(info, "\n") {
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		kv := strings.Split(line, ":")
-		data[kv[0]] = strings.TrimSuffix(kv[1], "\r")
-	}
+	data := parseRedisInfo(info)
 
 	if data["master_sync_in_progress"] == "1" {
 		return false, nil
@@ -157,4 +152,24 @@ func isStableState(ctx context.Context, pod *corev1.Pod) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// Helper function to parse Redis INFO data
+func parseRedisInfo(info string) map[string]string {
+	data := map[string]string{}
+	for _, line := range strings.Split(info, "\n") {
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		kv := strings.Split(line, ":")
+		if len(kv) == 2 {
+			data[kv[0]] = strings.TrimSuffix(kv[1], "\r")
+		}
+	}
+	return data
+}
+
+// sanitizeIp Ipv6
+func sanitizeIp(masterIp string) string {
+	return strings.Trim(masterIp, "[]")
 }
