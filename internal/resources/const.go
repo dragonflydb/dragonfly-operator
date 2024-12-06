@@ -56,7 +56,8 @@ const (
 	// KubernetesPartOfLabel is the name of a higher level application this one is part of
 	KubernetesPartOfLabelKey = "app.kubernetes.io/part-of"
 
-	MasterIp string = "operator.dragonflydb.io/masterIP"
+	MasterIpLabel string = "master-ip"
+	MasterIp      string = "operator.dragonflydb.io/masterIP"
 
 	Role string = "role"
 
