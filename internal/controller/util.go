@@ -113,7 +113,7 @@ func replTakeover(ctx context.Context, c client.Client, newMaster *corev1.Pod) e
 }
 
 func isStableState(ctx context.Context, pod *corev1.Pod) (bool, error) {
-	// Ensure PodIP and Pod Phase are ready
+	// wait until pod IP is ready
 	if pod.Status.PodIP == "" || pod.Status.Phase != corev1.PodRunning {
 		return false, nil
 	}

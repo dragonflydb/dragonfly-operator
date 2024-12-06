@@ -303,7 +303,7 @@ func (dfi *DragonflyInstance) checkAndConfigureReplication(ctx context.Context) 
 				return err
 			}
 
-			// Configure to the right master if not correct
+			// configuring to the right master
 			if !ok {
 				dfi.log.Info("configuring pod as replica to the right master", "pod", pod.Name)
 				if err := dfi.configureReplica(ctx, &pod); err != nil {
@@ -313,7 +313,7 @@ func (dfi *DragonflyInstance) checkAndConfigureReplication(ctx context.Context) 
 		}
 	}
 
-	dfi.log.Info("All pods are configured correctly", "dfi", dfi.df.Name)
+	dfi.log.Info("all pods are configured correctly", "dfi", dfi.df.Name)
 	return nil
 }
 
@@ -365,7 +365,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	}
 
 	if err := dfi.client.Update(ctx, pod); err != nil {
-		return fmt.Errorf("could not update replica annotation: %w", err)
+		return fmt.Errorf("could not update replica metadatas: %w", err)
 	}
 
 	return nil
