@@ -136,8 +136,12 @@ func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.
 		}
 	}
 
-	if masterIp != redisMasterIp && masterIp != pod.Annotations[resources.MasterIp] {
-		return false, nil
+	// for compatibily, to be remove in futur version
+	// check if the masterIp matches either the label (for compatibility) or the annotation
+	if masterIp != redisMasterIp {
+		if masterIp != pod.Labels[resources.MasterIpLabel] && masterIp != pod.Annotations[resources.MasterIp] {
+			return false, nil
+		}
 	}
 
 	return true, nil
@@ -428,6 +432,12 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		pod.Annotations = make(map[string]string)
 	}
 	pod.Annotations[resources.MasterIp] = masterIp
+
+	// for compatibily, to be remove in futur version
+	if !strings.Contains(masterIp, ":") {
+		pod.Labels[resources.MasterIpLabel] = masterIp
+	}
+
 	if err := dfi.client.Update(ctx, pod); err != nil {
 		return fmt.Errorf("could not update replica annotation: %w", err)
 	}
@@ -456,10 +466,16 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 
 	dfi.log.Info("Marking pod role as master", "pod", pod.Name, "masterIp", masterIp)
 	pod.Labels[resources.Role] = resources.Master
+	// for compatibily, to be remove in futur version
+	if !strings.Contains(masterIp, ":") {
+		pod.Labels[resources.MasterIpLabel] = masterIp
+	}
+
 	if pod.Annotations == nil {
 		pod.Annotations = make(map[string]string)
 	}
 	pod.Annotations[resources.MasterIp] = masterIp
+
 	if err := dfi.client.Update(ctx, pod); err != nil {
 		return err
 	}
