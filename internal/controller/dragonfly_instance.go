@@ -168,25 +168,15 @@ func (dfi *DragonflyInstance) masterExists(ctx context.Context) (bool, error) {
 }
 
 func (dfi *DragonflyInstance) getMasterIp(ctx context.Context) (string, error) {
-	dfi.log.Info("retrieving IP of the master")
+	dfi.log.Info("retrieving ip of the master")
 	pods, err := dfi.getPods(ctx)
 	if err != nil {
 		return "", err
 	}
 
 	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning &&
-			pod.Status.ContainerStatuses[0].Ready &&
-			pod.Labels[resources.Role] == resources.Master {
-
-			masterIp, hasMasterIp := pod.Annotations[resources.MasterIp]
-			if hasMasterIp {
-				dfi.log.Info("Retrieved Master IP from annotation", "masterIp", masterIp)
-				return masterIp, nil
-			}
-
-			masterIp = pod.Status.PodIP
-			return masterIp, nil
+		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] == resources.Master {
+			return pod.Status.PodIP, nil
 		}
 	}
 
@@ -272,8 +262,7 @@ func (dfi *DragonflyInstance) checkAndConfigureReplication(ctx context.Context) 
 	// check for one master and all replicas
 	podRoles := make(map[string][]string)
 	for _, pod := range pods.Items {
-		role := pod.Labels[resources.Role]
-		podRoles[role] = append(podRoles[role], pod.Name)
+		podRoles[pod.Labels[resources.Role]] = append(podRoles[pod.Labels[resources.Role]], pod.Name)
 	}
 
 	if len(podRoles[resources.Master]) != 1 {
