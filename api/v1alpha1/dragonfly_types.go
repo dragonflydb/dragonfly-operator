@@ -134,6 +134,11 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	ServiceSpec *ServiceSpec `json:"serviceSpec,omitempty"`
+
+	// (Optional) Dragonfly pod init containers
+	// +optional
+	// +kubebuilder:validation:Optional
+	InitContainers []corev1.Container `json:"initContainers,omitempty"`
 }
 
 type ServiceSpec struct {
