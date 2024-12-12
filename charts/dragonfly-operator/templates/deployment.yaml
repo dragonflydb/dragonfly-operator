@@ -36,8 +36,8 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - args:
-            - --secure-listen-address=0.0.0.0:8443
-            - --upstream=http://127.0.0.1:8080/
+            - --secure-listen-address=[::]:8443
+            - --upstream=http://[::1]:8080/
             - --logtostderr=true
             - --v=0
           image: "{{ .Values.rbacProxy.image.repository }}:{{ .Values.rbacProxy.image.tag  }}"
@@ -55,7 +55,7 @@ spec:
         - name: manager
           args:
             - --health-probe-bind-address=:8081
-            - --metrics-bind-address=127.0.0.1:8080
+            - --metrics-bind-address=[::1]:8080
             - --leader-elect
           command:
             - /manager
