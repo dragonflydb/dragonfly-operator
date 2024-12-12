@@ -156,6 +156,10 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		},
 	}
 
+	if len(df.Spec.InitContainers) > 0 {
+		statefulset.Spec.Template.Spec.InitContainers = df.Spec.InitContainers
+	}
+
 	// Skip Assigning FileSystem Group. Required for platforms such as Openshift that require IDs to not be set, as it injects a fixed randomized ID per namespace into all pods.
 	// Skip Assigning FileSystem Group if podSecurityContext is set as well.
 	if !df.Spec.SkipFSGroup && df.Spec.PodSecurityContext == nil {
@@ -184,6 +188,10 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 	}
 	if df.Spec.MemcachedPort != 0 {
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--memcached_port=%d", df.Spec.MemcachedPort))
+		statefulset.Spec.Template.Spec.Containers[0].Ports = append(statefulset.Spec.Template.Spec.Containers[0].Ports, corev1.ContainerPort{
+			Name:          "memcached",
+			ContainerPort: df.Spec.MemcachedPort,
+		})
 	}
 
 	if df.Spec.AclFromSecret != nil {

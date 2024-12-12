@@ -305,7 +305,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			}, &df)
 			Expect(err).To(BeNil())
 
-			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.21.2")
+			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.24.0")
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 		})
@@ -418,11 +418,13 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 
+			GinkgoLogr.Info("start timestamp", "timestamp", time.Now().UTC())
 			// Wait until Dragonfly object is marked ready
 			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			Expect(err).To(BeNil())
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
 			Expect(err).To(BeNil())
+			GinkgoLogr.Info("end timestamp", "timestamp", time.Now().UTC())
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
@@ -478,10 +480,19 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 				// check for affinity
 				Expect(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(Equal(newAffinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
 			}
+			// Update df to the latest
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+			GinkgoLogr.Info("df arg propagate phase", "phase", df.Status.Phase, "rolling-update", df.Status.IsRollingUpdate)
+
 		})
 
 		It("Check for data", func() {
 			stopChan := make(chan struct{}, 1)
+			defer close(stopChan)
 			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password, 6395)
 			Expect(err).To(BeNil())
 
@@ -489,7 +500,6 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			data, err := rc.Get(ctx, "foo").Result()
 			Expect(err).To(BeNil())
 			Expect(data).To(Equal("bar"))
-			defer close(stopChan)
 		})
 
 		It("Change Service specification to LoadBalancer", func() {
@@ -512,11 +522,12 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 				Labels:      newLabels,
 			}
 
+			GinkgoLogr.Info("df phase", "phase", df.Status.Phase, "rolling-update", df.Status.IsRollingUpdate)
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked ready
-			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 1*time.Minute)
 			Expect(err).To(BeNil())
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
 			Expect(err).To(BeNil())
@@ -531,6 +542,19 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeLoadBalancer))
 			Expect(svc.Annotations).To(Equal(newAnnotations))
 			Expect(svc.Labels).To(Equal(newLabels))
+		})
+
+		It("Should recreate missing statefulset", func() {
+			var ss appsv1.StatefulSet
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &ss)
+			Expect(err).To(BeNil())
+
+			Expect(k8sClient.Delete(ctx, &ss)).To(BeNil())
+			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(err).To(BeNil())
 		})
 
 		It("Cleanup", func() {
@@ -613,8 +637,8 @@ user john on #0c8e2b662f1c0f1 -@all +@string +hset
 			Expect(err).To(BeNil())
 			Expect(result).To(HaveLen(2))
 			Expect(result).To(ContainElements(
-				"user default on nopass ~* +@all",
-				"user john on #0c8e2b662f1c0f -@all +@string +hset",
+				"user default on nopass ~* resetchannels +@all",
+				"user john on #0c8e2b662f1c0f resetchannels -@all +@string +hset",
 			))
 		})
 		It("Cleanup", func() {
@@ -918,6 +942,8 @@ func isDragonflyInphase(ctx context.Context, c client.Client, name, namespace, p
 	}, &df); err != nil {
 		return false, nil
 	}
+
+	GinkgoLogr.Info("dragonfly phase", "phase", df.Status.Phase, "update", df.Status.IsRollingUpdate)
 
 	// Ready means we also want rolling update to be false
 	if phase == controller.PhaseReady {

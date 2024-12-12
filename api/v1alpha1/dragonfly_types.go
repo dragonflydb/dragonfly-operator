@@ -144,6 +144,11 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	ServiceSpec *ServiceSpec `json:"serviceSpec,omitempty"`
+
+	// (Optional) Dragonfly pod init containers
+	// +optional
+	// +kubebuilder:validation:Optional
+	InitContainers []corev1.Container `json:"initContainers,omitempty"`
 }
 
 type ServiceSpec struct {
@@ -221,6 +226,9 @@ type DragonflyStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase",description="The current phase of the Dragonfly cluster"
+//+kubebuilder:printcolumn:name="Rolling Update",type="boolean",JSONPath=".status.isRollingUpdate",description="Indicates if a rolling update is in progress"
+//+kubebuilder:printcolumn:name="Replicas",type="integer",JSONPath=".spec.replicas",description="Number of replicas"
 
 // Dragonfly is the Schema for the dragonflies API
 type Dragonfly struct {
