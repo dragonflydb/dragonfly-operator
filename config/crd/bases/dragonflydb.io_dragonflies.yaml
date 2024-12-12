@@ -14,7 +14,20 @@ spec:
     singular: dragonfly
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - description: The current phase of the Dragonfly cluster
+      jsonPath: .status.phase
+      name: Phase
+      type: string
+    - description: Indicates if a rolling update is in progress
+      jsonPath: .status.isRollingUpdate
+      name: Rolling Update
+      type: boolean
+    - description: Number of replicas
+      jsonPath: .spec.replicas
+      name: Replicas
+      type: integer
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: Dragonfly is the Schema for the dragonflies API
