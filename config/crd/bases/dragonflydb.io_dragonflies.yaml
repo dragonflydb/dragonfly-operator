@@ -1198,6 +1198,25 @@ spec:
                 description: (Optional) imagePullPolicy to set to Dragonfly, default
                   is Always
                 type: string
+              imagePullSecrets:
+                description: List of Secret resource containing access credentials to the registry. Required if the docker registry is private.
+                items:
+                  description: |-
+                    LocalObjectReference contains enough information to let you locate the
+                    referenced object inside the same namespace.
+                  properties:
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                type: array
               initContainers:
                 description: (Optional) Dragonfly pod init containers
                 items:
@@ -1434,6 +1453,25 @@ spec:
                         Cannot be updated.
                         More info: https://kubernetes.io/docs/concepts/containers/images#updating-images
                       type: string
+                    imagePullSecrets:
+                      description: List of Secret resource containing access credentials to the registry. Required if the docker registry is private.
+                      items:
+                        description: |-
+                          LocalObjectReference contains enough information to let you locate the
+                          referenced object inside the same namespace.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      type: array
                     lifecycle:
                       description: |-
                         Actions that the management system should take in response to container lifecycle events.
