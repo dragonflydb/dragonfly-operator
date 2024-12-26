@@ -43,27 +43,6 @@ service:
 
 terminationGracePeriodSeconds: 10
 
-rbacProxy:
-  image:
-    repository: gcr.io/kubebuilder/kube-rbac-proxy
-    pullPolicy: IfNotPresent
-    # Overrides the image tag whose default is the chart appVersion.
-    tag: v0.13.1
-
-  resources:
-    limits:
-      cpu: 500m
-      memory: 128Mi
-    requests:
-      cpu: 10m
-      memory: 64Mi
-
-  securityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
-
 manager:
   image:
     repository: docker.dragonflydb.io/dragonflydb/operator
@@ -151,6 +130,22 @@ serviceMonitor:
   #     action: replace
   #     replacement: mydbname
   #     targetLabel: dbname
+
+# The number of old ReplicaSets to retain to allow rollback.
+revisionHistoryLimit: 10
+
+# Strategy for updating the pod.
+# strategy:
+#   rollingUpdate:
+#     maxUnavailable: 1
+
+pdb:
+  # When set to true, deploys PodDisruptionBudget for the controller-manager.
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 0
+  # -- Extra annotations to be added to pdb
+  annotations: {}
 
 grafanaDashboard:
   enabled: false
