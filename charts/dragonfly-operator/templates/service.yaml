@@ -12,6 +12,10 @@ spec:
       targetPort: https
       protocol: TCP
       name: https
+    - port: {{ .Values.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
   selector:
     {{- include "dragonfly-operator.selectorLabels" . | nindent 4 }}
     control-plane: controller-manager

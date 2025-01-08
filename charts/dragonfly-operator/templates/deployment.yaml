@@ -67,6 +67,10 @@ spec:
             {{- toYaml .Values.manager.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.manager.readinessProbe | nindent 12 }}
+          ports:
+            - containerPort: 8080
+              name: metrics
+              protocol: TCP
           resources:
             {{- toYaml .Values.manager.resources | nindent 12 }}
           {{- with .Values.manager.volumeMounts }}
