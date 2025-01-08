@@ -41,6 +41,11 @@ type DragonflySpec struct {
 	// +kubebuilder:default:="Always"
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
 
+	// (Optional) imagePullSecrets to set to Dragonfly
+	// +optional
+	// +kubebuilder:validation:Optional
+	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+
 	// (Optional) Dragonfly container args to pass to the container
 	// Refer to the Dragonfly documentation for the list of supported args
 	// +optional

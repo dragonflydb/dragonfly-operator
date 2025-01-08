@@ -99,6 +99,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 					},
 				},
 				Spec: corev1.PodSpec{
+					ImagePullSecrets: df.Spec.ImagePullSecrets,
 					Containers: []corev1.Container{
 						{
 							Name:  "dragonfly",
