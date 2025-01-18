@@ -9,6 +9,10 @@ metadata:
     app.kubernetes.io/created-by: dragonfly-operator
     app.kubernetes.io/part-of: dragonfly-operator
     app.kubernetes.io/managed-by: kustomize
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+    rbac.authorization.k8s.io/aggregate-to-cluster-reader: "true"
   name: dragonfly-viewer-role
 rules:
 - apiGroups:

@@ -39,4 +39,65 @@ rules:
     verbs:
       - create
       - patch
-
+---
+# permissions for end users to view dragonflies.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-viewer-role
+  labels:
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+    rbac.authorization.k8s.io/aggregate-to-cluster-reader: "true"
+  namespace: {{ .Release.Namespace | quote }}
+rules:
+- apiGroups:
+  - dragonflydb.io
+  resources:
+  - dragonflies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - dragonflydb.io
+  resources:
+  - dragonflies/status
+  verbs:
+  - get
+{{- if .Values.writeAggregateRoles.install }}
+---
+# permissions for end users to edit dragonflies.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-editor-role
+  labels:
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+  namespace: {{ .Release.Namespace | quote }}
+rules:
+- apiGroups:
+  - dragonflydb.io
+  resources:
+  - dragonflies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - dragonflydb.io
+  resources:
+  - dragonflies/status
+  verbs:
+  - get
+{{- end }}

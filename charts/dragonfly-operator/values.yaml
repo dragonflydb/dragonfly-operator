@@ -43,6 +43,8 @@ service:
 
 terminationGracePeriodSeconds: 10
 
+writeAggregateRoles: false
+
 rbacProxy:
   image:
     repository: gcr.io/kubebuilder/kube-rbac-proxy
