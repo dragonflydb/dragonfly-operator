@@ -175,7 +175,7 @@ func (dfi *DragonflyInstance) getMasterIp(ctx context.Context) (string, error) {
 	}
 
 	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] == resources.Master {
+		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] == resources.Master && pod.DeletionTimestamp == nil {
 			return pod.Status.PodIP, nil
 		}
 	}
