@@ -12,7 +12,7 @@ metadata:
   name: {{ include "dragonfly-operator.fullname" . }}-controller-manager-metrics
 spec:
   endpoints:
-  - targetPort: {{ .Values.service.port }}
+  - targetPort: {{ .Values.service.metricsPort }}
     {{- if .Values.serviceMonitor.interval }}
     interval: {{ .Values.serviceMonitor.interval }}
     {{- end }}
@@ -23,11 +23,11 @@ spec:
     scrapeTimeout: {{ .Values.serviceMonitor.timeout }}
     {{- end }}
     {{- if .Values.serviceMonitor.relabelings }}
-    relabelings: 
+    relabelings:
     {{- toYaml .Values.serviceMonitor.relabelings | nindent 4 }}
     {{- end }}
     {{- if .Values.serviceMonitor.metricRelabelings }}
-    metricRelabelings: 
+    metricRelabelings:
     {{- toYaml .Values.serviceMonitor.metricRelabelings | nindent 4 }}
     {{- end }}
   jobLabel: {{ template "dragonfly-operator.fullname" . }}
