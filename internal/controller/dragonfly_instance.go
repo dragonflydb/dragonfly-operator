@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -173,7 +175,7 @@ func (dfi *DragonflyInstance) getMasterIp(ctx context.Context) (string, error) {
 	}
 
 	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] == resources.Master {
+		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] == resources.Master && pod.DeletionTimestamp == nil {
 			return pod.Status.PodIP, nil
 		}
 	}
@@ -329,7 +331,7 @@ func (dfi *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, err
 // to the given master instance
 func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
+		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 	})
 	defer redisClient.Close()
 
@@ -357,7 +359,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 // along while updating other pods to be replicas
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
+		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 	})
 	defer redisClient.Close()
 

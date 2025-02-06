@@ -99,6 +99,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 					},
 				},
 				Spec: corev1.PodSpec{
+					ImagePullSecrets: df.Spec.ImagePullSecrets,
 					Containers: []corev1.Container{
 						{
 							Name:  "dragonfly",
@@ -154,6 +155,10 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 				},
 			},
 		},
+	}
+
+	if len(df.Spec.InitContainers) > 0 {
+		statefulset.Spec.Template.Spec.InitContainers = df.Spec.InitContainers
 	}
 
 	// Skip Assigning FileSystem Group. Required for platforms such as Openshift that require IDs to not be set, as it injects a fixed randomized ID per namespace into all pods.
