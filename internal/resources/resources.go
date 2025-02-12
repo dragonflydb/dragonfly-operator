@@ -162,10 +162,21 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 	}
 
 	// Skip Assigning FileSystem Group. Required for platforms such as Openshift that require IDs to not be set, as it injects a fixed randomized ID per namespace into all pods.
-	if !df.Spec.SkipFSGroup {
+	// Skip Assigning FileSystem Group if podSecurityContext is set as well.
+	if !df.Spec.SkipFSGroup && df.Spec.PodSecurityContext == nil {
 		statefulset.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
 			FSGroup: &dflyUserGroup,
 		}
+	}
+
+	// set podSecurityContext if one is specified
+	if df.Spec.PodSecurityContext != nil {
+		statefulset.Spec.Template.Spec.SecurityContext = df.Spec.PodSecurityContext
+	}
+
+	// set containerSecurityContext if one is specified
+	if df.Spec.ContainerSecurityContext != nil {
+		statefulset.Spec.Template.Spec.Containers[0].SecurityContext = df.Spec.ContainerSecurityContext
 	}
 
 	// set only if resources are specified

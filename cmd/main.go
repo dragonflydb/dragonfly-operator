@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -32,7 +33,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -65,12 +69,14 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var versionFlag bool
+	var watchCurrentNamespace bool
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&versionFlag, "version", false, "Print version and exist")
+	flag.BoolVar(&watchCurrentNamespace, "watch-current-namespace", false, "Watch only namespace where operator is deployed")
 
 	opts := zap.Options{
 		Development: true,
@@ -85,7 +91,7 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	mgrOpts := ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
 			BindAddress: metricsAddr,
@@ -107,7 +113,18 @@ func main() {
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
 		// LeaderElectionReleaseOnCancel: true,
-	})
+	}
+
+	// Watch namespace taken from the environment variable WATCH_NAMESPACE.
+	watchNamespaces := getWatchNamespaceFromEnvVariable()
+	// Watching the current namespace takes precedence over watching the namespace taken from the environment variable WATCH_NAMESPACE.
+	if watchCurrentNamespace {
+		watchNamespaces = getCurrentNamespace()
+	}
+
+	addNamespacesToOpts(watchNamespaces, &mgrOpts)
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgrOpts)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
@@ -156,8 +173,49 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
+
+	if watchNamespaces != "" {
+		setupLog.Info(fmt.Sprintf("Watch namespaces: %s", watchNamespaces))
+	} else {
+		setupLog.Info(fmt.Sprintf("Watch all namespaces."))
+	}
+
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func getWatchNamespaceFromEnvVariable() string {
+	var watchNamespaceEnvVar = "WATCH_NAMESPACE"
+
+	ns, found := os.LookupEnv(watchNamespaceEnvVar)
+	if !found {
+		return ""
+	}
+	return ns
+}
+
+func getCurrentNamespace() string {
+	clientCfg, _ := clientcmd.NewDefaultClientConfigLoadingRules().Load()
+	ns := clientCfg.Contexts[clientCfg.CurrentContext].Namespace
+	if ns == "" {
+		ns = "default"
+	}
+	return ns
+}
+
+func addNamespacesToOpts(namespaces string, ops *ctrl.Options) error {
+	nsList := map[string]cache.Config{}
+	if namespaces != "" {
+		for _, value := range strings.Split(namespaces, ",") {
+			nsList[value] = cache.Config{}
+		}
+		ops.NewCache = func(config *rest.Config, opts cache.Options) (cache.Cache, error) {
+			opts.DefaultNamespaces = nsList
+			return cache.New(config, opts)
+		}
+
+	}
+	return nil
 }
