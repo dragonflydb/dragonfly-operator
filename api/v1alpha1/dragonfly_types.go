@@ -41,6 +41,11 @@ type DragonflySpec struct {
 	// +kubebuilder:default:="Always"
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
 
+	// (Optional) imagePullSecrets to set to Dragonfly
+	// +optional
+	// +kubebuilder:validation:Optional
+	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+
 	// (Optional) Dragonfly container args to pass to the container
 	// Refer to the Dragonfly documentation for the list of supported args
 	// +optional
@@ -102,6 +107,16 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	Authentication *Authentication `json:"authentication,omitempty"`
+
+	// (Optional) Dragonfly container security context
+	// +optional
+	// +kubebuilder:validation:Optional
+	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
+
+	// (Optional) Dragonfly pod security context
+	// +optional
+	// +kubebuilder:validation:Optional
+	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
 
 	// (Optional) Dragonfly pod service account name
 	// +optional

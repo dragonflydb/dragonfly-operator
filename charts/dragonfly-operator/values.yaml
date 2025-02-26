@@ -40,6 +40,7 @@ podSecurityContext:
 service:
   type: ClusterIP
   port: 8443
+  metricsPort: 8080
 
 terminationGracePeriodSeconds: 10
 
