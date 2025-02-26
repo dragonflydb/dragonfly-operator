@@ -12,7 +12,7 @@ metadata:
   name: {{ include "dragonfly-operator.fullname" . }}-controller-manager-metrics
 spec:
   endpoints:
-  - targetPort: {{ .Values.service.metricsPort }}
+  - port: https
     {{- if .Values.serviceMonitor.interval }}
     interval: {{ .Values.serviceMonitor.interval }}
     {{- end }}
