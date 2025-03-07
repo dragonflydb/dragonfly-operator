@@ -243,7 +243,6 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 				},
 				Spec: *df.Spec.Snapshot.PersistentVolumeClaimSpec,
 			})
-
 			statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
 				Name:      "df",
 				MountPath: dir,
@@ -255,6 +254,35 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 		if df.Spec.Snapshot.Cron != "" {
 			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--snapshot_cron=%s", df.Spec.Snapshot.Cron))
 		}
+	}
+	if df.Spec.Tiering != nil {
+		// Doc: https://www.dragonflydb.io/blog/a-preview-of-dragonfly-ssd-tiering
+
+		dir := "/dragonfly/tiering"
+		if df.Spec.Tiering.Dir != "" {
+			dir = df.Spec.Tiering.Dir
+		}
+
+		if df.Spec.Tiering.PersistentVolumeClaimSpec != nil {
+			// attach and use the PVC if specified
+			statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "dft",
+					Labels: map[string]string{
+						"app":                     df.Name,
+						KubernetesPartOfLabelKey:  "dragonfly",
+						KubernetesAppNameLabelKey: "dragonfly",
+					},
+				},
+				Spec: *df.Spec.Tiering.PersistentVolumeClaimSpec,
+			})
+			statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+				Name:      "dft",
+				MountPath: dir,
+			})
+		}
+
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--tiered_prefix=%s", dir))
 	}
 
 	if df.Spec.TLSSecretRef != nil {
