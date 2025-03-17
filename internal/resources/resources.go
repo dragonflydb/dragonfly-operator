@@ -74,7 +74,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 				KubernetesAppVersionLabelKey:   Version,
 				KubernetesPartOfLabelKey:       "dragonfly",
 				KubernetesManagedByLabelKey:    DragonflyOperatorName,
-				"app":                          df.Name,
+				DragonflyNameLabelKey:          df.Name,
 			},
 		},
 		Spec: appsv1.StatefulSetSpec{
@@ -82,7 +82,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 			ServiceName: df.Name,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app":                     df.Name,
+					DragonflyNameLabelKey:     df.Name,
 					KubernetesPartOfLabelKey:  "dragonfly",
 					KubernetesAppNameLabelKey: "dragonfly",
 				},
@@ -93,7 +93,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app":                     df.Name,
+						DragonflyNameLabelKey:     df.Name,
 						KubernetesPartOfLabelKey:  "dragonfly",
 						KubernetesAppNameLabelKey: "dragonfly",
 					},
@@ -236,7 +236,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "df",
 					Labels: map[string]string{
-						"app":                     df.Name,
+						DragonflyNameLabelKey:     df.Name,
 						KubernetesPartOfLabelKey:  "dragonfly",
 						KubernetesAppNameLabelKey: "dragonfly",
 					},
@@ -383,12 +383,12 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 				KubernetesAppVersionLabelKey:   Version,
 				KubernetesPartOfLabelKey:       "dragonfly",
 				KubernetesManagedByLabelKey:    DragonflyOperatorName,
-				"app":                          df.Name,
+				DragonflyNameLabelKey:          df.Name,
 			},
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
-				"app":                     df.Name,
+				DragonflyNameLabelKey:     df.Name,
 				KubernetesAppNameLabelKey: "dragonfly",
 				Role:                      Master,
 			},

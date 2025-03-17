@@ -19,12 +19,11 @@ package controller
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/types"
 	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -33,9 +32,7 @@ import (
 )
 
 type DfPodLifeCycleReconciler struct {
-	client.Client
-	Scheme        *runtime.Scheme
-	EventRecorder record.EventRecorder
+	Reconciler
 }
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
@@ -57,16 +54,16 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// check for pod readiness
-	isPodReady := false
-	for _, condition := range pod.Status.Conditions {
-		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-			isPodReady = true
-			break
-		}
+	dfName, ok := pod.Labels[resources.DragonflyNameLabelKey]
+	if !ok {
+		log.Info("failed to get Dragonfly name from pod labels")
+		return ctrl.Result{}, nil
 	}
 
-	dfi, err := GetDragonflyInstanceFromPod(ctx, r.Client, &pod, log)
+	dfi, err := r.getDragonflyInstance(ctx, types.NamespacedName{
+		Name:      dfName,
+		Namespace: pod.Namespace,
+	}, log)
 	if err != nil {
 		log.Info("Pod does not belong to a Dragonfly instance")
 		return ctrl.Result{}, nil
@@ -74,8 +71,8 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// Get the role of the pod
 	role, roleExists := pod.Labels[resources.Role]
-	if !isPodReady {
-		if roleExists && role == "master" {
+	if !isPodReady(pod) {
+		if roleExists && role == resources.Master {
 			log.Info("Master pod is not ready, initiating failover", "pod", req.NamespacedName)
 			err := dfi.configureReplication(ctx)
 			if err != nil {
@@ -147,7 +144,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")
 			}
 		}
-	} else if pod.DeletionTimestamp != nil {
+	} else if isPodMarkedForDeletion(pod) {
 		// pod deletion event
 		// configure replication if its a master pod
 		// do nothing if its a replica pod
