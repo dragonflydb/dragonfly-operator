@@ -144,18 +144,22 @@ func main() {
 	defer eventBroadcaster.Shutdown()
 
 	if err = (&controller.DragonflyReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		EventRecorder: eventRecorder,
+		Reconciler: controller.Reconciler{
+			Client:        mgr.GetClient(),
+			Scheme:        mgr.GetScheme(),
+			EventRecorder: eventRecorder,
+		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Dragonfly")
 		os.Exit(1)
 	}
 
 	if err = (&controller.DfPodLifeCycleReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		EventRecorder: eventRecorder,
+		Reconciler: controller.Reconciler{
+			Client:        mgr.GetClient(),
+			Scheme:        mgr.GetScheme(),
+			EventRecorder: eventRecorder,
+		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Health")
 		os.Exit(1)

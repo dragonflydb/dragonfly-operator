@@ -24,47 +24,12 @@ import (
 	"strconv"
 	"strings"
 
-	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
-	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-// DragonflyInstance is an abstraction over the `Dragonfly` CRD
-// and provides methods to handle replication.
-type DragonflyInstance struct {
-	// Dragonfly is the relevant Dragonfly CRD that it performs actions over
-	df *dfv1alpha1.Dragonfly
-
-	client client.Client
-	log    logr.Logger
-}
-
-func GetDragonflyInstanceFromPod(ctx context.Context, c client.Client, pod *corev1.Pod, log logr.Logger) (*DragonflyInstance, error) {
-	dfName, ok := pod.Labels["app"]
-	if !ok {
-		return nil, errors.New("can't find the `app` label")
-	}
-
-	// Retrieve the relevant Dragonfly object
-	var df dfv1alpha1.Dragonfly
-	err := c.Get(ctx, types.NamespacedName{
-		Name:      dfName,
-		Namespace: pod.Namespace,
-	}, &df)
-	if err != nil {
-		return nil, err
-	}
-
-	return &DragonflyInstance{
-		df:     &df,
-		client: c,
-		log:    log,
-	}, nil
-}
 
 func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {
 	dfi.log.Info("Configuring replication")
@@ -90,7 +55,7 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {
 	var master string
 	var masterIp string
 	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.DeletionTimestamp == nil && pod.Status.PodIP != "" {
+		if isPodReady(pod) {
 			master = pod.Name
 			masterIp = pod.Status.PodIP
 			dfi.log.Info("Marking pod as master", "podName", master, "ip", masterIp)
@@ -112,7 +77,7 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {
 	for _, pod := range pods.Items {
 		// only mark the running non-master pods
 		dfi.log.Info("Checking pod", "podName", pod.Name, "ip", pod.Status.PodIP, "status", pod.Status.Phase, "deletiontimestamp", pod.DeletionTimestamp)
-		if pod.Name != master && pod.Status.Phase == corev1.PodRunning && pod.DeletionTimestamp == nil && pod.Status.PodIP != "" {
+		if pod.Name != master && isPodReady(pod) {
 			dfi.log.Info("Marking pod as replica", "podName", pod.Name, "ip", pod.Status.PodIP, "status", pod.Status.Phase)
 			if err := dfi.replicaOf(ctx, &pod, masterIp); err != nil {
 				// TODO: Why does this fail every now and then?
@@ -159,7 +124,7 @@ func (dfi *DragonflyInstance) masterExists(ctx context.Context) (bool, error) {
 	}
 
 	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] == resources.Master {
+		if isPodReady(pod) && pod.Labels[resources.Role] == resources.Master {
 			return true, nil
 		}
 	}
@@ -175,7 +140,7 @@ func (dfi *DragonflyInstance) getMasterIp(ctx context.Context) (string, error) {
 	}
 
 	for _, pod := range pods.Items {
-		if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Labels[resources.Role] == resources.Master && pod.DeletionTimestamp == nil {
+		if isPodReady(pod) && pod.Labels[resources.Role] == resources.Master {
 			return pod.Status.PodIP, nil
 		}
 	}
@@ -278,7 +243,7 @@ func (dfi *DragonflyInstance) checkAndConfigureReplication(ctx context.Context) 
 		// configure non replica pods as replicas
 		for _, pod := range pods.Items {
 			if pod.Labels[resources.Role] == "" {
-				if pod.Status.Phase == corev1.PodRunning && pod.Status.ContainerStatuses[0].Ready && pod.Status.PodIP != "" {
+				if isPodReady(pod) {
 					if err := dfi.configureReplica(ctx, &pod); err != nil {
 						return err
 					}
@@ -317,7 +282,7 @@ func (dfi *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, err
 	dfi.log.Info("getting all pods relevant to the instance")
 	var pods corev1.PodList
 	if err := dfi.client.List(ctx, &pods, client.InNamespace(dfi.df.Namespace), client.MatchingLabels{
-		"app":                              dfi.df.Name,
+		resources.DragonflyNameLabelKey:    dfi.df.Name,
 		resources.KubernetesPartOfLabelKey: "dragonfly",
 	},
 	); err != nil {
