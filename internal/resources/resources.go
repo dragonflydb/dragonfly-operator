@@ -102,7 +102,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 					ImagePullSecrets: df.Spec.ImagePullSecrets,
 					Containers: []corev1.Container{
 						{
-							Name:  "dragonfly",
+							Name:  DragonflyContainerName,
 							Image: image,
 							Ports: []corev1.ContainerPort{
 								{
