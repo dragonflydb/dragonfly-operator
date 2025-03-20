@@ -223,7 +223,7 @@ func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.
 		}
 	}
 
-	if redisRole != resources.Replica {
+	if redisRole == resources.Master {
 		return false, nil
 	}
 
