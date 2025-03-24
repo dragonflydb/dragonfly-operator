@@ -175,8 +175,8 @@ func isPodReady(pod corev1.Pod) bool {
 
 func isDragonflyContainerReady(containerStatuses []corev1.ContainerStatus) bool {
 	for _, cs := range containerStatuses {
-		if cs.Name == resources.DragonflyContainerName && cs.Ready {
-			return true
+		if cs.Name == resources.DragonflyContainerName {
+			return cs.Ready
 		}
 	}
 
@@ -184,10 +184,15 @@ func isDragonflyContainerReady(containerStatuses []corev1.ContainerStatus) bool 
 }
 
 func isPodMarkedForDeletion(pod corev1.Pod) bool {
+	if !pod.DeletionTimestamp.IsZero() {
+		return true
+	}
+
 	for _, c := range pod.Status.Conditions {
-		if !pod.DeletionTimestamp.IsZero() || (c.Type == corev1.DisruptionTarget && c.Status == corev1.ConditionTrue) {
+		if c.Type == corev1.DisruptionTarget && c.Status == corev1.ConditionTrue {
 			return true
 		}
 	}
+
 	return false
 }

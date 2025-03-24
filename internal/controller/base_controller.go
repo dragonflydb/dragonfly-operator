@@ -26,24 +26,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type (
-	Reconciler struct {
-		Client        client.Client // Explicitly named
-		Scheme        *runtime.Scheme
-		EventRecorder record.EventRecorder
-	}
-	// DragonflyInstance is an abstraction over the `Dragonfly` CRD
-	// and provides methods to handle replication.
-	DragonflyInstance struct {
-		// Dragonfly is the relevant Dragonfly CRD that it performs actions over
-		df *dfv1alpha1.Dragonfly
-
-		client        client.Client
-		scheme        *runtime.Scheme
-		eventRecorder record.EventRecorder
-		log           logr.Logger
-	}
-)
+type Reconciler struct {
+	Client        client.Client // Explicitly named
+	Scheme        *runtime.Scheme
+	EventRecorder record.EventRecorder
+}
 
 func (r *Reconciler) getDragonflyInstance(ctx context.Context, namespacedName types.NamespacedName, log logr.Logger) (*DragonflyInstance, error) {
 	// Retrieve the relevant Dragonfly object
@@ -54,10 +41,8 @@ func (r *Reconciler) getDragonflyInstance(ctx context.Context, namespacedName ty
 	}
 
 	return &DragonflyInstance{
-		df:            &df,
-		client:        r.Client,
-		scheme:        r.Scheme,
-		eventRecorder: r.EventRecorder,
-		log:           log,
+		df:     &df,
+		client: r.Client,
+		log:    log,
 	}, nil
 }

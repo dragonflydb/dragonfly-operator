@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	"github.com/go-logr/logr"
 	"net"
 	"strconv"
 	"strings"
@@ -30,6 +32,16 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// DragonflyInstance is an abstraction over the `Dragonfly` CRD
+// and provides methods to handle replication.
+type DragonflyInstance struct {
+	// Dragonfly is the relevant Dragonfly CRD that it performs actions over
+	df *dfv1alpha1.Dragonfly
+
+	client client.Client
+	log    logr.Logger
+}
 
 func (dfi *DragonflyInstance) configureReplication(ctx context.Context) error {
 	dfi.log.Info("Configuring replication")
