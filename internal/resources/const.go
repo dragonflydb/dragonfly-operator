@@ -56,6 +56,8 @@ const (
 	// KubernetesPartOfLabel is the name of a higher level application this one is part of
 	KubernetesPartOfLabelKey = "app.kubernetes.io/part-of"
 
+	DragonflyNameLabelKey = "app"
+
 	MasterIp string = "master-ip"
 
 	Role string = "role"
@@ -63,6 +65,8 @@ const (
 	Master string = "master"
 
 	Replica string = "replica"
+
+	DragonflyContainerName = "dragonfly"
 )
 
 var DefaultDragonflyArgs = []string{

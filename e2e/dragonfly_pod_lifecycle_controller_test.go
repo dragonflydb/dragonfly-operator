@@ -85,7 +85,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -136,7 +136,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -184,7 +184,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())

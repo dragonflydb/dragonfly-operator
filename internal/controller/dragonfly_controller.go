@@ -26,8 +26,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,10 +35,7 @@ import (
 
 // DragonflyReconciler reconciles a Dragonfly object
 type DragonflyReconciler struct {
-	client.Client
-	Scheme *runtime.Scheme
-
-	EventRecorder record.EventRecorder
+	Reconciler
 }
 
 //+kubebuilder:rbac:groups=dragonflydb.io,resources=dragonflies,verbs=get;list;watch;create;update;patch;delete
@@ -59,7 +54,7 @@ type DragonflyReconciler struct {
 func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	var df dfv1alpha1.Dragonfly
-	if err := r.Get(ctx, req.NamespacedName, &df); err != nil {
+	if err := r.Client.Get(ctx, req.NamespacedName, &df); err != nil {
 		log.Info(fmt.Sprintf("could not get the Dragonfly object: %s", req.NamespacedName))
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -76,7 +71,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		// create all resources
 		for _, resource := range resources {
-			if err := r.Create(ctx, resource); err != nil {
+			if err := r.Client.Create(ctx, resource); err != nil {
 				log.Error(err, fmt.Sprintf("could not create resource %s/%s/%s", resource.GetObjectKind(), resource.GetNamespace(), resource.GetName()))
 				return ctrl.Result{}, err
 			}
@@ -85,7 +80,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// Update Status
 		df.Status.Phase = PhaseResourcesCreated
 		log.Info("Created resources for object")
-		if err := r.Status().Update(ctx, &df); err != nil {
+		if err := r.Client.Status().Update(ctx, &df); err != nil {
 			log.Error(err, "could not update the Dragonfly object")
 			return ctrl.Result{}, err
 		}
@@ -102,14 +97,14 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	for _, resource := range missingResources {
 		// recreate missing resources
-		if err := r.Create(ctx, resource); err != nil {
+		if err := r.Client.Create(ctx, resource); err != nil {
 			log.Error(err, fmt.Sprintf("could not create resource %s/%s/%s", resource.GetObjectKind(), resource.GetNamespace(), resource.GetName()))
 			return ctrl.Result{}, err
 		}
 	}
 
 	var statefulSet appsv1.StatefulSet
-	if err := r.Get(ctx, client.ObjectKey{Namespace: df.Namespace, Name: df.Name}, &statefulSet); err != nil {
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: df.Namespace, Name: df.Name}, &statefulSet); err != nil {
 		log.Error(err, "could not get statefulset")
 		return ctrl.Result{}, err
 	}
@@ -125,7 +120,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// update all resources
 	for _, resource := range newResources {
-		if err := r.Update(ctx, resource); err != nil {
+		if err := r.Client.Update(ctx, resource); err != nil {
 			log.Error(err, fmt.Sprintf("could not update resource %s/%s/%s", resource.GetObjectKind(), resource.GetNamespace(), resource.GetName()))
 			return ctrl.Result{}, err
 		}
@@ -138,15 +133,15 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// This is a Rollout
 		log.Info("Rolling out new version")
 		var updatedStatefulset appsv1.StatefulSet
-		if err := r.Get(ctx, client.ObjectKey{Namespace: df.Namespace, Name: df.Name}, &updatedStatefulset); err != nil {
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: df.Namespace, Name: df.Name}, &updatedStatefulset); err != nil {
 			log.Error(err, "could not get statefulset")
 			return ctrl.Result{Requeue: true}, err
 		}
 
 		// get pods of the statefulset
 		var pods corev1.PodList
-		if err := r.List(ctx, &pods, client.InNamespace(df.Namespace), client.MatchingLabels(map[string]string{
-			"app":                               df.Name,
+		if err := r.Client.List(ctx, &pods, client.InNamespace(df.Namespace), client.MatchingLabels(map[string]string{
+			resources.DragonflyNameLabelKey:     df.Name,
 			resources.KubernetesAppNameLabelKey: "dragonfly",
 		})); err != nil {
 			log.Error(err, "could not list pods")
@@ -173,7 +168,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				if isFailedToStart(&pod) {
 					// This is a new pod which is trying to be ready, but couldn't start due to misconfig.
 					// Delete the pod and create a new one.
-					if err := r.Delete(ctx, &pod); err != nil {
+					if err := r.Client.Delete(ctx, &pod); err != nil {
 						log.Error(err, "could not delete pod")
 						return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 					}
@@ -228,7 +223,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				// delete the replica
 				log.Info("deleting replica", "pod", replica.Name)
 				r.EventRecorder.Event(&df, corev1.EventTypeNormal, "Rollout", "Deleting replica")
-				if err := r.Delete(ctx, &replica); err != nil {
+				if err := r.Client.Delete(ctx, &replica); err != nil {
 					log.Error(err, "could not delete pod")
 					return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 				}
@@ -268,7 +263,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 			// delete the old master, so that it gets recreated with the new version
 			log.Info("deleting master", "pod", master.Name)
-			if err := r.Delete(ctx, &master); err != nil {
+			if err := r.Client.Delete(ctx, &master); err != nil {
 				log.Error(err, "could not delete pod")
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, err
 			}
@@ -279,7 +274,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		// update status
 		df.Status.IsRollingUpdate = false
-		if err := r.Status().Update(ctx, &df); err != nil {
+		if err := r.Client.Status().Update(ctx, &df); err != nil {
 			log.Error(err, "could not update the Dragonfly object")
 			return ctrl.Result{Requeue: true}, err
 		}
@@ -295,7 +290,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// Start rollout and update status
 		// update status so that we can track progress
 		df.Status.IsRollingUpdate = true
-		if err := r.Status().Update(ctx, &df); err != nil {
+		if err := r.Client.Status().Update(ctx, &df); err != nil {
 			log.Error(err, "could not update the Dragonfly object")
 			return ctrl.Result{Requeue: true}, err
 		}
@@ -332,7 +327,7 @@ func (r *DragonflyReconciler) getMissingResources(ctx context.Context, df *dfv1a
 	for _, resource := range resources {
 		obj := resource.DeepCopyObject().(client.Object)
 
-		err := r.Get(ctx, client.ObjectKey{
+		err := r.Client.Get(ctx, client.ObjectKey{
 			Namespace: df.Namespace,
 			Name:      resource.GetName(),
 		}, obj)
