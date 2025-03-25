@@ -63,7 +63,7 @@ func getLatestReplica(ctx context.Context, c client.Client, statefulSet *appsv1.
 	err := c.List(ctx, podList, &client.ListOptions{
 		Namespace: statefulSet.Namespace,
 		LabelSelector: labels.SelectorFromValidatedSet(map[string]string{
-			"app":                              statefulSet.Name,
+			resources.DragonflyNameLabelKey:    statefulSet.Name,
 			resources.KubernetesPartOfLabelKey: "dragonfly",
 		}),
 	})
@@ -172,4 +172,42 @@ func parseRedisInfo(info string) map[string]string {
 // sanitizeIp Ipv6
 func sanitizeIp(masterIp string) string {
 	return strings.Trim(masterIp, "[]")
+}
+
+func isPodReady(pod corev1.Pod) bool {
+	if isPodMarkedForDeletion(pod) {
+		return false
+	}
+
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue && pod.Status.PodIP != "" {
+			return isDragonflyContainerReady(pod.Status.ContainerStatuses)
+		}
+	}
+
+	return false
+}
+
+func isDragonflyContainerReady(containerStatuses []corev1.ContainerStatus) bool {
+	for _, cs := range containerStatuses {
+		if cs.Name == resources.DragonflyContainerName {
+			return cs.Ready
+		}
+	}
+
+	return false
+}
+
+func isPodMarkedForDeletion(pod corev1.Pod) bool {
+	if !pod.DeletionTimestamp.IsZero() {
+		return true
+	}
+
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.DisruptionTarget && c.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+
+	return false
 }

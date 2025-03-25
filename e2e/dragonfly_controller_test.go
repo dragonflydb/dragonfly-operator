@@ -177,7 +177,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err := k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -231,7 +231,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -274,7 +274,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -331,7 +331,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -456,7 +456,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// check for pods too
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -716,7 +716,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			// check if the pvc is created
 			var pvcs corev1.PersistentVolumeClaimList
 			err = k8sClient.List(ctx, &pvcs, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
