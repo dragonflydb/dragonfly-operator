@@ -75,12 +75,6 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
-	var statefulSet appsv1.StatefulSet
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: dfi.df.Namespace, Name: dfi.df.Name}, &statefulSet); err != nil {
-		log.Error(err, "failed to get statefulset")
-		return ctrl.Result{}, err
-	}
-
 	if dfi.df.Status.Phase == "" {
 		if err := dfi.updateStatus(ctx, PhaseResourcesCreated); err != nil {
 			dfi.log.Error(err, "failed to update the dragonfly object")
@@ -90,6 +84,12 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Resources", "Created resources")
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	var statefulSet appsv1.StatefulSet
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: dfi.df.Namespace, Name: dfi.df.Name}, &statefulSet); err != nil {
+		log.Error(err, "failed to get statefulset")
+		return ctrl.Result{}, err
 	}
 
 	if dfi.df.Status.IsRollingUpdate {
