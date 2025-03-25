@@ -27,13 +27,15 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
 const (
-	PhaseResourcesCreated string = "resources-created"
-
-	PhaseReady string = "ready"
+	PhaseResourcesCreated string = "ResourcesCreated"
+	PhaseReady            string = "Ready"
 )
 
 // isPodOnLatestVersion returns if the Given pod is on the updatedRevision
@@ -195,4 +197,13 @@ func isPodMarkedForDeletion(pod corev1.Pod) bool {
 	}
 
 	return false
+}
+
+// getGVK returns the GroupVersionKind of the given object.
+func getGVK(obj client.Object, scheme *runtime.Scheme) schema.GroupVersionKind {
+	gvk, err := apiutil.GVKForObject(obj, scheme)
+	if err != nil {
+		return schema.GroupVersionKind{Group: "Unknown", Version: "Unknown", Kind: "Unknown"}
+	}
+	return gvk
 }

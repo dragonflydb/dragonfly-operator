@@ -29,6 +29,8 @@ const (
 	// DragonflyPortName is the name of the port on which the Dragonfly instance listens
 	DragonflyPortName = "redis"
 
+	DragonflyAdminPortName = "admin"
+
 	// DragonflyOperatorName is the name of the operator
 	DragonflyOperatorName = "dragonfly-operator"
 
