@@ -20,15 +20,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
-	"github.com/go-logr/logr"
 	"net"
 	"strconv"
 	"strings"
 
+	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
+	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -354,6 +355,19 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 	pod.Labels[resources.Role] = resources.Master
 	if err := dfi.client.Update(ctx, pod); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (dfi *DragonflyInstance) reconcileResource(ctx context.Context, obj client.Object) error {
+	if err := dfi.client.Create(ctx, obj); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create resource: %w", err)
+		}
+		if err := dfi.client.Update(ctx, obj); err != nil {
+			return fmt.Errorf("failed to update resource: %w", err)
+		}
 	}
 
 	return nil
