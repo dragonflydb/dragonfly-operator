@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	PhaseResourcesCreated string = "ResourcesCreated"
-	PhaseReady            string = "Ready"
+	PhaseResourcesCreated string = "resources-created"
+	PhaseReady            string = "ready"
 )
 
 // isPodOnLatestVersion returns if the Given pod is on the updatedRevision
