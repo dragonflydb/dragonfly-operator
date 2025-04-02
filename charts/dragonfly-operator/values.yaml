@@ -101,6 +101,9 @@ manager:
       drop:
         - ALL
 
+  # -- Priority class name for the operator pod
+  priorityClassName: ""
+
   nodeSelector: {}
 
   tolerations: []
