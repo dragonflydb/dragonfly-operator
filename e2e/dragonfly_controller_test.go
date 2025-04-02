@@ -305,7 +305,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			}, &df)
 			Expect(err).To(BeNil())
 
-			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.25.6")
+			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.26.2")
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 		})
