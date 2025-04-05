@@ -342,7 +342,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	}
 
 	if err := dfi.client.Update(ctx, pod); err != nil {
-		return fmt.Errorf("could not update replica metadatas: %w", err)
+		return fmt.Errorf("could not update replica metadata: %w", err)
 	}
 
 	return nil

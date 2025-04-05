@@ -58,7 +58,7 @@ const (
 
 	MasterIpLabel string = "master-ip"
 	MasterIp      string = "operator.dragonflydb.io/masterIP"
-  
+
 	DragonflyNameLabelKey = "app"
 
 	Role string = "role"
