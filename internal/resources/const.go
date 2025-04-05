@@ -58,9 +58,10 @@ const (
 	// KubernetesPartOfLabel is the name of a higher level application this one is part of
 	KubernetesPartOfLabelKey = "app.kubernetes.io/part-of"
 
-	DragonflyNameLabelKey = "app"
+	MasterIpLabel string = "master-ip"
+	MasterIp      string = "operator.dragonflydb.io/masterIP"
 
-	MasterIp string = "master-ip"
+	DragonflyNameLabelKey = "app"
 
 	Role string = "role"
 
@@ -74,6 +75,8 @@ const (
 var DefaultDragonflyArgs = []string{
 	"--alsologtostderr",
 	"--primary_port_http_enabled=false",
+	"--bind=::",
+	"--admin_bind=::",
 	fmt.Sprintf("--admin_port=%d", DragonflyAdminPort),
 	"--admin_nopass",
 }
