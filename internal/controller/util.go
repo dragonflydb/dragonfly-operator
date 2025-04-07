@@ -17,16 +17,11 @@ limitations under the License.
 package controller
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"strings"
-
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
-	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,138 +29,59 @@ import (
 )
 
 const (
-	PhaseResourcesCreated string = "resources-created"
-	PhaseReady            string = "ready"
+	PhaseResourcesCreated string = "ResourcesCreated"
+	PhaseReady            string = "Ready"
+	PhaseRollingUpdate    string = "RollingUpdate"
+	PhaseConfiguring      string = "Configuring"
+	// PhaseReadyOld TODO: remove this in a future release.
+	PhaseReadyOld string = "ready"
 )
 
-// isPodOnLatestVersion returns if the Given pod is on the updatedRevision
-// of the given statefulset or not
-func isPodOnLatestVersion(pod *corev1.Pod, statefulSet *appsv1.StatefulSet) (bool, error) {
-	// Get the pod's revision
-	podRevision, ok := pod.Labels[appsv1.StatefulSetRevisionLabel]
-	if !ok {
-		return false, fmt.Errorf("pod %s/%s does not have a revision label", pod.Namespace, pod.Name)
+var (
+	ErrNoMaster         = errors.New("no master found")
+	ErrNoHealthyMaster  = errors.New("no healthy master found")
+	ErrIncorrectMasters = errors.New("incorrect number of masters")
+)
+
+// isPodOnLatestVersion returns true if the given pod is on the updated revision of the given StatefulSet.
+func isPodOnLatestVersion(pod *corev1.Pod, updateRevision string) bool {
+	if podRevision, ok := pod.Labels[appsv1.StatefulSetRevisionLabel]; ok && podRevision == updateRevision {
+		return true
 	}
 
-	// Compare the two
-	if podRevision == statefulSet.Status.UpdateRevision {
-		return true, nil
-	}
-
-	return false, nil
+	return false
 }
 
-// getLatestReplica returns a replica pod which is on the latest version
-// of the given statefulset
-func getLatestReplica(ctx context.Context, c client.Client, statefulSet *appsv1.StatefulSet) (*corev1.Pod, error) {
-	// Get the list of pods
-	podList := &corev1.PodList{}
-	err := c.List(ctx, podList, &client.ListOptions{
-		Namespace: statefulSet.Namespace,
-		LabelSelector: labels.SelectorFromValidatedSet(map[string]string{
-			resources.DragonflyNameLabelKey:    statefulSet.Name,
-			resources.KubernetesPartOfLabelKey: "dragonfly",
-		}),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Iterate over the pods and find a replica which is on the latest version
-	for _, pod := range podList.Items {
-
-		isLatest, err := isPodOnLatestVersion(&pod, statefulSet)
-		if err != nil {
-			return nil, err
-		}
-
-		if isLatest && pod.Labels[resources.Role] == resources.Replica {
-			return &pod, nil
+// getUpdatedReplica returns a replica pod that is on the latest version of the given StatefulSet.
+func getUpdatedReplica(replicas *corev1.PodList, updateRevision string) (*corev1.Pod, error) {
+	// Iterate over the replicas and find a replica which is on the latest version
+	for _, replica := range replicas.Items {
+		if isPodOnLatestVersion(&replica, updateRevision) {
+			return &replica, nil
 		}
 	}
 
-	return nil, errors.New("no replica pod found on latest version")
-
+	return nil, fmt.Errorf("no replica pod found on latest version")
 }
 
-// replTakeover runs the replTakeOver on the given replica pod
-func replTakeover(ctx context.Context, c client.Client, newMaster *corev1.Pod) error {
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%d", newMaster.Status.PodIP, resources.DragonflyAdminPort),
-	})
-	defer redisClient.Close()
-
-	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
-	if err != nil {
-		return fmt.Errorf("error running REPLTAKEOVER command: %w", err)
-	}
-
-	if resp != "OK" {
-		return fmt.Errorf("response of `REPLTAKEOVER` on replica is not OK: %s", resp)
-	}
-
-	// update the label on the pod
-	newMaster.Labels[resources.Role] = resources.Master
-	if err := c.Update(ctx, newMaster); err != nil {
-		return fmt.Errorf("error updating the role label on the pod: %w", err)
-	}
-	return nil
+// roleExists returns true if the pod has a role label.
+func roleExists(pod *corev1.Pod) bool {
+	_, ok := pod.Labels[resources.RoleLabelKey]
+	return ok
 }
 
-func isStableState(ctx context.Context, pod *corev1.Pod) (bool, error) {
-	// wait until pod IP is ready
-	if pod.Status.PodIP == "" || pod.Status.Phase != corev1.PodRunning {
-		return false, nil
-	}
-
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%d", pod.Status.PodIP, resources.DragonflyAdminPort),
-	})
-	defer redisClient.Close()
-
-	_, err := redisClient.Ping(ctx).Result()
-	if err != nil {
-		return false, err
-	}
-
-	info, err := redisClient.Info(ctx, "replication").Result()
-	if err != nil {
-		return false, err
-	}
-
-	if info == "" {
-		return false, errors.New("empty info")
-	}
-
-	data := map[string]string{}
-	for _, line := range strings.Split(info, "\n") {
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		kv := strings.Split(line, ":")
-		data[kv[0]] = strings.TrimSuffix(kv[1], "\r")
-	}
-
-	if data["master_sync_in_progress"] == "1" {
-		return false, nil
-	}
-
-	if data["master_link_status"] != "up" {
-		return false, nil
-	}
-
-	if data["master_last_io_seconds_ago"] == "-1" {
-		return false, nil
-	}
-
-	return true, nil
+// isRunningAndReady returns true if the pod is running and ready
+func isHealthy(pod *corev1.Pod) bool {
+	return isRunningAndReady(pod) && !isTerminating(pod)
 }
 
-func isPodReady(pod corev1.Pod) bool {
-	if isPodMarkedForDeletion(pod) {
-		return false
-	}
+// isRunningAndReady checks if the pod is running and ready
+func isRunningAndReady(pod *corev1.Pod) bool {
+	return pod.Status.Phase == corev1.PodRunning && isReady(pod)
+}
 
+// isReady returns true if the pod and the dragonfly container are ready.
+func isReady(pod *corev1.Pod) bool {
 	for _, c := range pod.Status.Conditions {
 		if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue && pod.Status.PodIP != "" {
 			return isDragonflyContainerReady(pod.Status.ContainerStatuses)
@@ -175,6 +91,7 @@ func isPodReady(pod corev1.Pod) bool {
 	return false
 }
 
+// isDragonflyContainerReady returns true if the dragonfly container is ready.
 func isDragonflyContainerReady(containerStatuses []corev1.ContainerStatus) bool {
 	for _, cs := range containerStatuses {
 		if cs.Name == resources.DragonflyContainerName {
@@ -185,7 +102,8 @@ func isDragonflyContainerReady(containerStatuses []corev1.ContainerStatus) bool 
 	return false
 }
 
-func isPodMarkedForDeletion(pod corev1.Pod) bool {
+// isTerminating returns true if the pod is terminating.
+func isTerminating(pod *corev1.Pod) bool {
 	if !pod.DeletionTimestamp.IsZero() {
 		return true
 	}
@@ -206,4 +124,51 @@ func getGVK(obj client.Object, scheme *runtime.Scheme) schema.GroupVersionKind {
 		return schema.GroupVersionKind{Group: "Unknown", Version: "Unknown", Kind: "Unknown"}
 	}
 	return gvk
+}
+
+// needRollingUpdate returns true if the given pods require a rolling update.
+func needRollingUpdate(pods *corev1.PodList, sts *appsv1.StatefulSet) bool {
+	if sts.Status.UpdatedReplicas != sts.Status.Replicas {
+		for _, pod := range pods.Items {
+			if !isPodOnLatestVersion(&pod, sts.Status.UpdateRevision) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// getDragonflyName returns the dragonfly name from the pod labels
+func getDragonflyName(pod *corev1.Pod) (string, error) {
+	if name, ok := pod.Labels[resources.DragonflyNameLabelKey]; ok {
+		return name, nil
+	}
+
+	return "", fmt.Errorf("can't find the `%s` label", resources.DragonflyNameLabelKey)
+}
+
+// isMaster returns true if the pod is a master
+func isMaster(pod *corev1.Pod) bool {
+	if role, ok := pod.Labels[resources.RoleLabelKey]; ok && role == resources.Master {
+		return true
+	}
+
+	return false
+}
+
+// isReplica returns true if the pod is a replica
+func isReplica(pod *corev1.Pod) bool {
+	if role, ok := pod.Labels[resources.RoleLabelKey]; ok && role == resources.Replica {
+		return true
+	}
+
+	return false
+}
+
+// isMasterError returns true if the error is related to the master.
+func isMasterError(err error) bool {
+	return errors.Is(err, ErrNoMaster) ||
+		errors.Is(err, ErrNoHealthyMaster) ||
+		errors.Is(err, ErrIncorrectMasters)
 }

@@ -27,7 +27,7 @@ import (
 )
 
 type Reconciler struct {
-	Client        client.Client // Explicitly named
+	Client        client.Client
 	Scheme        *runtime.Scheme
 	EventRecorder record.EventRecorder
 }
@@ -41,8 +41,10 @@ func (r *Reconciler) getDragonflyInstance(ctx context.Context, namespacedName ty
 	}
 
 	return &DragonflyInstance{
-		df:     &df,
-		client: r.Client,
-		log:    log,
+		df:            &df,
+		client:        r.Client,
+		log:           log,
+		scheme:        r.Scheme,
+		eventRecorder: r.EventRecorder,
 	}, nil
 }

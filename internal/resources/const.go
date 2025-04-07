@@ -19,17 +19,43 @@ package resources
 import "fmt"
 
 const (
+	// DragonflyPortName is the name of the port on which the Dragonfly instance listens
+	DragonflyPortName = "redis"
 	// DragonflyPort is the port on which Dragonfly listens
 	DragonflyPort = 6379
 
+	DragonflyAdminPortName = "admin"
 	// DragonflyAdminPort is the admin port on which Dragonfly listens
 	// IMPORTANT: This port should not be opened to non trusted networks.
 	DragonflyAdminPort = 9999
 
-	// DragonflyPortName is the name of the port on which the Dragonfly instance listens
-	DragonflyPortName = "redis"
+	MemcachedPortName = "memcached"
+	MemcachedPortArg  = "--memcached_port"
 
-	DragonflyAdminPortName = "admin"
+	DragonflyContainerName = "dragonfly"
+
+	AclVolumeName = "dragonfly-acl"
+	AclDir        = "/var/lib/dragonfly"
+	AclFileName   = "dragonfly.acl"
+	AclFileArg    = "--aclfile"
+
+	SnapshotsVolumeName = "df"
+	SnapshotsDir        = "/dragonfly/snapshots"
+	SnapshotsDirArg     = "--dir"
+	SnapshotsCronArg    = "--snapshot_cron"
+
+	TLSVolumeName       = "dragonfly-tls"
+	TLSDir              = "/etc/dragonfly-tls"
+	TLSCACertPathArg    = "--tls_ca_cert_file"
+	TLSCACertDir        = "/etc/dragonfly/tls"
+	TLSCACertFileName   = "ca.crt"
+	TLSCACertVolumeName = "client-ca-cert"
+	TLSCertPathArg      = "--tls_cert_file"
+	TLSCertFileName     = "tls.crt"
+	TLSKeyPathArg       = "--tls_key_file"
+	TLSKeyFileName      = "tls.key"
+	TLSArg              = "--tls"
+	NoTLSOnAdminPortArg = "--no_tls_on_admin_port"
 
 	// DragonflyOperatorName is the name of the operator
 	DragonflyOperatorName = "dragonfly-operator"
@@ -37,38 +63,36 @@ const (
 	// DragonflyImage is the default image of the Dragonfly to use
 	DragonflyImage = "docker.dragonflydb.io/dragonflydb/dragonfly"
 
-	// DragonflyHealthCheckPath is the path on which the Dragonfly exposes its health check
-	DragonflyHealthCheckPath = "/health"
-
 	// Recommended Kubernetes Application Labels
 	// KubernetesAppNameLabel is the name of the application
 	KubernetesAppNameLabelKey = "app.kubernetes.io/name"
+	KubernetesAppName         = "dragonfly"
 
 	// KubernetesAppVersionLabel is the version of the application
 	KubernetesAppVersionLabelKey = "app.kubernetes.io/version"
 
 	// KubernetesAppComponentLabel is the component of the application
 	KubernetesAppComponentLabelKey = "app.kubernetes.io/component"
+	KubernetesAppComponent         = "dragonfly"
 
-	KubernetesAppInstanceNameLabel = "app.kubernetes.io/instance"
+	KubernetesAppInstanceLabelKey = "app.kubernetes.io/instance"
 
 	// KubernetesManagedByLabel is the tool being used to manage the operation of an application
 	KubernetesManagedByLabelKey = "app.kubernetes.io/managed-by"
 
 	// KubernetesPartOfLabel is the name of a higher level application this one is part of
 	KubernetesPartOfLabelKey = "app.kubernetes.io/part-of"
+	KubernetesPartOf         = "dragonfly"
 
 	DragonflyNameLabelKey = "app"
 
-	MasterIp string = "master-ip"
+	MasterIpLabelKey = "master-ip"
 
-	Role string = "role"
+	RoleLabelKey = "role"
 
-	Master string = "master"
+	Master = "master"
 
-	Replica string = "replica"
-
-	DragonflyContainerName = "dragonfly"
+	Replica = "replica"
 )
 
 var DefaultDragonflyArgs = []string{
