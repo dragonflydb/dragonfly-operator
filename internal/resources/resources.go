@@ -22,7 +22,9 @@ import (
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -402,6 +404,48 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 	}
 
 	resources = append(resources, &service)
+
+	pdb := policyv1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      df.Name,
+			Namespace: df.Namespace,
+			// Useful for automatically deleting the resources when the Dragonfly object is deleted
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: df.APIVersion,
+					Kind:       df.Kind,
+					Name:       df.Name,
+					UID:        df.UID,
+				},
+			},
+			Labels: map[string]string{
+				KubernetesAppComponentLabelKey: KubernetesAppComponent,
+				KubernetesAppInstanceLabelKey:  df.Name,
+				KubernetesAppNameLabelKey:      KubernetesAppName,
+				KubernetesAppVersionLabelKey:   Version,
+				KubernetesPartOfLabelKey:       KubernetesPartOf,
+				KubernetesManagedByLabelKey:    DragonflyOperatorName,
+				DragonflyNameLabelKey:          df.Name,
+			},
+		},
+		Spec: policyv1.PodDisruptionBudgetSpec{
+			MaxUnavailable: &intstr.IntOrString{
+				Type:   intstr.Int,
+				IntVal: 1,
+			},
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					DragonflyNameLabelKey:     df.Name,
+					KubernetesPartOfLabelKey:  KubernetesPartOf,
+					KubernetesAppNameLabelKey: KubernetesAppName,
+				},
+			},
+		},
+	}
+
+	if df.Spec.Replicas > 1 {
+		resources = append(resources, &pdb)
+	}
 
 	return resources, nil
 }

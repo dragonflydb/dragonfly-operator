@@ -30,7 +30,9 @@ import (
 	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -436,20 +438,39 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 
 	for _, resource := range dfResources {
 		dfi.log.Info("reconciling dragonfly resource", "kind", getGVK(resource, dfi.scheme).Kind, "namespace", resource.GetNamespace(), "Name", resource.GetName())
-		if err := dfi.client.Create(ctx, resource); err != nil {
+		if err = dfi.client.Create(ctx, resource); err != nil {
 			if !apierrors.IsAlreadyExists(err) {
 				return fmt.Errorf("failed to create resource: %w", err)
 			}
-			if err := dfi.client.Update(ctx, resource); err != nil {
+			storedResource := resource.DeepCopyObject().(client.Object)
+			if err = dfi.client.Get(ctx, client.ObjectKey{
+				Namespace: resource.GetNamespace(),
+				Name:      resource.GetName(),
+			}, storedResource); err != nil {
+				return fmt.Errorf("failed to get resource: %w", err)
+			}
+			resource.SetResourceVersion(storedResource.GetResourceVersion())
+			if err = dfi.client.Update(ctx, resource); err != nil {
 				return fmt.Errorf("failed to update resource: %w", err)
 			}
+		}
+	}
+
+	if dfi.df.Spec.Replicas < 2 {
+		if err = dfi.client.Delete(ctx, &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      dfi.df.Name,
+				Namespace: dfi.df.Namespace,
+			},
+		}); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete pod disruption budget: %w", err)
 		}
 	}
 
 	status := dfi.getStatus()
 	if status.Phase == "" {
 		status.Phase = PhaseResourcesCreated
-		if err := dfi.patchStatus(ctx, status); err != nil {
+		if err = dfi.patchStatus(ctx, status); err != nil {
 			return fmt.Errorf("failed to update the dragonfly object")
 		}
 
@@ -478,7 +499,7 @@ func (dfi *DragonflyInstance) detectRollingUpdate(ctx context.Context) (dfv1alph
 		dfi.eventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Rollout", "Starting a rollout")
 
 		status.Phase = PhaseRollingUpdate
-		if err := dfi.patchStatus(ctx, status); err != nil {
+		if err = dfi.patchStatus(ctx, status); err != nil {
 			return status, fmt.Errorf("failed to update the dragonfly status: %w", err)
 		}
 		dfi.eventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Resources", "Performing a rollout")
