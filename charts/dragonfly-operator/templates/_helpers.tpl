@@ -68,9 +68,9 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Limit metrics service name to 63 characters by truncating fullname at 28 characters to comply with DNS naming spec
-Suffix + 28 char fullname = max 63 characters
+Limit controller service name to 63 characters by truncating fullname at 48 characters to comply with DNS naming spec
+Suffix + 48 char fullname = max 63 characters
 */}}
-{{- define "dragonfly-operator.metricsServiceName" -}}
-{{- printf "%s-controller-manager-metrics-service" (include "dragonfly-operator.fullname" . | trunc 28 | trimSuffix "-" ) -}}
+{{- define "dragonfly-operator.controllerServiceName" -}}
+{{- printf "%s-controller-svc" (include "dragonfly-operator.fullname" . | trunc 48 | trimSuffix "-" ) -}}
 {{- end -}}

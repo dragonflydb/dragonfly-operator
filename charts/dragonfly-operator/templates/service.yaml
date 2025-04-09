@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "dragonfly-operator.metricsServiceName" . }}
+  name: {{ include "dragonfly-operator.controllerServiceName" . }}
   labels:
     {{- include "dragonfly-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: kube-rbac-proxy
