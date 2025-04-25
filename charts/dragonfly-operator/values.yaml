@@ -51,6 +51,8 @@ rbacProxy:
     # Overrides the image tag whose default is the chart appVersion.
     tag: v0.13.1
 
+  extraArgs: {}
+
   resources:
     limits:
       cpu: 500m
@@ -72,6 +74,7 @@ manager:
     # Overrides the image tag whose default is the chart appVersion.
     tag: ""
 
+  extraArgs: {}
 
   resources: {}
 #    limits:
