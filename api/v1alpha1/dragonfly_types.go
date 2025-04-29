@@ -225,6 +225,7 @@ type DragonflyStatus struct {
 	// - "resources-created": The Dragonfly instance resources were created but not yet configured
 	Phase string `json:"phase,omitempty"`
 
+	// TODO: remove this in a future release.
 	// IsRollingUpdate is true if the Dragonfly instance is being updated
 	IsRollingUpdate bool `json:"isRollingUpdate,omitempty"`
 }

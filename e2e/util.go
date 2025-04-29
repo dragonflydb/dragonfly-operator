@@ -89,7 +89,7 @@ func checkAndK8sPortForwardRedis(ctx context.Context, clientset *kubernetes.Clie
 
 	var master *corev1.Pod
 	for _, pod := range pods.Items {
-		if pod.Labels[resources.Role] == resources.Master {
+		if pod.Labels[resources.RoleLabelKey] == resources.Master {
 			master = &pod
 			break
 		}
