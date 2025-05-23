@@ -17,7 +17,6 @@ limitations under the License.
 package resources
 
 import (
-	"context"
 	"fmt"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -25,7 +24,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var (
@@ -40,12 +38,9 @@ const (
 	TLSCACertVolumeName = "client-ca-cert"
 )
 
-// GetDragonflyResources returns the resources required for a Dragonfly
+// GenerateDragonflyResources returns the resources required for a Dragonfly
 // Instance
-func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]client.Object, error) {
-	log := log.FromContext(ctx)
-	log.Info(fmt.Sprintf("Creating resources for %s", df.Name))
-
+func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, error) {
 	var resources []client.Object
 
 	image := df.Spec.Image
@@ -110,7 +105,7 @@ func GetDragonflyResources(ctx context.Context, df *resourcesv1.Dragonfly) ([]cl
 									ContainerPort: DragonflyPort,
 								},
 								{
-									Name:          "admin",
+									Name:          DragonflyAdminPortName,
 									ContainerPort: DragonflyAdminPort,
 								},
 							},
