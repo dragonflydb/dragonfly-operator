@@ -1463,6 +1463,10 @@
 		},
 		{
 		  "current": {},
+		  "datasource": {
+			"type": "prometheus",
+			"uid": "${DS_PROMETHEUS}"
+		  },
 		  "definition": "label_values(dragonfly_uptime_in_seconds,app)",
 		  "hide": 0,
 		  "includeAll": false,
