@@ -100,7 +100,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if roleExists(&pod) {
-		if dfi.getStatus().Phase != PhaseReady || dfi.getStatus().Phase != PhaseReadyOld {
+		if dfi.getStatus().Phase != PhaseReady && dfi.getStatus().Phase != PhaseReadyOld {
 			return ctrl.Result{}, nil
 		}
 
