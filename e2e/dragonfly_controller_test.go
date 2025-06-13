@@ -285,7 +285,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// Get the pods along with their roles
 			podRoles := make(map[string][]string)
 			for _, pod := range pods.Items {
-				role, ok := pod.Labels[resources.Role]
+				role, ok := pod.Labels[resources.RoleLabelKey]
 				// error if there is no label
 				Expect(ok).To(BeTrue())
 				// verify the role to match the label
@@ -340,7 +340,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			podRoles := make(map[string][]string)
 			for _, pod := range pods.Items {
 				Expect(pod.Spec.Containers[0].Image).To(Equal(df.Spec.Image))
-				role, ok := pod.Labels[resources.Role]
+				role, ok := pod.Labels[resources.RoleLabelKey]
 				// error if there is no label
 				Expect(ok).To(BeTrue())
 				// verify the role to match the label
@@ -627,7 +627,7 @@ user john on >peacepass -@all +@string +hset
 			}, &ss)
 			Expect(err).To(BeNil())
 
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--aclfile=%s/dragonfly.acl", resources.AclPath)))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--aclfile=%s/dragonfly.acl", resources.AclDir)))
 			stopChan := make(chan struct{}, 1)
 			defer close(stopChan)
 			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6392)
@@ -868,8 +868,8 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--tls"))
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--no_tls_on_admin_port"))
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_cert_file=%s/tls.crt", resources.TlsPath)))
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_key_file=%s/tls.key", resources.TlsPath)))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_cert_file=%s/tls.crt", resources.TLSDir)))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_key_file=%s/tls.key", resources.TLSDir)))
 		})
 
 		It("Cleanup", func() {
