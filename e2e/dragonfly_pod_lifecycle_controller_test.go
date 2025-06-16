@@ -95,7 +95,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 
 			// Get the pods along with their roles
 			for _, pod := range pods.Items {
-				role, ok := pod.Labels[resources.Role]
+				role, ok := pod.Labels[resources.RoleLabelKey]
 				// error if there is no label
 				Expect(ok).To(BeTrue())
 
@@ -147,7 +147,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			// Get the pods along with their roles
 			podRoles := make(map[string][]string)
 			for _, pod := range pods.Items {
-				role, ok := pod.Labels[resources.Role]
+				role, ok := pod.Labels[resources.RoleLabelKey]
 				// error if there is no label
 				Expect(ok).To(BeTrue())
 				// verify the role to match the label
@@ -195,7 +195,7 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			// Get the pods along with their roles
 			podRoles := make(map[string][]string)
 			for _, pod := range pods.Items {
-				role, ok := pod.Labels[resources.Role]
+				role, ok := pod.Labels[resources.RoleLabelKey]
 				// error if there is no label
 				Expect(ok).To(BeTrue())
 				// verify the role to match the label

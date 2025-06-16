@@ -22,20 +22,14 @@ import (
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
 	dflyUserGroup int64 = 999
-)
-
-const (
-	TlsPath             = "/etc/dragonfly-tls"
-	AclPath             = "/var/lib/dragonfly"
-	TLSCACertDirArg     = "--tls_ca_cert_file"
-	TLSCACertDir        = "/etc/dragonfly/tls"
-	TLSCACertVolumeName = "client-ca-cert"
 )
 
 // GenerateDragonflyResources returns the resources required for a Dragonfly
@@ -63,11 +57,11 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 				},
 			},
 			Labels: map[string]string{
-				KubernetesAppComponentLabelKey: "dragonfly",
-				KubernetesAppInstanceNameLabel: df.Name,
-				KubernetesAppNameLabelKey:      "dragonfly",
+				KubernetesAppComponentLabelKey: KubernetesAppComponent,
+				KubernetesAppInstanceLabelKey:  df.Name,
+				KubernetesAppNameLabelKey:      KubernetesAppName,
 				KubernetesAppVersionLabelKey:   Version,
-				KubernetesPartOfLabelKey:       "dragonfly",
+				KubernetesPartOfLabelKey:       KubernetesPartOf,
 				KubernetesManagedByLabelKey:    DragonflyOperatorName,
 				DragonflyNameLabelKey:          df.Name,
 			},
@@ -78,8 +72,8 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					DragonflyNameLabelKey:     df.Name,
-					KubernetesPartOfLabelKey:  "dragonfly",
-					KubernetesAppNameLabelKey: "dragonfly",
+					KubernetesPartOfLabelKey:  KubernetesPartOf,
+					KubernetesAppNameLabelKey: KubernetesAppName,
 				},
 			},
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
@@ -89,8 +83,8 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
 						DragonflyNameLabelKey:     df.Name,
-						KubernetesPartOfLabelKey:  "dragonfly",
-						KubernetesAppNameLabelKey: "dragonfly",
+						KubernetesPartOfLabelKey:  KubernetesPartOf,
+						KubernetesAppNameLabelKey: KubernetesAppName,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -183,23 +177,23 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, df.Spec.Args...)
 	}
 	if df.Spec.MemcachedPort != 0 {
-		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--memcached_port=%d", df.Spec.MemcachedPort))
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%d", MemcachedPortArg, df.Spec.MemcachedPort))
 		statefulset.Spec.Template.Spec.Containers[0].Ports = append(statefulset.Spec.Template.Spec.Containers[0].Ports, corev1.ContainerPort{
-			Name:          "memcached",
+			Name:          MemcachedPortName,
 			ContainerPort: df.Spec.MemcachedPort,
 		})
 	}
 
 	if df.Spec.AclFromSecret != nil {
 		statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, corev1.Volume{
-			Name: "dragonfly-acl",
+			Name: AclVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: df.Spec.AclFromSecret.Name,
 					Items: []corev1.KeyToPath{
 						{
 							Key:  df.Spec.AclFromSecret.Key,
-							Path: "dragonfly.acl",
+							Path: AclFileName,
 						},
 					},
 				},
@@ -207,11 +201,11 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		})
 
 		statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-			Name:      "dragonfly-acl",
-			MountPath: AclPath,
+			Name:      AclVolumeName,
+			MountPath: AclDir,
 		})
 
-		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--aclfile=%s/dragonfly.acl", AclPath))
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s/%s", AclFileArg, AclDir, AclFileName))
 	}
 
 	if df.Spec.Snapshot != nil {
@@ -220,41 +214,41 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 			return nil, fmt.Errorf("cron specified without a persistent volume claim")
 		}
 
-		dir := "/dragonfly/snapshots"
-		if df.Spec.Snapshot.Dir != "" {
-			dir = df.Spec.Snapshot.Dir
+		snapshotDir := df.Spec.Snapshot.Dir
+		if df.Spec.Snapshot.Dir == "" {
+			snapshotDir = SnapshotsDir
 		}
 
 		if df.Spec.Snapshot.PersistentVolumeClaimSpec != nil {
 			// attach and use the PVC if specified
 			statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "df",
+					Name: SnapshotsVolumeName,
 					Labels: map[string]string{
 						DragonflyNameLabelKey:     df.Name,
-						KubernetesPartOfLabelKey:  "dragonfly",
-						KubernetesAppNameLabelKey: "dragonfly",
+						KubernetesPartOfLabelKey:  KubernetesPartOf,
+						KubernetesAppNameLabelKey: KubernetesAppName,
 					},
 				},
 				Spec: *df.Spec.Snapshot.PersistentVolumeClaimSpec,
 			})
 
 			statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-				Name:      "df",
-				MountPath: dir,
+				Name:      SnapshotsVolumeName,
+				MountPath: snapshotDir,
 			})
 		}
 
-		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--dir=%s", dir))
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s", SnapshotsDirArg, snapshotDir))
 
 		if df.Spec.Snapshot.Cron != "" {
-			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--snapshot_cron=%s", df.Spec.Snapshot.Cron))
+			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s", SnapshotsCronArg, df.Spec.Snapshot.Cron))
 		}
 	}
 
 	if df.Spec.TLSSecretRef != nil {
 		statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, corev1.Volume{
-			Name: "dragonfly-tls",
+			Name: TLSVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: df.Spec.TLSSecretRef.Name,
@@ -263,17 +257,17 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		})
 
 		statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-			Name:      "dragonfly-tls",
+			Name:      TLSVolumeName,
 			ReadOnly:  true,
-			MountPath: TlsPath,
+			MountPath: TLSDir,
 		})
 
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, []string{
 			// no TLS on admin port by default
-			"--no_tls_on_admin_port",
-			"--tls",
-			fmt.Sprintf("--tls_cert_file=%s/tls.crt", TlsPath),
-			fmt.Sprintf("--tls_key_file=%s/tls.key", TlsPath),
+			NoTLSOnAdminPortArg,
+			TLSArg,
+			fmt.Sprintf("%s=%s/%s", TLSCertPathArg, TLSDir, TLSCertFileName),
+			fmt.Sprintf("%s=%s/%s", TLSKeyPathArg, TLSDir, TLSKeyFileName),
 		}...)
 	}
 
@@ -333,7 +327,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 						Items: []corev1.KeyToPath{
 							{
 								Key:  df.Spec.Authentication.ClientCaCertSecret.Key,
-								Path: "ca.crt",
+								Path: TLSCACertFileName,
 							},
 						},
 					},
@@ -347,7 +341,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 			})
 
 			// pass it as an arg
-			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s/ca.crt", TLSCACertDirArg, TLSCACertDir))
+			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s/%s", TLSCACertPathArg, TLSCACertDir, TLSCACertFileName))
 		}
 	}
 
@@ -372,11 +366,11 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 				},
 			},
 			Labels: map[string]string{
-				KubernetesAppComponentLabelKey: "Dragonfly",
-				KubernetesAppInstanceNameLabel: df.Name,
-				KubernetesAppNameLabelKey:      "dragonfly",
+				KubernetesAppComponentLabelKey: KubernetesAppComponent,
+				KubernetesAppInstanceLabelKey:  df.Name,
+				KubernetesAppNameLabelKey:      KubernetesAppName,
 				KubernetesAppVersionLabelKey:   Version,
-				KubernetesPartOfLabelKey:       "dragonfly",
+				KubernetesPartOfLabelKey:       KubernetesPartOf,
 				KubernetesManagedByLabelKey:    DragonflyOperatorName,
 				DragonflyNameLabelKey:          df.Name,
 			},
@@ -384,8 +378,8 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
 				DragonflyNameLabelKey:     df.Name,
-				KubernetesAppNameLabelKey: "dragonfly",
-				Role:                      Master,
+				KubernetesAppNameLabelKey: KubernetesAppName,
+				RoleLabelKey:              Master,
 			},
 			Ports: []corev1.ServicePort{
 				{
@@ -404,12 +398,54 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 	}
 	if df.Spec.MemcachedPort != 0 {
 		service.Spec.Ports = append(service.Spec.Ports, corev1.ServicePort{
-			Name: "memcached",
+			Name: MemcachedPortName,
 			Port: df.Spec.MemcachedPort,
 		})
 	}
 
 	resources = append(resources, &service)
+
+	pdb := policyv1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      df.Name,
+			Namespace: df.Namespace,
+			// Useful for automatically deleting the resources when the Dragonfly object is deleted
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: df.APIVersion,
+					Kind:       df.Kind,
+					Name:       df.Name,
+					UID:        df.UID,
+				},
+			},
+			Labels: map[string]string{
+				KubernetesAppComponentLabelKey: KubernetesAppComponent,
+				KubernetesAppInstanceLabelKey:  df.Name,
+				KubernetesAppNameLabelKey:      KubernetesAppName,
+				KubernetesAppVersionLabelKey:   Version,
+				KubernetesPartOfLabelKey:       KubernetesPartOf,
+				KubernetesManagedByLabelKey:    DragonflyOperatorName,
+				DragonflyNameLabelKey:          df.Name,
+			},
+		},
+		Spec: policyv1.PodDisruptionBudgetSpec{
+			MaxUnavailable: &intstr.IntOrString{
+				Type:   intstr.Int,
+				IntVal: 1,
+			},
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					DragonflyNameLabelKey:     df.Name,
+					KubernetesPartOfLabelKey:  KubernetesPartOf,
+					KubernetesAppNameLabelKey: KubernetesAppName,
+				},
+			},
+		},
+	}
+
+	if df.Spec.Replicas > 1 {
+		resources = append(resources, &pdb)
+	}
 
 	return resources, nil
 }
