@@ -38,6 +38,7 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
+        {{- if .Values.rbacProxy.enabled }}
         - args:
             - --secure-listen-address=0.0.0.0:8443
             - --upstream=http://127.0.0.1:8080/
@@ -57,10 +58,13 @@ spec:
               protocol: TCP
           resources:
             {{- toYaml .Values.rbacProxy.resources | nindent 12 }}
-
+          {{- end }}
         - name: manager
           args:
             - --leader-elect
+            {{- if .Values.rbacProxy.enabled }}
+            - --metrics-bind-address=127.0.0.1:8080
+            {{- end }}
             {{- with .Values.manager.extraArgs}}
             {{- toYaml . | nindent 12 }}
             {{- end }}
