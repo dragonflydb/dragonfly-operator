@@ -17,11 +17,14 @@ limitations under the License.
 package e2e
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,6 +41,28 @@ import (
 	"k8s.io/client-go/transport/spdy"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+func parseTieredEntriesFromInfo(info string) (int64, error) {
+	sc := bufio.NewScanner(strings.NewReader(info))
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Handle "tiered_entries:<number>" (with optional spaces)
+		if strings.HasPrefix(line, "tiered_entries") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				val := strings.TrimSpace(parts[1])
+				return strconv.ParseInt(val, 10, 64)
+			}
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return 0, err
+	}
+	return 0, fmt.Errorf("tiered_entries not found")
+}
 
 func waitForStatefulSetReady(ctx context.Context, c client.Client, name, namespace string, maxDuration time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, maxDuration)
