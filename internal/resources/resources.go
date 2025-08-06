@@ -369,6 +369,14 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		}
 	}
 
+	statefulset.Spec.Template.Spec.Containers = mergeNamedSlices(
+		statefulset.Spec.Template.Spec.Containers, df.Spec.AdditionalContainers,
+		func(c corev1.Container) string { return c.Name })
+
+	statefulset.Spec.Template.Spec.Volumes = mergeNamedSlices(
+		statefulset.Spec.Template.Spec.Volumes, df.Spec.AdditionalVolumes,
+		func(v corev1.Volume) string { return v.Name })
+
 	resources = append(resources, &statefulset)
 
 	serviceName := df.Name
@@ -456,6 +464,25 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 	}
 
 	return resources, nil
+}
+
+// mergeNamedSlices will merge base into override, override takes precendence
+func mergeNamedSlices[T any](base, override []T, getName func(T) string) []T {
+	existing := make(map[string]bool, len(override))
+	for _, item := range override {
+		existing[getName(item)] = true
+	}
+
+	result := make([]T, len(override))
+	copy(result, override)
+
+	for _, item := range base {
+		if !existing[getName(item)] {
+			result = append(result, item)
+		}
+	}
+
+	return result
 }
 
 func generateResourceLabels(df *resourcesv1.Dragonfly) map[string]string {
