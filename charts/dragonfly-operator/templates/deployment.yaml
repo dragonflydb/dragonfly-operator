@@ -26,6 +26,9 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      {{- if .Values.manager.priorityClassName }}
+      priorityClassName: {{ .Values.manager.priorityClassName }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -40,6 +43,9 @@ spec:
             - --upstream=http://127.0.0.1:8080/
             - --logtostderr=true
             - --v=0
+            {{- with .Values.rbacProxy.extraArgs}}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           image: "{{ .Values.rbacProxy.image.repository }}:{{ .Values.rbacProxy.image.tag  }}"
           imagePullPolicy: {{ .Values.rbacProxy.image.pullPolicy }}
           name: kube-rbac-proxy
@@ -54,9 +60,10 @@ spec:
 
         - name: manager
           args:
-            - --health-probe-bind-address=:8081
-            - --metrics-bind-address=127.0.0.1:8080
             - --leader-elect
+            {{- with .Values.manager.extraArgs}}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           command:
             - /manager
           securityContext:

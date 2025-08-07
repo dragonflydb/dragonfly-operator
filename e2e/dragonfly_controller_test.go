@@ -177,7 +177,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err := k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -231,7 +231,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -274,7 +274,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -285,7 +285,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// Get the pods along with their roles
 			podRoles := make(map[string][]string)
 			for _, pod := range pods.Items {
-				role, ok := pod.Labels[resources.Role]
+				role, ok := pod.Labels[resources.RoleLabelKey]
 				// error if there is no label
 				Expect(ok).To(BeTrue())
 				// verify the role to match the label
@@ -305,7 +305,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			}, &df)
 			Expect(err).To(BeNil())
 
-			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.25.6")
+			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.28.1")
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 		})
@@ -331,7 +331,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -340,7 +340,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			podRoles := make(map[string][]string)
 			for _, pod := range pods.Items {
 				Expect(pod.Spec.Containers[0].Image).To(Equal(df.Spec.Image))
-				role, ok := pod.Labels[resources.Role]
+				role, ok := pod.Labels[resources.RoleLabelKey]
 				// error if there is no label
 				Expect(ok).To(BeTrue())
 				// verify the role to match the label
@@ -456,7 +456,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			// check for pods too
 			var pods corev1.PodList
 			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -583,7 +583,7 @@ var _ = Describe("Dragonfly Acl file secret key test", Ordered, FlakeAttempts(3)
 	Context("Dragonfly resource creation with acl file", func() {
 		It("Should create successfully", func() {
 			multiLineString := `user default on nopass ~* +@all
-user john on #0c8e2b662f1c0f1 -@all +@string +hset
+user john on >peacepass -@all +@string +hset
 `
 
 			err := k8sClient.Create(ctx, &corev1.Secret{
@@ -627,7 +627,7 @@ user john on #0c8e2b662f1c0f1 -@all +@string +hset
 			}, &ss)
 			Expect(err).To(BeNil())
 
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--aclfile=%s/dragonfly.acl", resources.AclPath)))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--aclfile=%s/dragonfly.acl", resources.AclDir)))
 			stopChan := make(chan struct{}, 1)
 			defer close(stopChan)
 			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6392)
@@ -637,8 +637,8 @@ user john on #0c8e2b662f1c0f1 -@all +@string +hset
 			Expect(err).To(BeNil())
 			Expect(result).To(HaveLen(2))
 			Expect(result).To(ContainElements(
-				"user default on nopass ~* resetchannels +@all",
-				"user john on #0c8e2b662f1c0f resetchannels -@all +@string +hset",
+				"user default on nopass ~* resetchannels +@all $all",
+				"user john on #f00a64155eeebd5 resetchannels -@all +@string +hset $all",
 			))
 		})
 		It("Cleanup", func() {
@@ -716,7 +716,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			// check if the pvc is created
 			var pvcs corev1.PersistentVolumeClaimList
 			err = k8sClient.List(ctx, &pvcs, client.InNamespace(namespace), client.MatchingLabels{
-				"app":                              name,
+				resources.DragonflyNameLabelKey:    name,
 				resources.KubernetesPartOfLabelKey: "dragonfly",
 			})
 			Expect(err).To(BeNil())
@@ -868,8 +868,8 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--tls"))
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--no_tls_on_admin_port"))
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_cert_file=%s/tls.crt", resources.TlsPath)))
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_key_file=%s/tls.key", resources.TlsPath)))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_cert_file=%s/tls.crt", resources.TLSDir)))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--tls_key_file=%s/tls.key", resources.TLSDir)))
 		})
 
 		It("Cleanup", func() {
