@@ -260,7 +260,7 @@ func (dfi *DragonflyInstance) getMaster(ctx context.Context) (*corev1.Pod, error
 		resources.DragonflyNameLabelKey:     dfi.df.Name,
 		resources.KubernetesPartOfLabelKey:  resources.KubernetesPartOf,
 		resources.KubernetesAppNameLabelKey: resources.KubernetesAppName,
-		resources.Role:              resources.Master,
+		resources.Role:                      resources.Master,
 	}
 
 	if dfi.getStatus().Phase == PhaseRollingUpdate || dfi.getStatus().IsRollingUpdate {
@@ -339,7 +339,7 @@ func (dfi *DragonflyInstance) getReplicas(ctx context.Context) (*corev1.PodList,
 		resources.DragonflyNameLabelKey:     dfi.df.Name,
 		resources.KubernetesPartOfLabelKey:  resources.KubernetesPartOf,
 		resources.KubernetesAppNameLabelKey: resources.KubernetesAppName,
-		resources.Role:              resources.Replica,
+		resources.Role:                      resources.Replica,
 	}); err != nil {
 		return nil, err
 	}
@@ -389,7 +389,7 @@ func (dfi *DragonflyInstance) detectOldMasters(ctx context.Context, updateRevisi
 		resources.DragonflyNameLabelKey:     dfi.df.Name,
 		resources.KubernetesPartOfLabelKey:  resources.KubernetesPartOf,
 		resources.KubernetesAppNameLabelKey: resources.KubernetesAppName,
-		resources.Role:              resources.Master,
+		resources.Role:                      resources.Master,
 	}); err != nil {
 		return fmt.Errorf("failed to list pods: %w", err)
 	}
