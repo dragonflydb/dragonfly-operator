@@ -109,6 +109,17 @@ To uninstall the operator, you can run
 kubectl delete -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/manifests/dragonfly-operator.yaml
 ```
 
+### Note regarding ipv6 only support
+
+You need to add those `args` in the dragonfly instance declaration in order to bind on ipv6.
+
+```sh
+  ...
+    - "--bind=::"
+    - "--admin_bind=::"
+  ...
+```
+
 ## License
 
 Copyright 2023 DragonflyDB authors.

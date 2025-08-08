@@ -84,9 +84,10 @@ const (
 	KubernetesPartOfLabelKey = "app.kubernetes.io/part-of"
 	KubernetesPartOf         = "dragonfly"
 
+	MasterIpLabelKey      = "master-ip"
 	DragonflyNameLabelKey = "app"
 
-	MasterIpLabelKey = "master-ip"
+	MasterIpAnnotationKey = "operator.dragonflydb.io/masterIP"
 
 	RoleLabelKey = "role"
 
