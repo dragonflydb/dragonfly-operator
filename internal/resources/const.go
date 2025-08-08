@@ -89,7 +89,7 @@ const (
 
 	MasterIp = "operator.dragonflydb.io/masterIP"
 
-	Role = "role"
+	RoleLabelKey = "role"
 
 	Master = "master"
 

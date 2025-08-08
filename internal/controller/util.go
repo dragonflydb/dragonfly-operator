@@ -68,7 +68,7 @@ func getUpdatedReplica(replicas *corev1.PodList, updateRevision string) (*corev1
 
 // roleExists returns true if the pod has a role label.
 func roleExists(pod *corev1.Pod) bool {
-	_, ok := pod.Labels[resources.Role]
+	_, ok := pod.Labels[resources.RoleLabelKey]
 	return ok
 }
 
@@ -152,7 +152,7 @@ func getDragonflyName(pod *corev1.Pod) (string, error) {
 
 // isMaster returns true if the pod is a master
 func isMaster(pod *corev1.Pod) bool {
-	if role, ok := pod.Labels[resources.Role]; ok && role == resources.Master {
+	if role, ok := pod.Labels[resources.RoleLabelKey]; ok && role == resources.Master {
 		return true
 	}
 
@@ -161,7 +161,7 @@ func isMaster(pod *corev1.Pod) bool {
 
 // isReplica returns true if the pod is a replica
 func isReplica(pod *corev1.Pod) bool {
-	if role, ok := pod.Labels[resources.Role]; ok && role == resources.Replica {
+	if role, ok := pod.Labels[resources.RoleLabelKey]; ok && role == resources.Replica {
 		return true
 	}
 
