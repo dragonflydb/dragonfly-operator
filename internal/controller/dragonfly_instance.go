@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // DragonflyInstance is an abstraction over the `Dragonfly` CRD and provides methods to handle replication.
@@ -436,23 +438,50 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		return fmt.Errorf("failed to generate dragonfly resources")
 	}
 
-	for _, resource := range dfResources {
-		dfi.log.Info("reconciling dragonfly resource", "kind", getGVK(resource, dfi.scheme).Kind, "namespace", resource.GetNamespace(), "Name", resource.GetName())
-		if err = dfi.client.Create(ctx, resource); err != nil {
+	for _, desired := range dfResources {
+		dfi.log.Info("reconciling dragonfly resource", "kind", getGVK(desired, dfi.scheme).Kind, "namespace", desired.GetNamespace(), "Name", desired.GetName())
+
+		if err := controllerutil.SetControllerReference(dfi.df, desired, dfi.scheme); err != nil {
+			return fmt.Errorf("failed to set controller reference: %w", err)
+		}
+
+		err = dfi.client.Create(ctx, desired)
+		if err != nil {
 			if !apierrors.IsAlreadyExists(err) {
 				return fmt.Errorf("failed to create resource: %w", err)
 			}
-			storedResource := resource.DeepCopyObject().(client.Object)
+
+			// Resource exists, fetch it
+			existing := desired.DeepCopyObject().(client.Object)
 			if err = dfi.client.Get(ctx, client.ObjectKey{
-				Namespace: resource.GetNamespace(),
-				Name:      resource.GetName(),
-			}, storedResource); err != nil {
+				Namespace: desired.GetNamespace(),
+				Name:      desired.GetName(),
+			}, existing); err != nil {
 				return fmt.Errorf("failed to get resource: %w", err)
 			}
-			resource.SetResourceVersion(storedResource.GetResourceVersion())
-			if err = dfi.client.Update(ctx, resource); err != nil {
+
+			// Special handling for Services to preserve immutable fields
+			if svcDesired, ok := desired.(*corev1.Service); ok {
+				if svcExisting, ok := existing.(*corev1.Service); ok {
+					svcDesired.Spec.ClusterIP = svcExisting.Spec.ClusterIP
+					svcDesired.Spec.IPFamilies = svcExisting.Spec.IPFamilies
+					svcDesired.Spec.IPFamilyPolicy = svcExisting.Spec.IPFamilyPolicy
+					// Also preserve HealthCheckNodePort if external
+				}
+			}
+
+			// Compare specs; skip if no changes
+			if resourceSpecsEqual(desired, existing) {
+				dfi.log.Info("no changes detected, skipping update", "resource", desired.GetName())
+				continue
+			}
+
+			// Update if specs differ
+			desired.SetResourceVersion(existing.GetResourceVersion())
+			if err = dfi.client.Update(ctx, desired); err != nil {
 				return fmt.Errorf("failed to update resource: %w", err)
 			}
+			dfi.log.Info("updated resource", "resource", desired.GetName())
 		}
 	}
 
@@ -478,6 +507,20 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Helper function to compare resource specs (add to the file)
+func resourceSpecsEqual(desired, existing client.Object) bool {
+	// Compare metadata labels and annotations
+	if !reflect.DeepEqual(desired.GetLabels(), existing.GetLabels()) ||
+		!reflect.DeepEqual(desired.GetAnnotations(), existing.GetAnnotations()) {
+		return false
+	}
+
+	// Compare spec (using unstructured content for generality)
+	desiredUnstr := desired.(runtime.Unstructured)
+	existingUnstr := existing.(runtime.Unstructured)
+	return reflect.DeepEqual(desiredUnstr.UnstructuredContent()["spec"], existingUnstr.UnstructuredContent()["spec"])
 }
 
 // detectRollingUpdate checks whether the pod spec has changed and performs a rolling update if needed
