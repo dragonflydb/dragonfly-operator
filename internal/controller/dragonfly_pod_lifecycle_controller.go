@@ -105,7 +105,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		// is something wrong? check if all replicas have a matching role and revamp accordingly
-		log.Info("non-deletion event for a pod with an existing role. checking if something is wrong", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
+		log.Info("non-deletion event for a pod with an existing role. checking if something is wrong", "pod", pod.Name, "role", pod.Labels[resources.Role])
 
 		if err = dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to check and configure replicas: %w", err)

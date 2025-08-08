@@ -379,7 +379,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 			Selector: map[string]string{
 				DragonflyNameLabelKey:     df.Name,
 				KubernetesAppNameLabelKey: KubernetesAppName,
-				RoleLabelKey:              Master,
+				Role:              Master,
 			},
 			Ports: []corev1.ServicePort{
 				{

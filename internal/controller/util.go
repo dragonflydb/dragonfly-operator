@@ -19,6 +19,8 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -66,7 +68,7 @@ func getUpdatedReplica(replicas *corev1.PodList, updateRevision string) (*corev1
 
 // roleExists returns true if the pod has a role label.
 func roleExists(pod *corev1.Pod) bool {
-	_, ok := pod.Labels[resources.RoleLabelKey]
+	_, ok := pod.Labels[resources.Role]
 	return ok
 }
 
@@ -150,7 +152,7 @@ func getDragonflyName(pod *corev1.Pod) (string, error) {
 
 // isMaster returns true if the pod is a master
 func isMaster(pod *corev1.Pod) bool {
-	if role, ok := pod.Labels[resources.RoleLabelKey]; ok && role == resources.Master {
+	if role, ok := pod.Labels[resources.Role]; ok && role == resources.Master {
 		return true
 	}
 
@@ -159,7 +161,7 @@ func isMaster(pod *corev1.Pod) bool {
 
 // isReplica returns true if the pod is a replica
 func isReplica(pod *corev1.Pod) bool {
-	if role, ok := pod.Labels[resources.RoleLabelKey]; ok && role == resources.Replica {
+	if role, ok := pod.Labels[resources.Role]; ok && role == resources.Replica {
 		return true
 	}
 
@@ -171,4 +173,24 @@ func isMasterError(err error) bool {
 	return errors.Is(err, ErrNoMaster) ||
 		errors.Is(err, ErrNoHealthyMaster) ||
 		errors.Is(err, ErrIncorrectMasters)
+}
+
+// Helper function to parse Redis INFO data
+func parseRedisInfo(info string) map[string]string {
+	data := map[string]string{}
+	for _, line := range strings.Split(info, "\n") {
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		kv := strings.Split(line, ":")
+		if len(kv) == 2 {
+			data[kv[0]] = strings.TrimSuffix(kv[1], "\r")
+		}
+	}
+	return data
+}
+
+// sanitizeIp Ipv6
+func sanitizeIp(masterIp string) string {
+	return strings.Trim(masterIp, "[]")
 }
