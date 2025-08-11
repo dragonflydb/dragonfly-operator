@@ -517,10 +517,18 @@ func resourceSpecsEqual(desired, existing client.Object) bool {
 		return false
 	}
 
-	// Compare spec (using unstructured content for generality)
-	desiredUnstr := desired.(runtime.Unstructured)
-	existingUnstr := existing.(runtime.Unstructured)
-	return reflect.DeepEqual(desiredUnstr.UnstructuredContent()["spec"], existingUnstr.UnstructuredContent()["spec"])
+	// Compare only the .Spec field using reflection
+	desiredV := reflect.ValueOf(desired).Elem()
+	existingV := reflect.ValueOf(existing).Elem()
+
+	desiredSpec := desiredV.FieldByName("Spec")
+	existingSpec := existingV.FieldByName("Spec")
+
+	if !desiredSpec.IsValid() || !existingSpec.IsValid() {
+		return true // No spec field, consider equal
+	}
+
+	return reflect.DeepEqual(desiredSpec.Interface(), existingSpec.Interface())
 }
 
 // detectRollingUpdate checks whether the pod spec has changed and performs a rolling update if needed
