@@ -45,6 +45,7 @@ service:
 terminationGracePeriodSeconds: 10
 
 rbacProxy:
+  enabled: true
   image:
     repository: quay.io/brancz/kube-rbac-proxy
     pullPolicy: IfNotPresent
