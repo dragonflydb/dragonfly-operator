@@ -346,12 +346,14 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 	}
 
 	// Set replicas based on autoscaler configuration
-	// If autoscaler is enabled, don't set replicas to allow HPA to manage them
-	// If autoscaler is disabled, use the spec.replicas value
 	if df.Spec.Autoscaler == nil || !df.Spec.Autoscaler.Enabled {
+		// If autoscaler is disabled, use the spec.replicas value
 		statefulset.Spec.Replicas = &df.Spec.Replicas
+	} else {
+		// When autoscaler is enabled, set initial replicas to MinReplicas to ensure proper startup
+		// HPA will then manage scaling based on metrics
+		statefulset.Spec.Replicas = &df.Spec.Autoscaler.MinReplicas
 	}
-	// When autoscaler is enabled, we don't set Replicas field to allow HPA to manage it
 
 	resources = append(resources, &statefulset)
 
