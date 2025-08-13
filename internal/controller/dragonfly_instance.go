@@ -450,6 +450,16 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 				return fmt.Errorf("failed to get resource: %w", err)
 			}
 			resource.SetResourceVersion(storedResource.GetResourceVersion())
+
+			// Special handling for StatefulSet when autoscaling is enabled
+			if statefulSet, ok := resource.(*appsv1.StatefulSet); ok && dfi.df.Spec.Autoscaler != nil && dfi.df.Spec.Autoscaler.Enabled {
+				// When autoscaling is enabled, preserve the current replica count set by HPA
+				if storedStatefulSet, ok := storedResource.(*appsv1.StatefulSet); ok && storedStatefulSet.Spec.Replicas != nil {
+					statefulSet.Spec.Replicas = storedStatefulSet.Spec.Replicas
+					dfi.log.Info("preserving StatefulSet replica count for autoscaling", "replicas", *statefulSet.Spec.Replicas)
+				}
+			}
+
 			if err = dfi.client.Update(ctx, resource); err != nil {
 				return fmt.Errorf("failed to update resource: %w", err)
 			}

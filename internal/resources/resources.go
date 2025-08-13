@@ -21,6 +21,7 @@ import (
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -67,7 +68,6 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 			},
 		},
 		Spec: appsv1.StatefulSetSpec{
-			Replicas:    &df.Spec.Replicas,
 			ServiceName: df.Name,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
@@ -345,6 +345,14 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		}
 	}
 
+	// Set replicas based on autoscaler configuration
+	// If autoscaler is enabled, don't set replicas to allow HPA to manage them
+	// If autoscaler is disabled, use the spec.replicas value
+	if df.Spec.Autoscaler == nil || !df.Spec.Autoscaler.Enabled {
+		statefulset.Spec.Replicas = &df.Spec.Replicas
+	}
+	// When autoscaler is enabled, we don't set Replicas field to allow HPA to manage it
+
 	resources = append(resources, &statefulset)
 
 	serviceName := df.Name
@@ -447,5 +455,114 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		resources = append(resources, &pdb)
 	}
 
+	// Generate HPA if autoscaler is enabled
+	if df.Spec.Autoscaler != nil && df.Spec.Autoscaler.Enabled {
+		hpa, err := generateHPA(df)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate HPA: %w", err)
+		}
+		resources = append(resources, hpa)
+	}
+
 	return resources, nil
+}
+
+// generateHPA creates a HorizontalPodAutoscaler resource for the Dragonfly instance
+func generateHPA(df *resourcesv1.Dragonfly) (*autoscalingv2.HorizontalPodAutoscaler, error) {
+	if df.Spec.Autoscaler == nil || !df.Spec.Autoscaler.Enabled {
+		return nil, fmt.Errorf("autoscaler configuration is required")
+	}
+
+	autoscaler := df.Spec.Autoscaler
+
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      df.Name + "-hpa",
+			Namespace: df.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: df.APIVersion,
+					Kind:       df.Kind,
+					Name:       df.Name,
+					UID:        df.UID,
+				},
+			},
+			Labels: map[string]string{
+				KubernetesAppComponentLabelKey: KubernetesAppComponent,
+				KubernetesAppInstanceLabelKey:  df.Name,
+				KubernetesAppNameLabelKey:      KubernetesAppName,
+				KubernetesAppVersionLabelKey:   Version,
+				KubernetesPartOfLabelKey:       KubernetesPartOf,
+				KubernetesManagedByLabelKey:    DragonflyOperatorName,
+				DragonflyNameLabelKey:          df.Name,
+			},
+		},
+		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+				APIVersion: "apps/v1",
+				Kind:       "StatefulSet",
+				Name:       df.Name,
+			},
+			MinReplicas: &autoscaler.MinReplicas,
+			MaxReplicas: autoscaler.MaxReplicas,
+		},
+	}
+
+	// Add metrics if specified
+	if len(autoscaler.Metrics) > 0 {
+		hpa.Spec.Metrics = autoscaler.Metrics
+	} else {
+		// Default metrics if none specified
+		var metrics []autoscalingv2.MetricSpec
+
+		if autoscaler.TargetCPUUtilizationPercentage != nil {
+			metrics = append(metrics, autoscalingv2.MetricSpec{
+				Type: autoscalingv2.ResourceMetricSourceType,
+				Resource: &autoscalingv2.ResourceMetricSource{
+					Name: corev1.ResourceCPU,
+					Target: autoscalingv2.MetricTarget{
+						Type:               autoscalingv2.UtilizationMetricType,
+						AverageUtilization: autoscaler.TargetCPUUtilizationPercentage,
+					},
+				},
+			})
+		}
+
+		if autoscaler.TargetMemoryUtilizationPercentage != nil {
+			metrics = append(metrics, autoscalingv2.MetricSpec{
+				Type: autoscalingv2.ResourceMetricSourceType,
+				Resource: &autoscalingv2.ResourceMetricSource{
+					Name: corev1.ResourceMemory,
+					Target: autoscalingv2.MetricTarget{
+						Type:               autoscalingv2.UtilizationMetricType,
+						AverageUtilization: autoscaler.TargetMemoryUtilizationPercentage,
+					},
+				},
+			})
+		}
+
+		// Default to CPU 70% if no metrics specified
+		if len(metrics) == 0 {
+			defaultCPU := int32(70)
+			metrics = append(metrics, autoscalingv2.MetricSpec{
+				Type: autoscalingv2.ResourceMetricSourceType,
+				Resource: &autoscalingv2.ResourceMetricSource{
+					Name: corev1.ResourceCPU,
+					Target: autoscalingv2.MetricTarget{
+						Type:               autoscalingv2.UtilizationMetricType,
+						AverageUtilization: &defaultCPU,
+					},
+				},
+			})
+		}
+
+		hpa.Spec.Metrics = metrics
+	}
+
+	// Add behavior if specified
+	if autoscaler.Behavior != nil {
+		hpa.Spec.Behavior = autoscaler.Behavior
+	}
+
+	return hpa, nil
 }

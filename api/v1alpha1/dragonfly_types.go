@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -154,6 +155,11 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	InitContainers []corev1.Container `json:"initContainers,omitempty"`
+
+	// (Optional) Dragonfly autoscaler configuration
+	// +optional
+	// +kubebuilder:validation:Optional
+	Autoscaler *AutoscalerSpec `json:"autoscaler,omitempty"`
 }
 
 type ServiceSpec struct {
@@ -211,6 +217,47 @@ type Authentication struct {
 	// client certificate is signed by this CA. Server TLS must be enabled for this.
 	// +optional
 	ClientCaCertSecret *corev1.SecretKeySelector `json:"clientCaCertSecret,omitempty"`
+}
+
+// AutoscalerSpec defines the autoscaling configuration for Dragonfly
+type AutoscalerSpec struct {
+	// Whether autoscaling is enabled
+	// +kubebuilder:validation:Required
+	Enabled bool `json:"enabled"`
+
+	// Minimum number of replicas
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Required
+	MinReplicas int32 `json:"minReplicas"`
+
+	// Maximum number of replicas
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Required
+	MaxReplicas int32 `json:"maxReplicas"`
+
+	// Scaling behavior policies
+	// +optional
+	// +kubebuilder:validation:Optional
+	Behavior *autoscalingv2.HorizontalPodAutoscalerBehavior `json:"behavior,omitempty"`
+
+	// Metrics to be used for autoscaling
+	// +optional
+	// +kubebuilder:validation:Optional
+	Metrics []autoscalingv2.MetricSpec `json:"metrics,omitempty"`
+
+	// Target CPU utilization percentage
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	TargetCPUUtilizationPercentage *int32 `json:"targetCPUUtilizationPercentage,omitempty"`
+
+	// Target memory utilization percentage
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	TargetMemoryUtilizationPercentage *int32 `json:"targetMemoryUtilizationPercentage,omitempty"`
 }
 
 // DragonflyStatus defines the observed state of Dragonfly
