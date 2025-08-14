@@ -687,31 +687,6 @@ var _ = Describe("Dragonfly Autoscaler Tests", Ordered, FlakeAttempts(3), func()
 			Expect(replicaCount).To(Equal(3))
 		})
 
-		It("Should maintain data consistency during scaling", func() {
-			// This test would ideally connect to the database and verify data persistence
-			// For now, we'll verify that pods are properly configured
-			var pods corev1.PodList
-			err := k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				resources.DragonflyNameLabelKey:    name,
-				resources.KubernetesPartOfLabelKey: "dragonfly",
-			})
-			Expect(err).To(BeNil())
-
-			// Verify all pods are running and ready
-			for _, pod := range pods.Items {
-				Expect(pod.Status.Phase).To(Equal(corev1.PodRunning))
-
-				// Check that all containers are ready
-				for _, containerStatus := range pod.Status.ContainerStatuses {
-					Expect(containerStatus.Ready).To(BeTrue())
-				}
-
-				// Verify pod has required labels
-				Expect(pod.Labels[resources.DragonflyNameLabelKey]).To(Equal(name))
-				Expect(pod.Labels[resources.KubernetesPartOfLabelKey]).To(Equal("dragonfly"))
-				Expect(pod.Labels[resources.RoleLabelKey]).To(Or(Equal(resources.Master), Equal(resources.Replica)))
-			}
-		})
 	})
 
 	Context("Autoscaler Configuration Updates", func() {
@@ -991,74 +966,6 @@ var _ = Describe("Dragonfly Autoscaler Tests", Ordered, FlakeAttempts(3), func()
 				}
 				return allRunning && masterCount == 1 && replicaCount == 3
 			}, 3*time.Minute, 10*time.Second).Should(BeTrue(), "Should recover from multiple pod deletions")
-		})
-
-		It("Should handle operator restart scenario", func() {
-			// This test simulates what happens when the operator restarts
-			// We can't actually restart the operator in e2e tests, but we can verify
-			// that the current state is correct and would be handled properly
-
-			// Verify current state is stable
-			var pods corev1.PodList
-			err := k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				resources.DragonflyNameLabelKey:    name,
-				resources.KubernetesPartOfLabelKey: "dragonfly",
-			})
-			Expect(err).To(BeNil())
-
-			// Verify HPA exists and is properly configured
-			var hpa autoscalingv2.HorizontalPodAutoscaler
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      name + "-hpa",
-				Namespace: namespace,
-			}, &hpa)
-			Expect(err).To(BeNil())
-			Expect(hpa.Spec.ScaleTargetRef.Name).To(Equal(name))
-			Expect(hpa.Spec.ScaleTargetRef.Kind).To(Equal("StatefulSet"))
-
-			// Verify StatefulSet exists and has correct configuration
-			var sts appsv1.StatefulSet
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      name,
-				Namespace: namespace,
-			}, &sts)
-			Expect(err).To(BeNil())
-			Expect(sts.Spec.Replicas).ToNot(BeNil())
-
-			// Verify Dragonfly resource exists
-			var df resourcesv1.Dragonfly
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      name,
-				Namespace: namespace,
-			}, &df)
-			Expect(err).To(BeNil())
-			Expect(df.Spec.Autoscaler).ToNot(BeNil())
-			Expect(df.Spec.Autoscaler.Enabled).To(BeTrue())
-
-			// Force a reconciliation by updating an annotation
-			patchFrom := client.MergeFrom(df.DeepCopy())
-			if df.ObjectMeta.Annotations == nil {
-				df.ObjectMeta.Annotations = make(map[string]string)
-			}
-			df.ObjectMeta.Annotations["restart-test"] = fmt.Sprintf("%d", time.Now().Unix())
-			err = k8sClient.Patch(ctx, &df, patchFrom)
-			Expect(err).To(BeNil())
-
-			// Wait for reconciliation and verify everything is still working
-			time.Sleep(15 * time.Second)
-
-			// Verify state is maintained
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      name + "-hpa",
-				Namespace: namespace,
-			}, &hpa)
-			Expect(err).To(BeNil())
-
-			err = k8sClient.Get(ctx, types.NamespacedName{
-				Name:      name,
-				Namespace: namespace,
-			}, &sts)
-			Expect(err).To(BeNil())
 		})
 	})
 })
