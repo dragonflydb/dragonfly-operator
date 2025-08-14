@@ -259,9 +259,10 @@ var _ = Describe("Dragonfly Autoscaler Tests", Ordered, FlakeAttempts(3), func()
 			for _, pod := range pods.Items {
 				role, ok := pod.Labels[resources.RoleLabelKey]
 				Expect(ok).To(BeTrue())
-				if role == resources.Master {
+				switch role {
+				case resources.Master:
 					masterCount++
-				} else if role == resources.Replica {
+				case resources.Replica:
 					replicaCount++
 				}
 			}
@@ -339,9 +340,10 @@ var _ = Describe("Dragonfly Autoscaler Tests", Ordered, FlakeAttempts(3), func()
 			for _, pod := range pods.Items {
 				role, ok := pod.Labels[resources.RoleLabelKey]
 				Expect(ok).To(BeTrue())
-				if role == resources.Master {
+				switch role {
+				case resources.Master:
 					masterCount++
-				} else if role == resources.Replica {
+				case resources.Replica:
 					replicaCount++
 				}
 			}
@@ -444,9 +446,10 @@ var _ = Describe("Dragonfly Autoscaler Tests", Ordered, FlakeAttempts(3), func()
 			for _, pod := range allPods.Items {
 				role, ok := pod.Labels[resources.RoleLabelKey]
 				Expect(ok).To(BeTrue())
-				if role == resources.Master {
+				switch role {
+				case resources.Master:
 					masterCount++
-				} else if role == resources.Replica {
+				case resources.Replica:
 					replicaCount++
 				}
 			}
@@ -501,9 +504,10 @@ var _ = Describe("Dragonfly Autoscaler Tests", Ordered, FlakeAttempts(3), func()
 			for _, pod := range pods.Items {
 				role, ok := pod.Labels[resources.RoleLabelKey]
 				Expect(ok).To(BeTrue())
-				if role == resources.Master {
+				switch role {
+				case resources.Master:
 					masterCount++
-				} else if role == resources.Replica {
+				case resources.Replica:
 					replicaCount++
 				}
 			}
@@ -558,9 +562,10 @@ var _ = Describe("Dragonfly Autoscaler Tests", Ordered, FlakeAttempts(3), func()
 			for _, pod := range pods.Items {
 				role, ok := pod.Labels[resources.RoleLabelKey]
 				Expect(ok).To(BeTrue())
-				if role == resources.Master {
+				switch role {
+				case resources.Master:
 					masterCount++
-				} else if role == resources.Replica {
+				case resources.Replica:
 					replicaCount++
 				}
 			}
@@ -671,9 +676,10 @@ var _ = Describe("Dragonfly Autoscaler Tests", Ordered, FlakeAttempts(3), func()
 			for _, pod := range pods.Items {
 				role, ok := pod.Labels[resources.RoleLabelKey]
 				Expect(ok).To(BeTrue())
-				if role == resources.Master {
+				switch role {
+				case resources.Master:
 					masterCount++
-				} else if role == resources.Replica {
+				case resources.Replica:
 					replicaCount++
 				}
 			}
@@ -976,9 +982,10 @@ var _ = Describe("Dragonfly Autoscaler Tests", Ordered, FlakeAttempts(3), func()
 					if !hasRole {
 						return false
 					}
-					if role == resources.Master {
+					switch role {
+					case resources.Master:
 						masterCount++
-					} else if role == resources.Replica {
+					case resources.Replica:
 						replicaCount++
 					}
 				}

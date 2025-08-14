@@ -29,6 +29,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -335,6 +336,37 @@ func (dfi *DragonflyInstance) getStatus() dfv1alpha1.DragonflyStatus {
 	return dfi.df.Status
 }
 
+// deleteHPAIfExists deletes the HPA if it exists
+func (dfi *DragonflyInstance) deleteHPAIfExists(ctx context.Context) error {
+	hpaName := dfi.df.Name + "-hpa"
+	dfi.log.Info("checking for HPA to delete as autoscaler is disabled", "hpa", hpaName)
+
+	// First check if HPA exists
+	var existingHPA autoscalingv2.HorizontalPodAutoscaler
+	err := dfi.client.Get(ctx, client.ObjectKey{
+		Name:      hpaName,
+		Namespace: dfi.df.Namespace,
+	}, &existingHPA)
+
+	if err == nil {
+		// HPA exists, delete it
+		dfi.log.Info("HPA found, deleting it", "hpa", hpaName, "resourceVersion", existingHPA.ResourceVersion)
+		if err = dfi.client.Delete(ctx, &existingHPA); err != nil {
+			return fmt.Errorf("failed to delete existing HPA: %w", err)
+		}
+		dfi.log.Info("successfully issued delete command for HPA", "hpa", hpaName)
+
+		// Force a requeue to ensure deletion is processed
+		return fmt.Errorf("HPA deletion initiated, requeuing for verification")
+	} else if apierrors.IsNotFound(err) {
+		dfi.log.Info("HPA not found (already deleted or never existed)", "hpa", hpaName)
+	} else {
+		return fmt.Errorf("failed to get HPA for deletion: %w", err)
+	}
+
+	return nil
+}
+
 // patchStatus patches the status of the dragonfly instance
 func (dfi *DragonflyInstance) patchStatus(ctx context.Context, status dfv1alpha1.DragonflyStatus) error {
 	dfi.log.Info("updating status", "status", status)
@@ -431,6 +463,18 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 
 // reconcileResources creates or updates the dragonfly resources
 func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
+	// Handle HPA deletion first if autoscaler is disabled
+	// This ensures HPA cleanup happens regardless of other reconciliation issues
+	if dfi.df.Spec.Autoscaler == nil || !dfi.df.Spec.Autoscaler.Enabled {
+		if err := dfi.deleteHPAIfExists(ctx); err != nil {
+			if strings.Contains(err.Error(), "HPA deletion initiated") {
+				// This is an expected requeue error, propagate it up
+				return err
+			}
+			dfi.log.Error(err, "failed to delete HPA, continuing with reconciliation")
+		}
+	}
+
 	dfResources, err := resources.GenerateDragonflyResources(dfi.df)
 	if err != nil {
 		return fmt.Errorf("failed to generate dragonfly resources")
@@ -451,12 +495,20 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 			}
 			resource.SetResourceVersion(storedResource.GetResourceVersion())
 
-			// Special handling for StatefulSet when autoscaling is enabled
-			if statefulSet, ok := resource.(*appsv1.StatefulSet); ok && dfi.df.Spec.Autoscaler != nil && dfi.df.Spec.Autoscaler.Enabled {
-				// When autoscaling is enabled, preserve the current replica count set by HPA
-				if storedStatefulSet, ok := storedResource.(*appsv1.StatefulSet); ok && storedStatefulSet.Spec.Replicas != nil {
-					statefulSet.Spec.Replicas = storedStatefulSet.Spec.Replicas
-					dfi.log.Info("preserving StatefulSet replica count for autoscaling", "replicas", *statefulSet.Spec.Replicas)
+			// Special handling for StatefulSet when autoscaling is enabled or disabled
+			if statefulSet, ok := resource.(*appsv1.StatefulSet); ok {
+				if dfi.df.Spec.Autoscaler != nil && dfi.df.Spec.Autoscaler.Enabled {
+					// When autoscaling is enabled, preserve the current replica count set by HPA
+					if storedStatefulSet, ok := storedResource.(*appsv1.StatefulSet); ok && storedStatefulSet.Spec.Replicas != nil {
+						statefulSet.Spec.Replicas = storedStatefulSet.Spec.Replicas
+						dfi.log.Info("preserving StatefulSet replica count for autoscaling", "replicas", *statefulSet.Spec.Replicas)
+					}
+				} else if dfi.df.Spec.Replicas == 0 {
+					// When autoscaler is disabled and no replicas specified, preserve current count
+					if storedStatefulSet, ok := storedResource.(*appsv1.StatefulSet); ok && storedStatefulSet.Spec.Replicas != nil && *storedStatefulSet.Spec.Replicas > 0 {
+						statefulSet.Spec.Replicas = storedStatefulSet.Spec.Replicas
+						dfi.log.Info("preserving StatefulSet replica count when disabling autoscaler", "replicas", *statefulSet.Spec.Replicas)
+					}
 				}
 			}
 

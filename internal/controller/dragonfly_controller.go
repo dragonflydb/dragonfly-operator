@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -63,6 +64,10 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if err = dfi.reconcileResources(ctx); err != nil {
+		if strings.Contains(err.Error(), "HPA deletion initiated") {
+			log.Info("requeuing to verify HPA deletion")
+			return ctrl.Result{RequeueAfter: time.Second * 2}, nil
+		}
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile dragonfly resources: %w", err)
 	}
 
