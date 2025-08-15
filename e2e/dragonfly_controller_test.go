@@ -655,6 +655,116 @@ user john on >peacepass -@all +@string +hset
 	})
 })
 
+var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAttempts(3), func() {
+	ctx := context.Background()
+	name := "df-tier"
+	namespace := "default"
+
+	Context("Dragonfly resource creation and data insertion", func() {
+		It("Should create successfully", func() {
+			err := k8sClient.Create(ctx, &resourcesv1.Dragonfly{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: namespace,
+				},
+				Spec: resourcesv1.DragonflySpec{
+					Replicas: 1,
+					Tiering: &resourcesv1.Tiering{
+						PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{
+								corev1.ReadWriteOnce,
+							},
+							Resources: corev1.VolumeResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: resource.MustParse("2Gi"),
+								},
+							},
+						},
+					},
+				},
+			})
+			Expect(err).To(BeNil())
+		})
+
+		It("Resources should exist", func() {
+			// Wait until Dragonfly object is marked initialized
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+
+			// Check for service and statefulset
+			var ss appsv1.StatefulSet
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &ss)
+			Expect(err).To(BeNil())
+
+			var svc corev1.Service
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &svc)
+			Expect(err).To(BeNil())
+
+			// check if the pvc is created
+			var pvcs corev1.PersistentVolumeClaimList
+			err = k8sClient.List(ctx, &pvcs, client.InNamespace(namespace), client.MatchingLabels{
+				resources.DragonflyNameLabelKey:    name,
+				resources.KubernetesPartOfLabelKey: "dragonfly",
+			})
+			Expect(err).To(BeNil())
+			Expect(pvcs.Items).To(HaveLen(1))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--tiered_prefix=/dragonfly/tiering/vol"))
+
+			// Insert Data
+			stopChan := make(chan struct{}, 1)
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6393)
+			Expect(err).To(BeNil())
+
+			// Insert BIG value (>64B so it is eligible for tiering)
+			const size = 1 << 20 // 1 MiB
+			payload := make([]byte, size)
+			_, _ = rand.Read(payload)
+
+			infoStr, err := rc.Info(ctx, "tiered").Result()
+			Expect(err).To(BeNil())
+
+			entries, err := parseTieredEntriesFromInfo(infoStr)
+			Expect(err).To(BeNil())
+			Expect(entries).To(Equal(int64(0))) // make sure this matches your expectation
+
+			Expect(rc.Set(ctx, "foo", payload, 0).Err()).To(BeNil())
+			defer close(stopChan)
+
+			// Inserted one big key, tiered entries should be 1
+			infoStr, err = rc.Info(ctx, "tiered").Result()
+			Expect(err).To(BeNil())
+
+			entries, err = parseTieredEntriesFromInfo(infoStr)
+			Expect(err).To(BeNil())
+			Expect(entries).To(Equal(int64(1))) // make sure this matches your expectation
+
+			// Fetch and compare by size
+			data, err := rc.Get(ctx, "foo").Bytes()
+			Expect(err).To(BeNil())
+			Expect(len(data)).To(Equal(size))
+		})
+
+		It("Cleanup", func() {
+			var df resourcesv1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil())
+		})
+
+	})
+})
+
 var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempts(3), func() {
 	ctx := context.Background()
 	name := "df-pvc"
