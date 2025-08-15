@@ -136,6 +136,11 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	TLSSecretRef *corev1.SecretReference `json:"tlsSecretRef,omitempty"`
 
+	// (Optional) Dragonfly SSD Tiering configuration
+	// +optional
+	// +kubebuilder:validation:Optional
+	Tiering *Tiering `json:"tiering,omitempty"`
+
 	// (Optional) Dragonfly Snapshot configuration
 	// +optional
 	// +kubebuilder:validation:Optional
@@ -187,6 +192,13 @@ type ServiceSpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	Labels map[string]string `json:"labels,omitempty"`
+}
+
+type Tiering struct {
+	// (Optional) Dragonfly PVC spec for cache tiering configuration
+	// +optional
+	// +kubebuilder:validation:Optional
+	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
 }
 
 type Snapshot struct {

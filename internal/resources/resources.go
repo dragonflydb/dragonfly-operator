@@ -208,6 +208,34 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s/%s", AclFileArg, AclDir, AclFileName))
 	}
 
+	// Doc: https://www.dragonflydb.io/blog/a-preview-of-dragonfly-ssd-tiering
+	if df.Spec.Tiering != nil {
+
+		tieringVolumeName := "tiering"
+		tieringMountName := "/dragonfly/tiering"
+		tieringDirName := "vol"
+
+		if df.Spec.Tiering.PersistentVolumeClaimSpec != nil {
+			statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   tieringVolumeName,
+					Labels: generateResourceLabels(df),
+				},
+				Spec: *df.Spec.Tiering.PersistentVolumeClaimSpec,
+			})
+
+			statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(
+				statefulset.Spec.Template.Spec.Containers[0].VolumeMounts,
+				corev1.VolumeMount{
+					Name:      tieringVolumeName,
+					MountPath: tieringMountName,
+				},
+			)
+		}
+
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--tiered_prefix=%s/%s", tieringMountName, tieringDirName))
+	}
+
 	if df.Spec.Snapshot != nil {
 		// err if pvc is not specified & s3 sir is not present while cron is specified
 		if df.Spec.Snapshot.Cron != "" && df.Spec.Snapshot.PersistentVolumeClaimSpec == nil && df.Spec.Snapshot.Dir == "" {
@@ -223,12 +251,8 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 			// attach and use the PVC if specified
 			statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: SnapshotsVolumeName,
-					Labels: map[string]string{
-						DragonflyNameLabelKey:     df.Name,
-						KubernetesPartOfLabelKey:  KubernetesPartOf,
-						KubernetesAppNameLabelKey: KubernetesAppName,
-					},
+					Name:   SnapshotsVolumeName,
+					Labels: generateResourceLabels(df),
 				},
 				Spec: *df.Spec.Snapshot.PersistentVolumeClaimSpec,
 			})
@@ -380,15 +404,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 					UID:        df.UID,
 				},
 			},
-			Labels: map[string]string{
-				KubernetesAppComponentLabelKey: KubernetesAppComponent,
-				KubernetesAppInstanceLabelKey:  df.Name,
-				KubernetesAppNameLabelKey:      KubernetesAppName,
-				KubernetesAppVersionLabelKey:   Version,
-				KubernetesPartOfLabelKey:       KubernetesPartOf,
-				KubernetesManagedByLabelKey:    DragonflyOperatorName,
-				DragonflyNameLabelKey:          df.Name,
-			},
+			Labels: generateResourceLabels(df),
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
@@ -433,15 +449,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 					UID:        df.UID,
 				},
 			},
-			Labels: map[string]string{
-				KubernetesAppComponentLabelKey: KubernetesAppComponent,
-				KubernetesAppInstanceLabelKey:  df.Name,
-				KubernetesAppNameLabelKey:      KubernetesAppName,
-				KubernetesAppVersionLabelKey:   Version,
-				KubernetesPartOfLabelKey:       KubernetesPartOf,
-				KubernetesManagedByLabelKey:    DragonflyOperatorName,
-				DragonflyNameLabelKey:          df.Name,
-			},
+			Labels: generateResourceLabels(df),
 		},
 		Spec: policyv1.PodDisruptionBudgetSpec{
 			MaxUnavailable: &intstr.IntOrString{
@@ -472,6 +480,18 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 	}
 
 	return resources, nil
+}
+
+func generateResourceLabels(df *resourcesv1.Dragonfly) map[string]string {
+	return map[string]string{
+		KubernetesAppComponentLabelKey: KubernetesAppComponent,
+		KubernetesAppInstanceLabelKey:  df.Name,
+		KubernetesAppNameLabelKey:      KubernetesAppName,
+		KubernetesAppVersionLabelKey:   Version,
+		KubernetesPartOfLabelKey:       KubernetesPartOf,
+		KubernetesManagedByLabelKey:    DragonflyOperatorName,
+		DragonflyNameLabelKey:          df.Name,
+	}
 }
 
 // generateHPA creates a HorizontalPodAutoscaler resource for the Dragonfly instance
@@ -572,4 +592,5 @@ func generateHPA(df *resourcesv1.Dragonfly) (*autoscalingv2.HorizontalPodAutosca
 	}
 
 	return hpa, nil
+  
 }
