@@ -498,10 +498,23 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 			// Special handling for StatefulSet when autoscaling is enabled or disabled
 			if statefulSet, ok := resource.(*appsv1.StatefulSet); ok {
 				if dfi.df.Spec.Autoscaler != nil && dfi.df.Spec.Autoscaler.Enabled {
-					// When autoscaling is enabled, preserve the current replica count set by HPA
+					// When autoscaling is enabled, preserve the current replica count set by HPA if it exists
+					// Otherwise, ensure we start with at least minReplicas or the specified replicas, whichever is greater
 					if storedStatefulSet, ok := storedResource.(*appsv1.StatefulSet); ok && storedStatefulSet.Spec.Replicas != nil {
-						statefulSet.Spec.Replicas = storedStatefulSet.Spec.Replicas
-						dfi.log.Info("preserving StatefulSet replica count for autoscaling", "replicas", *statefulSet.Spec.Replicas)
+						currentReplicas := *storedStatefulSet.Spec.Replicas
+						minRequired := dfi.df.Spec.Autoscaler.MinReplicas
+						if dfi.df.Spec.Replicas > minRequired {
+							minRequired = dfi.df.Spec.Replicas
+						}
+
+						// Use the current replica count if it's >= minRequired, otherwise use minRequired
+						if currentReplicas >= minRequired {
+							statefulSet.Spec.Replicas = storedStatefulSet.Spec.Replicas
+							dfi.log.Info("preserving StatefulSet replica count for autoscaling", "replicas", *statefulSet.Spec.Replicas)
+						} else {
+							statefulSet.Spec.Replicas = &minRequired
+							dfi.log.Info("adjusting StatefulSet replica count to minimum for autoscaling", "replicas", minRequired)
+						}
 					}
 				} else if dfi.df.Spec.Replicas == 0 {
 					// When autoscaler is disabled and no replicas specified, preserve current count
