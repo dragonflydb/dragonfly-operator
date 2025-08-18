@@ -72,6 +72,16 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
 
+	// (Optional) Additional containers to add to dragonflycluster. Replace container on name collision.
+	// +optional
+	// +kubebuilder:validation:Optional
+	AdditionalContainers []corev1.Container `json:"additionalContainers,omitempty"`
+
+	// (Optional) Additional volumes to add to dragonflycluster. Replace volume on name collision.
+	// +optional
+	// +kubebuilder:validation:Optional
+	AdditionalVolumes []corev1.Volume `json:"additionalVolumes,omitempty"`
+
 	// (Optional) Dragonfly container resource limits. Any container limits
 	// can be specified.
 	// +optional

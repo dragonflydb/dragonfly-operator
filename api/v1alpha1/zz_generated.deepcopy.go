@@ -148,6 +148,20 @@ func (in *DragonflySpec) DeepCopyInto(out *DragonflySpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.AdditionalContainers != nil {
+		in, out := &in.AdditionalContainers, &out.AdditionalContainers
+		*out = make([]v1.Container, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.AdditionalVolumes != nil {
+		in, out := &in.AdditionalVolumes, &out.AdditionalVolumes
+		*out = make([]v1.Volume, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.Resources != nil {
 		in, out := &in.Resources, &out.Resources
 		*out = new(v1.ResourceRequirements)

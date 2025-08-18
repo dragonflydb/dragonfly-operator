@@ -25,6 +25,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -889,6 +890,114 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			Expect(err).To(BeNil())
 		})
 
+	})
+})
+
+var _ = Describe("Dragonfly with additional container and volume", Ordered, FlakeAttempts(3), func() {
+	ctx := context.Background()
+	const (
+		name      = "df-addons"
+		namespace = "default"
+
+		sidecarName   = "helper"
+		sidecarImage  = "busybox:1.36"
+		volumeName    = "extra-storage"
+		volumeMountPt = "/opt/data"
+	)
+
+	Context("Create DF and verify additional resources are merged", func() {
+		It("Should create Dragonfly with an extra container and volume", func() {
+			df := &resourcesv1.Dragonfly{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: namespace,
+				},
+				Spec: resourcesv1.DragonflySpec{
+					Replicas: 1,
+					AdditionalContainers: []corev1.Container{
+						{
+							Name:    sidecarName,
+							Image:   sidecarImage,
+							Command: []string{"sh", "-c", "sleep 3600"},
+							VolumeMounts: []corev1.VolumeMount{
+								{Name: volumeName, MountPath: volumeMountPt},
+							},
+						},
+					},
+					AdditionalVolumes: []corev1.Volume{
+						{
+							Name: volumeName,
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, df)).To(Succeed())
+		})
+
+		It("Resources should include the additional container and volume", func() {
+			// Wait for reconciliation to create SS and mark DF resources created
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+
+			// Fetch StatefulSet
+			var ss appsv1.StatefulSet
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &ss)).To(Succeed())
+
+			// --- Verify additional container exists
+			containers := ss.Spec.Template.Spec.Containers
+			var helperIdx = -1
+			containerNames := make([]string, 0, len(containers))
+			for i, c := range containers {
+				containerNames = append(containerNames, c.Name)
+				if c.Name == sidecarName {
+					helperIdx = i
+				}
+			}
+			By("Listing containers: " + strings.Join(containerNames, ", "))
+			Expect(helperIdx).To(BeNumerically(">=", 0), "expected sidecar container %q to exist", sidecarName)
+
+			helper := containers[helperIdx]
+			Expect(helper.Image).To(Equal(sidecarImage))
+			// Check the volume mount by name + path (avoid brittle deep equality)
+			var hasMount bool
+			for _, vm := range helper.VolumeMounts {
+				if vm.Name == volumeName && vm.MountPath == volumeMountPt {
+					hasMount = true
+					break
+				}
+			}
+			Expect(hasMount).To(BeTrue(), "expected sidecar to mount %q at %q", volumeName, volumeMountPt)
+
+			// --- Verify additional volume exists
+			vols := ss.Spec.Template.Spec.Volumes
+			var volIdx = -1
+			volNames := make([]string, 0, len(vols))
+			for i, v := range vols {
+				volNames = append(volNames, v.Name)
+				if v.Name == volumeName {
+					volIdx = i
+				}
+			}
+			By("Listing volumes: " + strings.Join(volNames, ", "))
+			Expect(volIdx).To(BeNumerically(">=", 0), "expected volume %q to exist", volumeName)
+
+			Expect(vols[volIdx].EmptyDir).ToNot(BeNil(), "expected %q to be an EmptyDir", volumeName)
+		})
+
+		It("Cleanup", func() {
+			var df resourcesv1.Dragonfly
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &df)).To(Succeed())
+		})
 	})
 })
 
