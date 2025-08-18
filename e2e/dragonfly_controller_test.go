@@ -192,6 +192,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password, 6391)
 			Expect(err).To(BeNil())
 			defer close(stopChan)
+			defer rc.Close()
 
 			// insert test data
 			Expect(rc.Set(ctx, "foo", "bar", 0).Err()).To(BeNil())
@@ -495,6 +496,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			defer close(stopChan)
 			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, password, 6395)
 			Expect(err).To(BeNil())
+			defer rc.Close()
 
 			// Check for test data
 			data, err := rc.Get(ctx, "foo").Result()
@@ -720,6 +722,8 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 			stopChan := make(chan struct{}, 1)
 			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6393)
 			Expect(err).To(BeNil())
+			defer close(stopChan)
+			defer rc.Close()
 
 			// Insert BIG value (>64B so it is eligible for tiering)
 			const size = 1 << 20 // 1 MiB
@@ -734,7 +738,6 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 			Expect(entries).To(Equal(int64(0))) // make sure this matches your expectation
 
 			Expect(rc.Set(ctx, "foo", payload, 0).Err()).To(BeNil())
-			defer close(stopChan)
 
 			// Inserted one big key, tiered entries should be 1
 			infoStr, err = rc.Info(ctx, "tiered").Result()
@@ -841,6 +844,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			// Insert test data
 			Expect(rc.Set(ctx, "foo", "bar", 0).Err()).To(BeNil())
 			close(stopChan)
+			rc.Close()
 
 			// delete the single replica
 			var pod corev1.Pod
@@ -869,6 +873,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			stopChan = make(chan struct{}, 1)
 			rc, err = checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6394)
 			defer close(stopChan)
+			defer rc.Close()
 			Expect(err).To(BeNil())
 
 			// check if the Data exists
