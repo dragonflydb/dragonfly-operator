@@ -21,6 +21,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
@@ -234,6 +235,11 @@ func (in *DragonflySpec) DeepCopyInto(out *DragonflySpec) {
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
+	}
+	if in.PersistentVolumeClaimRetentionPolicy != nil {
+		in, out := &in.PersistentVolumeClaimRetentionPolicy, &out.PersistentVolumeClaimRetentionPolicy
+		*out = new(appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy)
+		**out = **in
 	}
 }
 

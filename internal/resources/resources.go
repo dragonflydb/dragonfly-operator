@@ -369,6 +369,10 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		}
 	}
 
+	if df.Spec.PersistentVolumeClaimRetentionPolicy != nil {
+		statefulset.Spec.PersistentVolumeClaimRetentionPolicy = df.Spec.PersistentVolumeClaimRetentionPolicy
+	}
+
 	statefulset.Spec.Template.Spec.Containers = mergeNamedSlices(
 		statefulset.Spec.Template.Spec.Containers, df.Spec.AdditionalContainers,
 		func(c corev1.Container) string { return c.Name })

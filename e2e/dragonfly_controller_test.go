@@ -547,6 +547,43 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Expect(svc.Labels).To(Equal(newLabels))
 		})
 
+		It("Check for PVC retention policy", func() {
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			var ss appsv1.StatefulSet
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &ss)
+			Expect(err).To(BeNil())
+
+			Expect(ss.Spec.PersistentVolumeClaimRetentionPolicy).To(Equal(&appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy{
+				WhenDeleted: appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
+			}))
+
+			df.Spec.PersistentVolumeClaimRetentionPolicy = &appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy{
+				WhenDeleted: appsv1.DeletePersistentVolumeClaimRetentionPolicyType,
+			}
+
+			err = k8sClient.Update(ctx, &df)
+			Expect(err).To(BeNil())
+
+			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &ss)
+			Expect(err).To(BeNil())
+
+			Expect(ss.Spec.PersistentVolumeClaimRetentionPolicy).To(Equal(df.Spec.PersistentVolumeClaimRetentionPolicy))
+		})
+
 		It("Should recreate missing statefulset", func() {
 			var ss appsv1.StatefulSet
 			err := k8sClient.Get(ctx, types.NamespacedName{
