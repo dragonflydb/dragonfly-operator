@@ -251,8 +251,12 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 			// attach and use the PVC if specified
 			statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   SnapshotsVolumeName,
-					Labels: generateResourceLabels(df),
+					Name: SnapshotsVolumeName,
+					Labels: map[string]string{
+						DragonflyNameLabelKey:     df.Name,
+						KubernetesPartOfLabelKey:  KubernetesPartOf,
+						KubernetesAppNameLabelKey: KubernetesAppName,
+					},
 				},
 				Spec: *df.Spec.Snapshot.PersistentVolumeClaimSpec,
 			})
