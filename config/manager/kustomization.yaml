@@ -5,4 +5,4 @@ kind: Kustomization
 images:
   - name: controller
     newName: docker.dragonflydb.io/dragonflydb/operator
-    newTag: v1.2.0
+    newTag: v1.2.1
