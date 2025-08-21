@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -169,6 +170,11 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	InitContainers []corev1.Container `json:"initContainers,omitempty"`
+
+	// (Optional) StatefulSet PVC Retention Policy
+	// +optional
+	// +kubebuilder:validation:Optional
+	PersistentVolumeClaimRetentionPolicy *appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy `json:"persistentVolumeClaimRetentionPolicy,omitempty"`
 }
 
 type ServiceSpec struct {
