@@ -303,10 +303,14 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		statefulset.Spec.Template.ObjectMeta.Annotations = df.Spec.Annotations
 	}
 
+	// Apply custom labels to the PVC object and to the pod template
 	for key := range df.Spec.Labels {
 		// Make sure we do not overwrite any existing labels
 		if _, ok := statefulset.Spec.Template.ObjectMeta.Labels[key]; !ok {
 			statefulset.Spec.Template.ObjectMeta.Labels[key] = df.Spec.Labels[key]
+		}
+		if _, ok := statefulset.Labels[key]; !ok {
+			statefulset.Labels[key] = df.Spec.Labels[key]
 		}
 	}
 
