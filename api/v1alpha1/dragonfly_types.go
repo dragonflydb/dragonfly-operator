@@ -62,7 +62,7 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 
-	// (Optional) Labels to add to the Dragonfly pods.
+	// (Optional) Labels to add to the Dragonfly pods and StatefulSet.
 	// +optional
 	// +kubebuilder:validation:Optional
 	Labels map[string]string `json:"labels,omitempty"`
