@@ -4,7 +4,17 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-  - package-ecosystem: gomod
-    directory: /
+    commit-message:
+      prefix: "chore(actions):"
+    labels:
+      - "dependencies"
+      - "github-actions"
+  - package-ecosystem: "gomod"
+    directory: "/"
     schedule:
-      interval: daily
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(actions):"
+    labels:
+      - "dependencies"
+      - "go"
