@@ -72,7 +72,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if isMasterError(err) {
 			log.Info("failed to get master pod", "error", err)
 
-			if errors.Is(err, ErrIncorrectMasters) {
+			if errors.Is(err, ErrIncorrectMasters) || errors.Is(err, ErrNoHealthyMaster) {
 				if err = dfi.deleteMasterRoleLabel(ctx); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to delete master role label: %w", err)
 				}
