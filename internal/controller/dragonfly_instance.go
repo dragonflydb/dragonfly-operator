@@ -394,6 +394,21 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	patchFrom := client.MergeFrom(pod.DeepCopy())
 	pod.Labels[resources.RoleLabelKey] = resources.Replica
 	pod.Labels[resources.MasterIpLabelKey] = masterIp
+	// if snapshot enable on master only, remove the snapshot cron arg from the container args
+	if dfi.df.Spec.Snapshot.EnableOnMasterOnly {
+		for i, container := range pod.Spec.Containers {
+			if container.Name == resources.DragonflyContainerName {
+				var newArgs []string
+				for _, arg := range container.Args {
+					if !strings.HasPrefix(arg, resources.SnapshotsCronArg) {
+						newArgs = append(newArgs, arg)
+					}
+				}
+				pod.Spec.Containers[i].Args = newArgs
+				break
+			}
+		}
+	}
 	if err := dfi.client.Patch(ctx, pod, patchFrom); err != nil {
 		return fmt.Errorf("failed to update the role label on the pod: %w", err)
 	}

@@ -19,6 +19,7 @@ spec:
       memory: 750Mi
   snapshot:
     cron: "*/5 * * * *"
+    enableOnMasterOnly: false
     persistentVolumeClaimSpec:
       accessModes:
       - ReadWriteOnce

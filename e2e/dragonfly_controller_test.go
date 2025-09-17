@@ -774,6 +774,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 	name := "df-pvc"
 	namespace := "default"
 	schedule := "*/1 * * * *"
+	enableOnMasterOnly := true
 
 	args := []string{
 		"--vmodule=replica=1,server_family=1",
@@ -790,7 +791,8 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 					Replicas: 1,
 					Args:     args,
 					Snapshot: &resourcesv1.Snapshot{
-						Cron: schedule,
+						Cron:               schedule,
+						EnableOnMasterOnly: enableOnMasterOnly,
 						PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{
 								corev1.ReadWriteOnce,
@@ -836,6 +838,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			Expect(err).To(BeNil())
 			Expect(pvcs.Items).To(HaveLen(1))
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--snapshot_cron=%s", schedule)))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--snapshot_enable_on_master_only=%t", enableOnMasterOnly)))
 
 			// Insert Data
 			stopChan := make(chan struct{}, 1)

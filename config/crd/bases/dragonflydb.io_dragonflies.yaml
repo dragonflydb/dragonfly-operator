@@ -6382,6 +6382,9 @@ spec:
                   cron:
                     description: (Optional) Dragonfly snapshot schedule
                     type: string
+                  enableOnMasterOnly:
+                    description: (Optional) Enable snapshot on master only
+                    type: boolean
                   dir:
                     description: |-
                       (Optional) The path to the snapshot directory
