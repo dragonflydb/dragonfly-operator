@@ -39,10 +39,11 @@ const (
 	AclFileName   = "dragonfly.acl"
 	AclFileArg    = "--aclfile"
 
-	SnapshotsVolumeName = "df"
-	SnapshotsDir        = "/dragonfly/snapshots"
-	SnapshotsDirArg     = "--dir"
-	SnapshotsCronArg    = "--snapshot_cron"
+	SnapshotsVolumeName    = "df"
+	SnapshotsDir           = "/dragonfly/snapshots"
+	SnapshotsDirArg        = "--dir"
+	SnapshotsCronArg       = "--snapshot_cron"
+	SnapshotsMasterOnlyArg = "--master_only_snapshot"
 
 	TLSVolumeName       = "dragonfly-tls"
 	TLSDir              = "/etc/dragonfly-tls"

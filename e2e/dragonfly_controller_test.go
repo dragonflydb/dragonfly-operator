@@ -838,7 +838,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			Expect(err).To(BeNil())
 			Expect(pvcs.Items).To(HaveLen(1))
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--snapshot_cron=%s", schedule)))
-			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--snapshot_enable_on_master_only=%t", enableOnMasterOnly)))
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--master_only_snapshot=%t", enableOnMasterOnly)))
 
 			// Insert Data
 			stopChan := make(chan struct{}, 1)

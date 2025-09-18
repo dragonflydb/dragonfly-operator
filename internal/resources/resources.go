@@ -272,6 +272,9 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		if df.Spec.Snapshot.Cron != "" {
 			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s", SnapshotsCronArg, df.Spec.Snapshot.Cron))
 		}
+		if df.Spec.Snapshot.EnableOnMasterOnly {
+			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%t", SnapshotsMasterOnlyArg, df.Spec.Snapshot.EnableOnMasterOnly))
+		}
 	}
 
 	if df.Spec.TLSSecretRef != nil {
