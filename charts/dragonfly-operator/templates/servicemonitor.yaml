@@ -16,7 +16,7 @@ spec:
     {{- if .Values.serviceMonitor.interval }}
     interval: {{ .Values.serviceMonitor.interval }}
     {{- end }}
-    {{- if .Values.serviceMonitor.telemetryPath }}
+    {{- if .Values.serviceMonitor.path }}
     path: {{ .Values.serviceMonitor.path }}
     {{- end }}
     {{- if .Values.serviceMonitor.timeout }}
