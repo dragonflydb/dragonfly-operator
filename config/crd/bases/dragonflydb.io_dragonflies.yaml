@@ -4606,10 +4606,6 @@ spec:
                   type: object
                   x-kubernetes-map-type: atomic
                 type: array
-              inheritMetadata:
-                description: (Optional) Inherit labels and annotations from Dragonfly
-                  CR to Dragonfly direct child resources like STS, Services, PDB etc.
-                type: boolean
               initContainers:
                 description: (Optional) Dragonfly pod init containers
                 items:
@@ -6046,6 +6042,19 @@ spec:
                 additionalProperties:
                   type: string
                 description: (Optional) Dragonfly pod node selector
+                type: object
+              ownedObjectsMetadata:
+                description: (Optional) Dragonfly direct child resources additional
+                  annotations and labels
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
                 type: object
               podSecurityContext:
                 description: (Optional) Dragonfly pod security context

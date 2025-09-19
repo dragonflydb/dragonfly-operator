@@ -170,10 +170,15 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	InitContainers []corev1.Container `json:"initContainers,omitempty"`
 
-	// (Optional) Inherit labels and annotations from Dragonfly CR to Dragonfly direct child resources like STS, Services, PDB etc.
+	// (Optional) Dragonfly direct child resources additional annotations and labels
 	// +optional
 	// +kubebuilder:validation:Optional
-	InheritMetadata bool `json:"inheritMetadata,omitempty"`
+	OwnedObjectsMetadata *OwnedObjectsMetadata `json:"ownedObjectsMetadata,omitempty"`
+}
+
+type OwnedObjectsMetadata struct {
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
 }
 
 type ServiceSpec struct {

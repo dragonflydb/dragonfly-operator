@@ -496,8 +496,8 @@ func generateResourceLabels(df *resourcesv1.Dragonfly) map[string]string {
 		DragonflyNameLabelKey:          df.Name,
 	}
 
-	if df.Spec.InheritMetadata {
-		for key, value := range df.Labels {
+	for key, value := range df.Spec.OwnedObjectsMetadata.Labels {
+		if _, ok := labels[key]; !ok {
 			labels[key] = value
 		}
 	}
@@ -507,11 +507,8 @@ func generateResourceLabels(df *resourcesv1.Dragonfly) map[string]string {
 
 func generateResourceAnnotations(df *resourcesv1.Dragonfly) map[string]string {
 	annotations := map[string]string{}
-
-	if df.Spec.InheritMetadata {
-		for key, value := range df.Annotations {
-			annotations[key] = value
-		}
+	for key, value := range df.Spec.OwnedObjectsMetadata.Annotations {
+		annotations[key] = value
 	}
 
 	return annotations
