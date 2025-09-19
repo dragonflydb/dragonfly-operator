@@ -390,6 +390,13 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		return fmt.Errorf("response of `SLAVE OF` on replica is not OK: %s", resp)
 	}
 
+	if dfi.df.Spec.Snapshot != nil && dfi.df.Spec.Snapshot.EnableOnMasterOnly {
+		dfi.log.Info("clearing snapshot cron schedule on replica", "pod", pod.Name)
+		if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", "").Result(); err != nil {
+			return fmt.Errorf("failed to clear snapshot_cron on replica %s: %w", pod.Name, err)
+		}
+	}
+
 	dfi.log.Info("marking pod role as replica", "pod", pod.Name)
 	patchFrom := client.MergeFrom(pod.DeepCopy())
 	pod.Labels[resources.RoleLabelKey] = resources.Replica
@@ -416,6 +423,14 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 
 	if resp != "OK" {
 		return fmt.Errorf("response of `SLAVE OF NO ONE` on master is not OK: %s", resp)
+	}
+
+	if dfi.df.Spec.Snapshot != nil && dfi.df.Spec.Snapshot.EnableOnMasterOnly {
+		dfi.log.Info("setting snapshot cron schedule on master", "pod", pod.Name)
+		cron := dfi.df.Spec.Snapshot.Cron
+		if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", cron).Result(); err != nil {
+			return fmt.Errorf("failed to set snapshot_cron on master %s: %w", pod.Name, err)
+		}
 	}
 
 	dfi.log.Info("marking pod role as master", "pod", pod.Name)
