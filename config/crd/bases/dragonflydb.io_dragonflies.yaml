@@ -6032,7 +6032,7 @@ spec:
               labels:
                 additionalProperties:
                   type: string
-                description: (Optional) Labels to add to the Dragonfly pods.
+                description: (Optional) Labels to add to the Dragonfly pods and StatefulSet.
                 type: object
               memcachedPort:
                 description: (Optional) Dragonfly memcached port
