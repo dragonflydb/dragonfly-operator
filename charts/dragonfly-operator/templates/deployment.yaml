@@ -4,8 +4,15 @@ metadata:
   name: {{ include "dragonfly-operator.fullname" . }}
   labels:
     {{- include "dragonfly-operator.labels" . | nindent 4 }}
+    {{- with .Values.deploymentLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
     app.kubernetes.io/component: controller
     control-plane: controller-manager
+  {{- with .Values.deploymentAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   namespace: {{ include "dragonfly-operator.namespace" . }}
 spec:
   replicas: {{ .Values.replicaCount }}
