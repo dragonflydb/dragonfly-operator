@@ -744,6 +744,7 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 			infoStr, err = rc.Info(ctx, "tiered").Result()
 			Expect(err).To(BeNil())
 
+			fmt.Println("Tiered entried Info: ", infoStr)
 			entries, err = parseTieredEntriesFromInfo(infoStr)
 			Expect(err).To(BeNil())
 			Expect(entries).To(Equal(int64(1))) // make sure this matches your expectation
