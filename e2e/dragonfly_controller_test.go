@@ -774,7 +774,6 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 	name := "df-pvc"
 	namespace := "default"
 	schedule := "*/1 * * * *"
-	enableOnMasterOnly := true
 
 	args := []string{
 		"--vmodule=replica=1,server_family=1",
@@ -791,8 +790,7 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 					Replicas: 1,
 					Args:     args,
 					Snapshot: &resourcesv1.Snapshot{
-						Cron:               schedule,
-						EnableOnMasterOnly: enableOnMasterOnly,
+						Cron: schedule,
 						PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{
 								corev1.ReadWriteOnce,
