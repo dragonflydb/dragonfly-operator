@@ -218,6 +218,11 @@ type Snapshot struct {
 	// +kubebuilder:validation:Optional
 	Cron string `json:"cron,omitempty"`
 
+	// (Optional) Enable snapshot on master only
+	// +optional
+	// +kubebuilder:validation:Optional
+	EnableOnMasterOnly bool `json:"enableOnMasterOnly,omitempty"`
+
 	// (Optional) Dragonfly PVC spec
 	// +optional
 	// +kubebuilder:validation:Optional
