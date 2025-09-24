@@ -10,6 +10,7 @@ Main features include:
 
 - Automatic failover
 - Scaling horizontally and vertically with custom rollout strategy
+- Horizontal Pod Autoscaling (HPA) support
 - Authentication and server TLS
 - Automatic snapshots to PVCs and S3
 - Monitoring with Prometheus and Grafana

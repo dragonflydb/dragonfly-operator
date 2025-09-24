@@ -61,6 +61,11 @@ test: manifests generate fmt vet envtest ## Run tests.
 	GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo@v2.22.0
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO)  -vv -r -p -coverprofile cover.out
 
+.PHONY: test-single
+test-single: manifests generate fmt vet envtest ## Run a single test by name. Usage: make test-single TEST="test name"
+	GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo@v2.22.0
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO) -vv --focus="$(TEST)" ./e2e
+
 ##@ Build
 
 .PHONY: build
