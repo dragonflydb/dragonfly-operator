@@ -6043,6 +6043,19 @@ spec:
                   type: string
                 description: (Optional) Dragonfly pod node selector
                 type: object
+              ownedObjectsMetadata:
+                description: (Optional) Dragonfly direct child resources additional
+                  annotations and labels
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                type: object
               podSecurityContext:
                 description: (Optional) Dragonfly pod security context
                 properties:

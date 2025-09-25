@@ -60,12 +60,22 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 		"--vmodule=replica=1,server_family=1",
 	}
 
+	customLabelName := "a.custom/label"
+	customLabelValue := "my-value"
+
+	labels := map[string]string{
+		customLabelName: customLabelValue,
+	}
+
 	df := resourcesv1.Dragonfly{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
 		Spec: resourcesv1.DragonflySpec{
+			OwnedObjectsMetadata: &resourcesv1.OwnedObjectsMetadata{
+				Labels: labels,
+			},
 			Replicas:  3,
 			Resources: &resourcesReq,
 			Args:      args,
@@ -145,6 +155,10 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 				Namespace: namespace,
 			}, &svc)
 			Expect(err).To(BeNil())
+
+			// check labels of statefulset
+			Expect(ss.Labels[customLabelName]).To(Equal(df.Spec.OwnedObjectsMetadata.Labels[customLabelName]))
+			Expect(svc.Labels[customLabelName]).To(Equal(df.Spec.OwnedObjectsMetadata.Labels[customLabelName]))
 
 			// check resource requirements of statefulset
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources).To(Equal(*df.Spec.Resources))
