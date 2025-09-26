@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // DragonflyInstance is an abstraction over the `Dragonfly` CRD and provides methods to handle replication.
@@ -450,27 +452,68 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to generate dragonfly resources")
 	}
+	for _, desired := range dfResources {
+		dfi.log.Info("reconciling dragonfly resource", "kind", getGVK(desired, dfi.scheme).Kind, "namespace", desired.GetNamespace(), "Name", desired.GetName())
 
-	for _, resource := range dfResources {
-		dfi.log.Info("reconciling dragonfly resource", "kind", getGVK(resource, dfi.scheme).Kind, "namespace", resource.GetNamespace(), "Name", resource.GetName())
-		if err = dfi.client.Create(ctx, resource); err != nil {
-			if !apierrors.IsAlreadyExists(err) {
-				return fmt.Errorf("failed to create resource: %w", err)
-			}
-			storedResource := resource.DeepCopyObject().(client.Object)
-			if err = dfi.client.Get(ctx, client.ObjectKey{
-				Namespace: resource.GetNamespace(),
-				Name:      resource.GetName(),
-			}, storedResource); err != nil {
+		existing := desired.DeepCopyObject().(client.Object)
+		err = dfi.client.Get(ctx, client.ObjectKey{
+			Namespace: desired.GetNamespace(),
+			Name:      desired.GetName(),
+		}, existing)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("failed to get resource: %w", err)
 			}
-			resource.SetResourceVersion(storedResource.GetResourceVersion())
-			if err = dfi.client.Update(ctx, resource); err != nil {
-				return fmt.Errorf("failed to update resource: %w", err)
+			// Resource does not exist, create it
+			if err := controllerutil.SetControllerReference(dfi.df, desired, dfi.scheme); err != nil {
+				return fmt.Errorf("failed to set controller reference: %w", err)
+			}
+			err = dfi.client.Create(ctx, desired)
+			if err != nil {
+				return fmt.Errorf("failed to create resource: %w", err)
+			}
+			dfi.log.Info("created resource", "resource", desired.GetName())
+			continue
+		}
+		// Resource exists, prepare desired for potential update
+		if err := controllerutil.SetControllerReference(dfi.df, desired, dfi.scheme); err != nil {
+			return fmt.Errorf("failed to set controller reference: %w", err)
+		}
+		// Special handling for Services to preserve immutable fields
+		if svcDesired, ok := desired.(*corev1.Service); ok {
+			if svcExisting, ok := existing.(*corev1.Service); ok {
+				svcDesired.Spec.ClusterIP = svcExisting.Spec.ClusterIP
+				svcDesired.Spec.IPFamilies = svcExisting.Spec.IPFamilies
+				svcDesired.Spec.IPFamilyPolicy = svcExisting.Spec.IPFamilyPolicy
+				// Preserve NodePorts for NodePort and LoadBalancer services
+				if svcDesired.Spec.Type == corev1.ServiceTypeNodePort || svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer {
+					for i := range svcDesired.Spec.Ports {
+						for j := range svcExisting.Spec.Ports {
+							if svcDesired.Spec.Ports[i].Name == svcExisting.Spec.Ports[j].Name {
+								svcDesired.Spec.Ports[i].NodePort = svcExisting.Spec.Ports[j].NodePort
+								break
+							}
+						}
+					}
+				}
+				// Also preserve HealthCheckNodePort if external
+				if svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer && svcDesired.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyLocal {
+					svcDesired.Spec.HealthCheckNodePort = svcExisting.Spec.HealthCheckNodePort
+				}
 			}
 		}
+		// Compare specs; skip if no changes
+		if resourceSpecsEqual(desired, existing) {
+			dfi.log.Info("no changes detected, skipping update", "resource", desired.GetName())
+			continue
+		}
+		// Update if specs differ
+		desired.SetResourceVersion(existing.GetResourceVersion())
+		if err = dfi.client.Update(ctx, desired); err != nil {
+			return fmt.Errorf("failed to update resource: %w", err)
+		}
+		dfi.log.Info("updated resource", "resource", desired.GetName())
 	}
-
 	if dfi.df.Spec.Replicas < 2 {
 		if err = dfi.client.Delete(ctx, &policyv1.PodDisruptionBudget{
 			ObjectMeta: metav1.ObjectMeta{
@@ -481,18 +524,32 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 			return fmt.Errorf("failed to delete pod disruption budget: %w", err)
 		}
 	}
-
 	status := dfi.getStatus()
 	if status.Phase == "" {
 		status.Phase = PhaseResourcesCreated
 		if err = dfi.patchStatus(ctx, status); err != nil {
 			return fmt.Errorf("failed to update the dragonfly object")
 		}
-
 		dfi.eventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Resources", "Created resources")
 	}
-
 	return nil
+}
+
+// Helper function to compare resource specs (add to the file)
+func resourceSpecsEqual(desired, existing client.Object) bool {
+	// Compare metadata labels and annotations
+	if !reflect.DeepEqual(desired.GetLabels(), existing.GetLabels()) || !reflect.DeepEqual(desired.GetAnnotations(), existing.GetAnnotations()) {
+		return false
+	}
+	// Compare only the .Spec field using reflection
+	desiredV := reflect.ValueOf(desired).Elem()
+	existingV := reflect.ValueOf(existing).Elem()
+	desiredSpec := desiredV.FieldByName("Spec")
+	existingSpec := existingV.FieldByName("Spec")
+	if !desiredSpec.IsValid() || !existingSpec.IsValid() {
+		return true // No spec field, consider equal
+	}
+	return reflect.DeepEqual(desiredSpec.Interface(), existingSpec.Interface())
 }
 
 // detectRollingUpdate checks whether the pod spec has changed and performs a rolling update if needed
