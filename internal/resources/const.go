@@ -97,6 +97,7 @@ const (
 
 var DefaultDragonflyArgs = []string{
 	"--alsologtostderr",
+	"--break_replication_on_master_restart=true",
 	"--primary_port_http_enabled=false",
 	fmt.Sprintf("--admin_port=%d", DragonflyAdminPort),
 	"--admin_nopass",
