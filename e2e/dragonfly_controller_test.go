@@ -60,6 +60,13 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 		"--vmodule=replica=1,server_family=1",
 	}
 
+	customLabelName := "a.custom/label"
+	customLabelValue := "my-value"
+
+	labels := map[string]string{
+		customLabelName: customLabelValue,
+	}
+
 	df := resourcesv1.Dragonfly{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -70,6 +77,9 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Resources:       &resourcesReq,
 			Args:            args,
 			ImagePullPolicy: corev1.PullIfNotPresent,
+			OwnedObjectsMetadata: &resourcesv1.OwnedObjectsMetadata{
+				Labels: labels,
+			},
 			Env: []corev1.EnvVar{
 				{
 					Name:  "ENV-1",
@@ -146,6 +156,10 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 				Namespace: namespace,
 			}, &svc)
 			Expect(err).To(BeNil())
+
+			// check labels of statefulset
+			Expect(ss.Labels[customLabelName]).To(Equal(df.Spec.OwnedObjectsMetadata.Labels[customLabelName]))
+			Expect(svc.Labels[customLabelName]).To(Equal(df.Spec.OwnedObjectsMetadata.Labels[customLabelName]))
 
 			// check resource requirements of statefulset
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources).To(Equal(*df.Spec.Resources))
@@ -769,6 +783,7 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 			infoStr, err = rc.Info(ctx, "tiered").Result()
 			Expect(err).To(BeNil())
 
+			fmt.Println("Tiered entried Info: ", infoStr)
 			entries, err = parseTieredEntriesFromInfo(infoStr)
 			Expect(err).To(BeNil())
 			Expect(entries).To(Equal(int64(1))) // make sure this matches your expectation

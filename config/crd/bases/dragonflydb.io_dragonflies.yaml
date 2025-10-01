@@ -6652,6 +6652,19 @@ spec:
                   type: string
                 description: (Optional) Dragonfly pod node selector
                 type: object
+              ownedObjectsMetadata:
+                description: (Optional) Dragonfly direct child resources additional
+                  annotations and labels
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                type: object
               podSecurityContext:
                 description: (Optional) Dragonfly pod security context
                 properties:
@@ -6997,6 +7010,9 @@ spec:
                       This can also be an S3 URI with the prefix `s3://` when
                       using S3 as the snapshot backend
                     type: string
+                  enableOnMasterOnly:
+                    description: (Optional) Enable snapshot on master only
+                    type: boolean
                   persistentVolumeClaimSpec:
                     description: (Optional) Dragonfly PVC spec
                     properties:

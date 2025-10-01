@@ -189,10 +189,21 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Type=array
 	InitContainers []corev1.Container `json:"initContainers,omitempty"`
 
+
 	// (Optional) Dragonfly autoscaler configuration
 	// +optional
 	// +kubebuilder:validation:Optional
 	Autoscaler *AutoscalerSpec `json:"autoscaler,omitempty"`
+
+  // (Optional) Dragonfly direct child resources additional annotations and labels
+	// +optional
+	// +kubebuilder:validation:Optional
+	OwnedObjectsMetadata *OwnedObjectsMetadata `json:"ownedObjectsMetadata,omitempty"`
+}
+
+type OwnedObjectsMetadata struct {
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
 }
 
 type ServiceSpec struct {
@@ -243,6 +254,11 @@ type Snapshot struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	Cron string `json:"cron,omitempty"`
+
+	// (Optional) Enable snapshot on master only
+	// +optional
+	// +kubebuilder:validation:Optional
+	EnableOnMasterOnly bool `json:"enableOnMasterOnly,omitempty"`
 
 	// (Optional) Dragonfly PVC spec
 	// +optional

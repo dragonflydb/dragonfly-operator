@@ -18,7 +18,7 @@ jobs:
       IMG: ghcr.io/dragonflydb/operator:${{ github.sha }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           submodules: true
 
@@ -26,7 +26,7 @@ jobs:
         run: |
           make docker-build
 
-      - uses: helm/kind-action@v1.7.0
+      - uses: helm/kind-action@v1.12.0
         with:
           cluster_name: kind
           config: ./hack/kind-config.yaml
@@ -52,7 +52,7 @@ jobs:
       IMG: ghcr.io/dragonflydb/operator:${{ github.ref_name }}
       VERSION: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           submodules: true
           fetch-depth: 0
@@ -87,7 +87,7 @@ jobs:
           helm push dragonfly-operator-${{ env.VERSION }}.tgz oci://ghcr.io/dragonflydb/dragonfly-operator/helm
 
       - name: Build and Publish image into GHCR
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
@@ -102,7 +102,7 @@ jobs:
           DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: publish github release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             ./bin/dragonfly-operator
