@@ -508,47 +508,12 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("failed to get resource: %w", err)
 			}
-      
-			resource.SetResourceVersion(storedResource.GetResourceVersion())
-
-			// Special handling for StatefulSet when autoscaling is enabled or disabled
-			if statefulSet, ok := resource.(*appsv1.StatefulSet); ok {
-				if dfi.df.Spec.Autoscaler != nil && dfi.df.Spec.Autoscaler.Enabled {
-					// When autoscaling is enabled, preserve the current replica count set by HPA if it exists
-					// Otherwise, ensure we start with at least minReplicas or the specified replicas, whichever is greater
-					if storedStatefulSet, ok := storedResource.(*appsv1.StatefulSet); ok && storedStatefulSet.Spec.Replicas != nil {
-						currentReplicas := *storedStatefulSet.Spec.Replicas
-						minRequired := dfi.df.Spec.Autoscaler.MinReplicas
-						if dfi.df.Spec.Replicas > minRequired {
-							minRequired = dfi.df.Spec.Replicas
-						}
-
-						// Use the current replica count if it's >= minRequired, otherwise use minRequired
-						if currentReplicas >= minRequired {
-							statefulSet.Spec.Replicas = storedStatefulSet.Spec.Replicas
-							dfi.log.Info("preserving StatefulSet replica count for autoscaling", "replicas", *statefulSet.Spec.Replicas)
-						} else {
-							statefulSet.Spec.Replicas = &minRequired
-							dfi.log.Info("adjusting StatefulSet replica count to minimum for autoscaling", "replicas", minRequired)
-						}
-					}
-				} else if dfi.df.Spec.Replicas == 0 {
-					// When autoscaler is disabled and no replicas specified, preserve current count
-					if storedStatefulSet, ok := storedResource.(*appsv1.StatefulSet); ok && storedStatefulSet.Spec.Replicas != nil && *storedStatefulSet.Spec.Replicas > 0 {
-						statefulSet.Spec.Replicas = storedStatefulSet.Spec.Replicas
-						dfi.log.Info("preserving StatefulSet replica count when disabling autoscaler", "replicas", *statefulSet.Spec.Replicas)
-					}
-				}
-			}
-
-			if err = dfi.client.Update(ctx, resource); err != nil {
-				return fmt.Errorf("failed to update resource: %w", err)
 
 			// Resource does not exist, create it
 			if err := controllerutil.SetControllerReference(dfi.df, desired, dfi.scheme); err != nil {
 				return fmt.Errorf("failed to set controller reference: %w", err)
-
 			}
+
 			err = dfi.client.Create(ctx, desired)
 			if err != nil {
 				return fmt.Errorf("failed to create resource: %w", err)
@@ -559,6 +524,36 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		// Resource exists, prepare desired for potential update
 		if err := controllerutil.SetControllerReference(dfi.df, desired, dfi.scheme); err != nil {
 			return fmt.Errorf("failed to set controller reference: %w", err)
+		}
+
+		// Special handling for StatefulSet when autoscaling is enabled or disabled
+		if statefulSet, ok := desired.(*appsv1.StatefulSet); ok {
+			if dfi.df.Spec.Autoscaler != nil && dfi.df.Spec.Autoscaler.Enabled {
+				// When autoscaling is enabled, preserve the current replica count set by HPA if it exists
+				// Otherwise, ensure we start with at least minReplicas or the specified replicas, whichever is greater
+				if existingStatefulSet, ok := existing.(*appsv1.StatefulSet); ok && existingStatefulSet.Spec.Replicas != nil {
+					currentReplicas := *existingStatefulSet.Spec.Replicas
+					minRequired := dfi.df.Spec.Autoscaler.MinReplicas
+					if dfi.df.Spec.Replicas > minRequired {
+						minRequired = dfi.df.Spec.Replicas
+					}
+
+					// Use the current replica count if it's >= minRequired, otherwise use minRequired
+					if currentReplicas >= minRequired {
+						statefulSet.Spec.Replicas = existingStatefulSet.Spec.Replicas
+						dfi.log.Info("preserving StatefulSet replica count for autoscaling", "replicas", *statefulSet.Spec.Replicas)
+					} else {
+						statefulSet.Spec.Replicas = &minRequired
+						dfi.log.Info("adjusting StatefulSet replica count to minimum for autoscaling", "replicas", minRequired)
+					}
+				}
+			} else if dfi.df.Spec.Replicas == 0 {
+				// When autoscaler is disabled and no replicas specified, preserve current count
+				if existingStatefulSet, ok := existing.(*appsv1.StatefulSet); ok && existingStatefulSet.Spec.Replicas != nil && *existingStatefulSet.Spec.Replicas > 0 {
+					statefulSet.Spec.Replicas = existingStatefulSet.Spec.Replicas
+					dfi.log.Info("preserving StatefulSet replica count when disabling autoscaler", "replicas", *statefulSet.Spec.Replicas)
+				}
+			}
 		}
 		// Special handling for Services to preserve immutable fields
 		if svcDesired, ok := desired.(*corev1.Service); ok {
