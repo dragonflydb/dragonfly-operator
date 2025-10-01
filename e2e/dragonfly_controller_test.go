@@ -695,7 +695,8 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 					Namespace: namespace,
 				},
 				Spec: resourcesv1.DragonflySpec{
-					Replicas: 1,
+					Replicas:        1,
+					ImagePullPolicy: corev1.PullIfNotPresent,
 					Tiering: &resourcesv1.Tiering{
 						PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{
@@ -943,7 +944,8 @@ var _ = Describe("Dragonfly with additional container and volume", Ordered, Flak
 					Namespace: namespace,
 				},
 				Spec: resourcesv1.DragonflySpec{
-					Replicas: 1,
+					Replicas:        1,
+					ImagePullPolicy: corev1.PullIfNotPresent,
 					AdditionalContainers: []corev1.Container{
 						{
 							Name:    sidecarName,

@@ -76,22 +76,30 @@ type DragonflySpec struct {
 	// (Optional) Additional containers to add to dragonflycluster. Replace container on name collision.
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=array
 	AdditionalContainers []corev1.Container `json:"additionalContainers,omitempty"`
 
 	// (Optional) Additional volumes to add to dragonflycluster. Replace volume on name collision.
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=array
 	AdditionalVolumes []corev1.Volume `json:"additionalVolumes,omitempty"`
 
 	// (Optional) Dragonfly container resource limits. Any container limits
 	// can be specified.
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// (Optional) Dragonfly pod affinity
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
 
 	// (Optional) Dragonfly pod node selector
@@ -107,11 +115,15 @@ type DragonflySpec struct {
 	// (Optional) Dragonfly pod tolerations
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=array
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 
 	// (Optional) Dragonfly pod topologySpreadConstraints
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=array
 	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
 
 	// (Optional) Dragonfly Authentication mechanism
@@ -122,11 +134,15 @@ type DragonflySpec struct {
 	// (Optional) Dragonfly container security context
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 
 	// (Optional) Dragonfly pod security context
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
 
 	// (Optional) Dragonfly pod service account name
@@ -169,6 +185,8 @@ type DragonflySpec struct {
 	// (Optional) Dragonfly pod init containers
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=array
 	InitContainers []corev1.Container `json:"initContainers,omitempty"`
 
 	// (Optional) Dragonfly autoscaler configuration
@@ -208,6 +226,8 @@ type Tiering struct {
 	// (Optional) Dragonfly PVC spec for cache tiering configuration
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
 }
 
@@ -227,6 +247,8 @@ type Snapshot struct {
 	// (Optional) Dragonfly PVC spec
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
 }
 
@@ -260,11 +282,15 @@ type AutoscalerSpec struct {
 	// Scaling behavior policies
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	Behavior *autoscalingv2.HorizontalPodAutoscalerBehavior `json:"behavior,omitempty"`
 
 	// Metrics to be used for autoscaling
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=array
 	Metrics []autoscalingv2.MetricSpec `json:"metrics,omitempty"`
 
 	// Target CPU utilization percentage
