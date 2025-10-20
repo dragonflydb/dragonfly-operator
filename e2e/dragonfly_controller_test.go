@@ -130,6 +130,21 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Expect(err).To(BeNil())
 		})
 
+		It("Should create configmap successfully", func() {
+			err := k8sClient.Create(ctx, &corev1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "v1",
+					Kind:       "ConfigMap",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "dragonfly-operator-scripts",
+					Namespace: "default",
+				},
+				Data: map[string]string{"readiness.sh": `#!/bin/sh
+/usr/local/bin/healthcheck.sh`}})
+			Expect(err).To(BeNil())
+		})
+
 		It("Should create successfully", func() {
 			err := k8sClient.Create(ctx, &df)
 			Expect(err).To(BeNil())
