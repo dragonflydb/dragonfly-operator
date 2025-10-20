@@ -1,6 +1,5 @@
 #!/bin/sh
 
-# Cleanup function to prevent zombie processes (issue #5844)
 # This is critical when dragonfly runs as PID 1 without an init system
 cleanup() {
   # Wait for all background/child processes to finish

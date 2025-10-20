@@ -25,14 +25,13 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
 	dflyUserGroup int64 = 999
 )
-
-func int32Ptr(i int32) *int32 { return &i }
 
 // GenerateDragonflyResources returns the resources required for a Dragonfly
 // Instance
@@ -151,7 +150,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 									LocalObjectReference: corev1.LocalObjectReference{
 										Name: "dragonfly-operator-scripts",
 									},
-									DefaultMode: int32Ptr(0755), // Make sure the script is executable
+									DefaultMode: pointer.Int32(0755), // Make sure the script is executable
 								},
 							},
 						},
