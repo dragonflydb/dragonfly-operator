@@ -138,7 +138,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "dragonfly-operator-scripts",
-					Namespace: "default",
+					Namespace: namespace,
 				},
 				Data: map[string]string{"readiness.sh": `#!/bin/sh
 /usr/local/bin/healthcheck.sh`}})
