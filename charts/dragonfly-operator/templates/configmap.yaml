@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-scripts
+data:
+  readiness.sh: |-
+    {{- .Files.Get "scripts/readiness.sh" | nindent 6 }}

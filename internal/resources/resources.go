@@ -32,6 +32,8 @@ var (
 	dflyUserGroup int64 = 999
 )
 
+func int32Ptr(i int32) *int32 { return &i }
+
 // GenerateDragonflyResources returns the resources required for a Dragonfly
 // Instance
 func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, error) {
@@ -106,7 +108,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 									Exec: &corev1.ExecAction{
 										Command: []string{
 											"/bin/sh",
-											"/usr/local/bin/healthcheck.sh",
+											"/scripts/readiness.sh",
 										},
 									},
 								},
@@ -132,6 +134,26 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 								TimeoutSeconds:      5,
 							},
 							ImagePullPolicy: df.Spec.ImagePullPolicy,
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "scripts-volume",
+									MountPath: "/scripts/readiness.sh",
+									SubPath:   "readiness.sh",
+									ReadOnly:  true,
+								}},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "scripts-volume",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: "dragonfly-operator-scripts",
+									},
+									DefaultMode: int32Ptr(0755), // Make sure the script is executable
+								},
+							},
 						},
 					},
 				},
