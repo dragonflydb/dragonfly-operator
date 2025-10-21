@@ -142,25 +142,23 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 								}},
 						},
 					},
-				},
-			},
-		},
-	}
-
-	vol := []corev1.Volume{
-		{
-			Name: "scripts-volume",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: fmt.Sprintf("%s-scripts", DragonflyOperatorName),
+					Volumes: []corev1.Volume{
+						{
+							Name: "scripts-volume",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: fmt.Sprintf("%s-scripts", DragonflyOperatorName),
+									},
+									DefaultMode: pointer.Int32(0755), // Make sure the script is executable
+								},
+							},
+						},
 					},
-					DefaultMode: pointer.Int32(0755), // Make sure the script is executable
 				},
 			},
 		},
 	}
-	statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, vol...)
 
 	if len(df.Spec.InitContainers) > 0 {
 		statefulset.Spec.Template.Spec.InitContainers = df.Spec.InitContainers
