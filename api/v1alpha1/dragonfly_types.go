@@ -237,6 +237,11 @@ type Snapshot struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
+
+	// (Optional) Name of an existing PVC to use for Dragonfly snapshots
+	// +optional
+	// +kubebuilder:validation:Optional
+	ExistingPersistentVolumeClaimName string `json:"existingPersistentVolumeClaimName,omitempty"`
 }
 
 type Authentication struct {
