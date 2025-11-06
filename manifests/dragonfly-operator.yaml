@@ -2346,11 +2346,6 @@ spec:
                     maximum: 100
                     minimum: 1
                     type: integer
-                  targetMemoryUtilizationPercentage:
-                    format: int32
-                    maximum: 100
-                    minimum: 1
-                    type: integer
                 required:
                 - enabled
                 - maxReplicas

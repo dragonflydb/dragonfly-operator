@@ -381,7 +381,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		}
 		statefulset.Spec.Replicas = &initialReplicas
 	}
-  
+
 	statefulset.Spec.Template.Spec.Containers = mergeNamedSlices(
 		statefulset.Spec.Template.Spec.Containers, df.Spec.AdditionalContainers,
 		func(c corev1.Container) string { return c.Name })
@@ -603,19 +603,6 @@ func generateHPA(df *resourcesv1.Dragonfly) (*autoscalingv2.HorizontalPodAutosca
 			})
 		}
 
-		if autoscaler.TargetMemoryUtilizationPercentage != nil {
-			metrics = append(metrics, autoscalingv2.MetricSpec{
-				Type: autoscalingv2.ResourceMetricSourceType,
-				Resource: &autoscalingv2.ResourceMetricSource{
-					Name: corev1.ResourceMemory,
-					Target: autoscalingv2.MetricTarget{
-						Type:               autoscalingv2.UtilizationMetricType,
-						AverageUtilization: autoscaler.TargetMemoryUtilizationPercentage,
-					},
-				},
-			})
-		}
-
 		// Default to CPU 70% if no metrics specified
 		if len(metrics) == 0 {
 			defaultCPU := int32(70)
@@ -640,5 +627,5 @@ func generateHPA(df *resourcesv1.Dragonfly) (*autoscalingv2.HorizontalPodAutosca
 	}
 
 	return hpa, nil
-  
+
 }

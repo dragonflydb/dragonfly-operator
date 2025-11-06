@@ -803,16 +803,6 @@ var _ = Describe("Dragonfly Autoscaler Tests", Ordered, FlakeAttempts(3), func()
 						},
 					},
 				},
-				{
-					Type: autoscalingv2.ResourceMetricSourceType,
-					Resource: &autoscalingv2.ResourceMetricSource{
-						Name: corev1.ResourceMemory,
-						Target: autoscalingv2.MetricTarget{
-							Type:               autoscalingv2.UtilizationMetricType,
-							AverageUtilization: func() *int32 { v := int32(75); return &v }(),
-						},
-					},
-				},
 			}
 
 			// Add scaling behavior
@@ -853,23 +843,17 @@ var _ = Describe("Dragonfly Autoscaler Tests", Ordered, FlakeAttempts(3), func()
 			}, &hpa)
 			Expect(err).To(BeNil())
 			Expect(hpa.Spec.MaxReplicas).To(Equal(int32(6)))
-			Expect(hpa.Spec.Metrics).To(HaveLen(2))
+			Expect(hpa.Spec.Metrics).To(HaveLen(1))
 
 			// Check CPU metric
 			cpuMetricFound := false
-			memoryMetricFound := false
 			for _, metric := range hpa.Spec.Metrics {
 				if metric.Resource.Name == corev1.ResourceCPU {
 					Expect(*metric.Resource.Target.AverageUtilization).To(Equal(int32(60)))
 					cpuMetricFound = true
 				}
-				if metric.Resource.Name == corev1.ResourceMemory {
-					Expect(*metric.Resource.Target.AverageUtilization).To(Equal(int32(75)))
-					memoryMetricFound = true
-				}
 			}
 			Expect(cpuMetricFound).To(BeTrue())
-			Expect(memoryMetricFound).To(BeTrue())
 
 			// Check behavior configuration
 			Expect(hpa.Spec.Behavior).ToNot(BeNil())

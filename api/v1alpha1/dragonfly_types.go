@@ -189,13 +189,12 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Type=array
 	InitContainers []corev1.Container `json:"initContainers,omitempty"`
 
-
 	// (Optional) Dragonfly autoscaler configuration
 	// +optional
 	// +kubebuilder:validation:Optional
 	Autoscaler *AutoscalerSpec `json:"autoscaler,omitempty"`
 
-  // (Optional) Dragonfly direct child resources additional annotations and labels
+	// (Optional) Dragonfly direct child resources additional annotations and labels
 	// +optional
 	// +kubebuilder:validation:Optional
 	OwnedObjectsMetadata *OwnedObjectsMetadata `json:"ownedObjectsMetadata,omitempty"`
@@ -315,13 +314,6 @@ type AutoscalerSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=100
 	TargetCPUUtilizationPercentage *int32 `json:"targetCPUUtilizationPercentage,omitempty"`
-
-	// Target memory utilization percentage
-	// +optional
-	// +kubebuilder:validation:Optional
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=100
-	TargetMemoryUtilizationPercentage *int32 `json:"targetMemoryUtilizationPercentage,omitempty"`
 }
 
 // DragonflyStatus defines the observed state of Dragonfly
