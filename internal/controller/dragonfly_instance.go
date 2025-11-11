@@ -166,7 +166,7 @@ func (dfi *DragonflyInstance) isReplicaStable(ctx context.Context, pod *corev1.P
 		return false, err
 	}
 
-	info, err := redisClient.Info(ctx, "replication").Result()
+	info, err := redisClient.Info(ctx, "replication", "persistence").Result()
 	if err != nil {
 		return false, err
 	}
@@ -175,32 +175,25 @@ func (dfi *DragonflyInstance) isReplicaStable(ctx context.Context, pod *corev1.P
 		return false, fmt.Errorf("empty info")
 	}
 
-	replicationData := parseInfoToMap(info)
+	infoData := parseInfoToMap(info)
 
-	if val, ok := replicationData["master_sync_in_progress"]; ok && val == "1" {
+	if val, ok := infoData["master_sync_in_progress"]; ok && val == "1" {
 		return false, nil
 	}
 
-	if val, ok := replicationData["master_link_status"]; ok && val != "up" {
+	if val, ok := infoData["master_link_status"]; ok && val != "up" {
 		return false, nil
 	}
 
-	if val, ok := replicationData["master_last_io_seconds_ago"]; ok && val == "-1" {
+	if val, ok := infoData["master_last_io_seconds_ago"]; ok && val == "-1" {
 		return false, nil
 	}
 
-	persistenceInfo, err := redisClient.Info(ctx, "persistence").Result()
-	if err != nil {
-		return false, err
-	}
-
-	persistenceData := parseInfoToMap(persistenceInfo)
-
-	if val, ok := persistenceData["loading"]; ok && val != "0" && val != "" {
+	if val, ok := infoData["loading"]; ok && val != "0" && val != "" {
 		return false, nil
 	}
 
-	if val, ok := persistenceData["load_state"]; ok && val != "" && val != "done" {
+	if val, ok := infoData["load_state"]; ok && val != "" && val != "done" {
 		return false, nil
 	}
 
