@@ -1125,6 +1125,257 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 	})
 })
 
+var _ = Describe("Dragonfly Dataset Loading Readiness Gate", Ordered, FlakeAttempts(3), func() {
+	ctx := context.Background()
+	name := "df-loading-test"
+	namespace := "default"
+	schedule := "*/1 * * * *"
+
+	args := []string{
+		"--vmodule=replica=1,server_family=1",
+	}
+
+	Context("Dataset loading readiness gate validation", func() {
+		BeforeAll(func() {
+			// Clean up any existing resource from previous test runs
+			var df resourcesv1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			if err == nil {
+				err = k8sClient.Delete(ctx, &df)
+				Expect(err).To(BeNil())
+				// Waiting by polling until the resource is deleted
+				Eventually(func() bool {
+					err := k8sClient.Get(ctx, types.NamespacedName{
+						Name:      name,
+						Namespace: namespace,
+					}, &df)
+					return err != nil
+				}, 1*time.Minute, 2*time.Second).Should(BeTrue(), "existing resource should be deleted")
+			}
+		})
+
+		It("Should create Dragonfly instance with snapshot", func() {
+			err := k8sClient.Create(ctx, &resourcesv1.Dragonfly{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: namespace,
+				},
+				Spec: resourcesv1.DragonflySpec{
+					Replicas: 2,
+					Args:     args,
+					Snapshot: &resourcesv1.Snapshot{
+						Cron: schedule,
+						PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{
+								corev1.ReadWriteOnce,
+							},
+							Resources: corev1.VolumeResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: resource.MustParse("2Gi"),
+								},
+							},
+						},
+					},
+				},
+			})
+			Expect(err).To(BeNil())
+		})
+
+		It("Should wait for resources and seed heavy dataset", func() {
+			var df resourcesv1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+			GinkgoLogr.Info("Dragonfly CR status", "phase", df.Status.Phase, "isRollingUpdate", df.Status.IsRollingUpdate)
+
+			// Wait for Dragonfly object initialization
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 3*time.Minute)
+			Expect(err).To(BeNil(), "Dragonfly should reach PhaseResourcesCreated")
+
+			// With for readiness gate, StatefulSet may take longer as pods wait for dataset loading
+			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 5*time.Minute)
+			Expect(err).To(BeNil(), "StatefulSet should become ready")
+
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
+			Expect(err).To(BeNil(), "Dragonfly should reach PhaseReady")
+
+			// Connect and seed heavy dataset (200MB)
+			stopChan := make(chan struct{}, 1)
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6396)
+			Expect(err).To(BeNil())
+			defer close(stopChan)
+			defer rc.Close()
+
+			// Seed dataset using pipeline for efficiency
+			// Total data: 200,000 × 1KB = 200MB
+			pipe := rc.Pipeline()
+			const numKeys = 200000
+			const valueSize = 1024 // 1KB per value
+			value := strings.Repeat("A", valueSize)
+
+			for i := 0; i < numKeys; i++ {
+				pipe.Set(ctx, fmt.Sprintf("key-%d", i), value, 0)
+				if (i+1)%1000 == 0 {
+					_, err := pipe.Exec(ctx)
+					Expect(err).To(BeNil())
+					pipe = rc.Pipeline()
+				}
+			}
+
+			// If numKeys isn't divisible by 1000, executes the leftover commands
+			if numKeys%1000 != 0 {
+				_, err := pipe.Exec(ctx)
+				Expect(err).To(BeNil())
+			}
+
+			GinkgoLogr.Info("Dataset seeded", "keys", numKeys)
+		})
+
+		It("Should wait for dataset loading during pod restart", func() {
+			// Master pod check
+			var pods corev1.PodList
+			err := k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+				resources.DragonflyNameLabelKey:    name,
+				resources.KubernetesPartOfLabelKey: "dragonfly",
+			})
+			Expect(err).To(BeNil())
+
+			var masterPod *corev1.Pod
+			for i := range pods.Items {
+				if pods.Items[i].Labels[resources.RoleLabelKey] == resources.Master {
+					masterPod = &pods.Items[i]
+					break
+				}
+			}
+			Expect(masterPod).NotTo(BeNil(), "master pod should exist")
+
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 30*time.Second)
+			Expect(err).To(BeNil(), "cluster should be Ready before restart")
+
+			// Delete the master pod to trigger restart
+			err = k8sClient.Delete(ctx, masterPod)
+			Expect(err).To(BeNil())
+
+			// Wait for pod to be recreated
+			var restartedPod corev1.Pod
+			Eventually(func() error {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      masterPod.Name,
+					Namespace: namespace,
+				}, &restartedPod)
+				if err != nil {
+					return err
+				}
+				if restartedPod.Status.Phase != corev1.PodRunning {
+					return fmt.Errorf("pod not running yet: %s", restartedPod.Status.Phase)
+				}
+				return nil
+			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+			Expect(restartedPod.Status.Phase).To(Equal(corev1.PodRunning))
+
+			// Check persistence info to verify loading state
+			stopChan := make(chan struct{}, 1)
+			defer close(stopChan)
+
+			// Verify that loading is in progress initially, or has just completed
+			// The readiness gate should prevent the controller from marking the cluster as Ready
+			// while loading is happening
+			var loadingValue string
+			var loadStateValue string
+			Eventually(func() error {
+				loading, loadState, err := checkPersistenceInfo(ctx, clientset, cfg, &restartedPod, stopChan)
+				if err != nil {
+					return err
+				}
+
+				loadingValue = loading
+				loadStateValue = loadState
+				return nil
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			// If loading is still in progress, verify cluster is not ready yet
+			// This validates the readiness gate is working
+			if loadingValue != "0" {
+				GinkgoLogr.Info("Dataset still loading", "loading", loadingValue, "load_state", loadStateValue)
+				// Cluster should not be Ready while loading
+				var df resourcesv1.Dragonfly
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      name,
+					Namespace: namespace,
+				}, &df)
+				Expect(err).To(BeNil())
+				Expect(df.Status.Phase).NotTo(Equal(controller.PhaseReady), "cluster should not be Ready while dataset is loading")
+			}
+
+			// Poll until loading completes, validate the readiness gate
+			Eventually(func() (string, error) {
+				loading, _, err := checkPersistenceInfo(ctx, clientset, cfg, &restartedPod, stopChan)
+				if err != nil {
+					return "", err
+				}
+				return loading, nil
+			}, 3*time.Minute, 2*time.Second).Should(Equal("0"), "dataset should finish loading")
+
+			// Verify load_state is equal to done
+			Eventually(func() (string, error) {
+				_, loadState, err := checkPersistenceInfo(ctx, clientset, cfg, &restartedPod, stopChan)
+				if err != nil {
+					return "", err
+				}
+				return loadState, nil
+			}, 30*time.Second, 2*time.Second).Should(Or(Equal("done"), Equal("")), "load_state should be done or empty")
+
+			// After loading completes, verify the pod gets a role label
+			// This confirms the controller proceeded after loading finished
+			Eventually(func() bool {
+				var pod corev1.Pod
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      masterPod.Name,
+					Namespace: namespace,
+				}, &pod)
+				if err != nil {
+					return false
+				}
+				_, hasRole := pod.Labels[resources.RoleLabelKey]
+				return hasRole
+			}, 1*time.Minute, 2*time.Second).Should(BeTrue(), "pod should have role label after loading completes")
+
+			// Verify cluster becomes Ready only after loading completes
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
+			Expect(err).To(BeNil(), "cluster should be Ready only after dataset loading completes")
+		})
+
+		AfterAll(func() {
+			// Clean up resources created during the test
+			var df resourcesv1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			if err == nil {
+				err = k8sClient.Delete(ctx, &df)
+				if err != nil {
+					GinkgoLogr.Error(err, "failed to delete Dragonfly resource during cleanup")
+				}
+				// Wait for deletion to complete
+				Eventually(func() bool {
+					err := k8sClient.Get(ctx, types.NamespacedName{
+						Name:      name,
+						Namespace: namespace,
+					}, &df)
+					return err != nil
+				}, 1*time.Minute, 2*time.Second).Should(BeTrue(), "resource should be deleted")
+			}
+		})
+	})
+})
+
 func generateSelfSignedCert(commonName string) ([]byte, []byte, error) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

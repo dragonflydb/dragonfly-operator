@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -181,4 +182,110 @@ func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *r
 		return nil, err
 	}
 	return fw, err
+}
+
+// checkPersistenceInfo checks the persistence info from a pod's admin port
+// Uses port forwarding to access the pod's admin port
+func checkPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, stopChan chan struct{}) (loading string, loadState string, err error) {
+	// local stop channel for port forward to ensure cleanup
+	localStopChan := make(chan struct{}, 1)
+
+	// Port forward to admin port
+	url := clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace(pod.Namespace).
+		Name(pod.Name).
+		SubResource("portforward").
+		URL()
+
+	transport, upgrader, err := spdy.RoundTripperFor(config)
+	if err != nil {
+		return "", "", err
+	}
+
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", url)
+	// Using random available port instead of fixed value to avoid conflicts
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return "", "", fmt.Errorf("unable to find available port: %w", err)
+	}
+	localPort := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+
+	ports := []string{fmt.Sprintf("%d:%d", localPort, resources.DragonflyAdminPort)}
+	readyChan := make(chan struct{}, 1)
+
+	fw, err := portforward.New(dialer, ports, localStopChan, readyChan, io.Discard, os.Stderr)
+	if err != nil {
+		return "", "", err
+	}
+
+	errChan := make(chan error, 1)
+	go func() { errChan <- fw.ForwardPorts() }()
+
+	// Wait for port forward to be ready or error
+	select {
+	case err = <-errChan:
+		return "", "", errors.Wrap(err, "unable to forward ports")
+	case <-fw.Ready:
+		// Port forward is ready, wait 200 milliseconds to establish
+		select {
+		case <-time.After(200 * time.Millisecond):
+		case <-ctx.Done():
+			close(localStopChan)
+			return "", "", ctx.Err()
+		}
+	case <-ctx.Done():
+		close(localStopChan)
+		return "", "", ctx.Err()
+	}
+
+	// Ensures port forward is stopped when the function is done
+	defer func() {
+		close(localStopChan)
+		// Cleanup
+		select {
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+		}
+	}()
+
+	// Connect to admin port
+	adminClient := redis.NewClient(&redis.Options{
+		Addr:         fmt.Sprintf("localhost:%d", localPort),
+		DialTimeout:  10 * time.Second,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+	})
+	defer adminClient.Close()
+
+	infoCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	info, err := adminClient.Info(infoCtx, "persistence").Result()
+	if err != nil {
+		return "", "", fmt.Errorf("unable to get persistence info: %w", err)
+	}
+
+	// Parse info output
+	sc := bufio.NewScanner(strings.NewReader(info))
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			if key == "loading" {
+				loading = value
+			}
+			if key == "load_state" {
+				loadState = value
+			}
+		}
+	}
+
+	return loading, loadState, sc.Err()
 }
