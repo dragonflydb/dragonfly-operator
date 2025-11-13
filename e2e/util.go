@@ -187,8 +187,43 @@ func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *r
 // checkPersistenceInfo checks the persistence info from a pod's admin port
 // Uses port forwarding to access the pod's admin port
 func checkPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, stopChan chan struct{}) (loading string, loadState string, err error) {
+	// Retry with different ports if we get port conflicts
+	maxRetries := 5
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		loading, loadState, err = tryCheckPersistenceInfo(ctx, clientset, config, pod, stopChan)
+		if err == nil {
+			return loading, loadState, nil
+		}
+		if !strings.Contains(err.Error(), "address already in use") && !strings.Contains(err.Error(), "bind") && !strings.Contains(err.Error(), "unable to forward ports") {
+			return "", "", err
+		}
+		if attempt < maxRetries-1 {
+			// exponential backoff to reduce collisions
+			backoff := time.Duration(attempt+1) * 200 * time.Millisecond
+			time.Sleep(backoff)
+		}
+	}
+	return "", "", err
+}
+
+func tryCheckPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, stopChan chan struct{}) (loading string, loadState string, err error) {
 	// local stop channel for port forward to ensure cleanup
 	localStopChan := make(chan struct{}, 1)
+	var fw *portforward.PortForwarder
+	var errChan chan error
+	portForwardDone := make(chan struct{}, 1)
+
+	defer func() {
+		if localStopChan != nil {
+			close(localStopChan)
+		}
+		// Wait for port forwarder goroutine to finish
+		select {
+		case <-portForwardDone:
+		case <-time.After(2 * time.Second):
+		}
+		time.Sleep(500 * time.Millisecond)
+	}()
 
 	// Port forward to admin port
 	url := clientset.CoreV1().RESTClient().Post().
@@ -204,51 +239,56 @@ func checkPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientset, 
 	}
 
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", url)
-	// Using random available port instead of fixed value to avoid conflicts
-	listener, err := net.Listen("tcp", ":0")
-	if err != nil {
-		return "", "", fmt.Errorf("unable to find available port: %w", err)
+
+	var localPort int
+	maxPortAttempts := 10
+	for i := 0; i < maxPortAttempts; i++ {
+		listener, err := net.Listen("tcp", ":0")
+		if err != nil {
+			if i == maxPortAttempts-1 {
+				return "", "", fmt.Errorf("unable to find available port after %d attempts: %w", maxPortAttempts, err)
+			}
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		localPort = listener.Addr().(*net.TCPAddr).Port
+		listener.Close()
+		time.Sleep(100 * time.Millisecond)
+		break
 	}
-	defer listener.Close()
-	localPort := listener.Addr().(*net.TCPAddr).Port
 
 	ports := []string{fmt.Sprintf("%d:%d", localPort, resources.DragonflyAdminPort)}
 	readyChan := make(chan struct{}, 1)
 
-	fw, err := portforward.New(dialer, ports, localStopChan, readyChan, io.Discard, os.Stderr)
+	fw, err = portforward.New(dialer, ports, localStopChan, readyChan, io.Discard, os.Stderr)
 	if err != nil {
 		return "", "", err
 	}
 
-	errChan := make(chan error, 1)
-	go func() { errChan <- fw.ForwardPorts() }()
+	errChan = make(chan error, 1)
+	go func() {
+		defer close(portForwardDone)
+		errChan <- fw.ForwardPorts()
+	}()
 
 	// Wait for port forward to be ready or error
 	select {
 	case err = <-errChan:
+		select {
+		case <-portForwardDone:
+		case <-time.After(1 * time.Second):
+		}
 		return "", "", errors.Wrap(err, "unable to forward ports")
 	case <-fw.Ready:
-		// Port forward is ready, wait 200 milliseconds to establish
+		// When port forward is ready, wait to establish connection
 		select {
-		case <-time.After(200 * time.Millisecond):
+		case <-time.After(300 * time.Millisecond):
 		case <-ctx.Done():
-			close(localStopChan)
 			return "", "", ctx.Err()
 		}
 	case <-ctx.Done():
-		close(localStopChan)
 		return "", "", ctx.Err()
 	}
-
-	// Ensures port forward is stopped when the function is done
-	defer func() {
-		close(localStopChan)
-		// Cleanup
-		select {
-		case <-time.After(100 * time.Millisecond):
-		case <-ctx.Done():
-		}
-	}()
 
 	// Connect to admin port
 	adminClient := redis.NewClient(&redis.Options{
