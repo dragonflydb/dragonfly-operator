@@ -209,8 +209,8 @@ func checkPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientset, 
 	if err != nil {
 		return "", "", fmt.Errorf("unable to find available port: %w", err)
 	}
+	defer listener.Close()
 	localPort := listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
 
 	ports := []string{fmt.Sprintf("%d:%d", localPort, resources.DragonflyAdminPort)}
 	readyChan := make(chan struct{}, 1)
@@ -252,10 +252,11 @@ func checkPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientset, 
 
 	// Connect to admin port
 	adminClient := redis.NewClient(&redis.Options{
-		Addr:         fmt.Sprintf("localhost:%d", localPort),
-		DialTimeout:  10 * time.Second,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
+		Addr:                  fmt.Sprintf("localhost:%d", localPort),
+		DialTimeout:           10 * time.Second,
+		ReadTimeout:           5 * time.Second,
+		WriteTimeout:          5 * time.Second,
+		ContextTimeoutEnabled: true,
 	})
 	defer adminClient.Close()
 
