@@ -160,6 +160,137 @@ func checkAndK8sPortForwardRedis(ctx context.Context, clientset *kubernetes.Clie
 	return redisClient, nil
 }
 
+type portForwardResult struct {
+	LocalPort int
+	Cleanup   func()
+}
+
+// setupPortForwardWithCleanup sets up port forwarding with proper cleanup handling
+// it finds an available local port, forwards to the pod's remote port, and returns
+// the local port and a cleanup function. The cleanup function must be called to
+// ensure the port is released.
+func setupPortForwardWithCleanup(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, remotePort int, timeout time.Duration) (*portForwardResult, error) {
+	// Verify pod is ready before attempting port forward
+	if pod.Status.Phase != corev1.PodRunning {
+		return nil, fmt.Errorf("pod %s/%s is not running (phase: %s)", pod.Namespace, pod.Name, pod.Status.Phase)
+	}
+
+	localStopChan := make(chan struct{}, 1)
+	portForwardDone := make(chan struct{}, 1)
+	portForwardClosed := new(bool)
+
+	// Port forward to pod
+	url := clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace(pod.Namespace).
+		Name(pod.Name).
+		SubResource("portforward").
+		URL()
+
+	transport, upgrader, err := spdy.RoundTripperFor(config)
+	if err != nil {
+		return nil, err
+	}
+
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", url)
+
+	// Find an available local port
+	var localPort int
+	maxPortAttempts := 10
+	for i := 0; i < maxPortAttempts; i++ {
+		listener, err := net.Listen("tcp", ":0")
+		if err != nil {
+			if i == maxPortAttempts-1 {
+				return nil, fmt.Errorf("unable to find available port after %d attempts: %w", maxPortAttempts, err)
+			}
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		localPort = listener.Addr().(*net.TCPAddr).Port
+		listener.Close()
+		time.Sleep(100 * time.Millisecond)
+		break
+	}
+
+	ports := []string{fmt.Sprintf("%d:%d", localPort, remotePort)}
+	readyChan := make(chan struct{}, 1)
+
+	fw, err := portforward.New(dialer, ports, localStopChan, readyChan, io.Discard, os.Stderr)
+	if err != nil {
+		return nil, err
+	}
+
+	errChan := make(chan error, 1)
+	go func() {
+		defer close(portForwardDone)
+		errChan <- fw.ForwardPorts()
+	}()
+
+	// Wait for port forward to be ready or error
+	portForwardCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	select {
+	case err = <-errChan:
+		// Port forward failed, close and wait for cleanup
+		if !*portForwardClosed && localStopChan != nil {
+			close(localStopChan)
+			*portForwardClosed = true
+		}
+		select {
+		case <-portForwardDone:
+		case <-time.After(2 * time.Second):
+		}
+		time.Sleep(500 * time.Millisecond)
+		return nil, errors.Wrap(err, "unable to forward ports")
+	case <-fw.Ready:
+		// Port forward ready, wait a bit to establish connection
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-portForwardCtx.Done():
+			if !*portForwardClosed && localStopChan != nil {
+				close(localStopChan)
+				*portForwardClosed = true
+			}
+			select {
+			case <-portForwardDone:
+			case <-time.After(2 * time.Second):
+			}
+			time.Sleep(500 * time.Millisecond)
+			return nil, portForwardCtx.Err()
+		}
+	case <-portForwardCtx.Done():
+		// Timeout waiting for port forward to be ready
+		if !*portForwardClosed && localStopChan != nil {
+			close(localStopChan)
+			*portForwardClosed = true
+		}
+		select {
+		case <-portForwardDone:
+		case <-time.After(2 * time.Second):
+		}
+		time.Sleep(500 * time.Millisecond)
+		return nil, fmt.Errorf("timeout waiting for port forward to be ready: %w", portForwardCtx.Err())
+	}
+
+	cleanup := func() {
+		if !*portForwardClosed && localStopChan != nil {
+			close(localStopChan)
+			*portForwardClosed = true
+		}
+		select {
+		case <-portForwardDone:
+		case <-time.After(3 * time.Second):
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	return &portForwardResult{
+		LocalPort: localPort,
+		Cleanup:   cleanup,
+	}, nil
+}
+
 func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, stopChan chan struct{}, port int) (*portforward.PortForwarder, error) {
 	url := clientset.CoreV1().RESTClient().Post().
 		Resource("pods").
@@ -198,109 +329,33 @@ func checkPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientset, 
 			return "", "", err
 		}
 		if attempt < maxRetries-1 {
-			// exponential backoff to reduce collisions
+			// Exponential backoff
 			backoff := time.Duration(attempt+1) * 200 * time.Millisecond
-			time.Sleep(backoff)
+			cleanupWait := 2 * time.Second
+			time.Sleep(backoff + cleanupWait)
 		}
 	}
 	return "", "", err
 }
 
 func tryCheckPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, stopChan chan struct{}) (loading string, loadState string, err error) {
-	// local stop channel for port forward to ensure cleanup
-	localStopChan := make(chan struct{}, 1)
-	var fw *portforward.PortForwarder
-	var errChan chan error
-	portForwardDone := make(chan struct{}, 1)
-
-	defer func() {
-		if localStopChan != nil {
-			close(localStopChan)
-		}
-		// Wait for port forwarder goroutine to finish
-		select {
-		case <-portForwardDone:
-		case <-time.After(2 * time.Second):
-		}
-		time.Sleep(500 * time.Millisecond)
-	}()
-
-	// Port forward to admin port
-	url := clientset.CoreV1().RESTClient().Post().
-		Resource("pods").
-		Namespace(pod.Namespace).
-		Name(pod.Name).
-		SubResource("portforward").
-		URL()
-
-	transport, upgrader, err := spdy.RoundTripperFor(config)
+	// Setup port forwarding with proper cleanup
+	pfResult, err := setupPortForwardWithCleanup(ctx, clientset, config, pod, resources.DragonflyAdminPort, 30*time.Second)
 	if err != nil {
 		return "", "", err
 	}
+	defer pfResult.Cleanup()
 
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", url)
-
-	var localPort int
-	maxPortAttempts := 10
-	for i := 0; i < maxPortAttempts; i++ {
-		listener, err := net.Listen("tcp", ":0")
-		if err != nil {
-			if i == maxPortAttempts-1 {
-				return "", "", fmt.Errorf("unable to find available port after %d attempts: %w", maxPortAttempts, err)
-			}
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		localPort = listener.Addr().(*net.TCPAddr).Port
-		listener.Close()
-		time.Sleep(100 * time.Millisecond)
-		break
-	}
-
-	ports := []string{fmt.Sprintf("%d:%d", localPort, resources.DragonflyAdminPort)}
-	readyChan := make(chan struct{}, 1)
-
-	fw, err = portforward.New(dialer, ports, localStopChan, readyChan, io.Discard, os.Stderr)
-	if err != nil {
-		return "", "", err
-	}
-
-	errChan = make(chan error, 1)
-	go func() {
-		defer close(portForwardDone)
-		errChan <- fw.ForwardPorts()
-	}()
-
-	// Wait for port forward to be ready or error
-	select {
-	case err = <-errChan:
-		select {
-		case <-portForwardDone:
-		case <-time.After(1 * time.Second):
-		}
-		return "", "", errors.Wrap(err, "unable to forward ports")
-	case <-fw.Ready:
-		// When port forward is ready, wait to establish connection
-		select {
-		case <-time.After(300 * time.Millisecond):
-		case <-ctx.Done():
-			return "", "", ctx.Err()
-		}
-	case <-ctx.Done():
-		return "", "", ctx.Err()
-	}
-
-	// Connect to admin port
 	adminClient := redis.NewClient(&redis.Options{
-		Addr:                  fmt.Sprintf("localhost:%d", localPort),
-		DialTimeout:           10 * time.Second,
-		ReadTimeout:           5 * time.Second,
-		WriteTimeout:          5 * time.Second,
+		Addr:                  fmt.Sprintf("localhost:%d", pfResult.LocalPort),
+		DialTimeout:           15 * time.Second,
+		ReadTimeout:           10 * time.Second,
+		WriteTimeout:          10 * time.Second,
 		ContextTimeoutEnabled: true,
 	})
 	defer adminClient.Close()
 
-	infoCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	infoCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	info, err := adminClient.Info(infoCtx, "persistence").Result()
