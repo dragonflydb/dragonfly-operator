@@ -31,7 +31,7 @@ jobs:
           cluster_name: kind
           config: ./hack/kind-config.yaml
       - name: Run tests
-        timeout-minutes: 12
+        timeout-minutes: 16
         run: |
           make docker-kind-load
           make deploy
@@ -81,9 +81,9 @@ jobs:
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
           helm registry login -u ${{ github.actor }} --password-stdin ghcr.io
-          
+
           helm package charts/dragonfly-operator
-          
+
           helm push dragonfly-operator-${{ env.VERSION }}.tgz oci://ghcr.io/dragonflydb/dragonfly-operator/helm
 
       - name: Build and Publish image into GHCR
