@@ -48,7 +48,8 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			Namespace: namespace,
 		},
 		Spec: dfv1alpha1.DragonflySpec{
-			Replicas: int32(replicas),
+			Replicas:        int32(replicas),
+			ImagePullPolicy: corev1.PullIfNotPresent,
 		},
 	}
 
