@@ -125,6 +125,42 @@ func checkAndK8sPortForwardRedis(ctx context.Context, clientset *kubernetes.Clie
 		return nil, fmt.Errorf("no master pod found")
 	}
 
+	updatedMaster, err := clientset.CoreV1().Pods(master.Namespace).Get(ctx, master.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pod %s/%s: %w", master.Namespace, master.Name, err)
+	}
+	master = updatedMaster
+
+	if master.Status.Phase != corev1.PodRunning {
+		return nil, fmt.Errorf("pod %s/%s is not running (phase: %s)", master.Namespace, master.Name, master.Status.Phase)
+	}
+
+	// Verify pod has Ready condition
+	hasReadyCondition := false
+	for _, condition := range master.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			hasReadyCondition = true
+			break
+		}
+	}
+	if !hasReadyCondition {
+		return nil, fmt.Errorf("pod %s/%s is not ready (Ready condition not true)", master.Namespace, master.Name)
+	}
+
+	// Verify the Dragonfly container is ready
+	containerReady := false
+	for _, status := range master.Status.ContainerStatuses {
+		if status.Name == resources.DragonflyContainerName {
+			if status.Ready {
+				containerReady = true
+				break
+			}
+		}
+	}
+	if !containerReady {
+		return nil, fmt.Errorf("container %s in pod %s/%s is not ready", resources.DragonflyContainerName, master.Namespace, master.Name)
+	}
+
 	fw, err := portForward(ctx, clientset, config, master, stopChan, port)
 	if err != nil {
 		return nil, err
@@ -170,9 +206,42 @@ type portForwardResult struct {
 // the local port and a cleanup function. The cleanup function must be called to
 // ensure the port is released.
 func setupPortForwardWithCleanup(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, remotePort int, timeout time.Duration) (*portForwardResult, error) {
-	// Verify pod is ready before attempting port forward
+	// Fetch pod to get latest status
+	updatedPod, err := clientset.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pod %s/%s: %w", pod.Namespace, pod.Name, err)
+	}
+	pod = updatedPod
+
+	// Verify pod is running
 	if pod.Status.Phase != corev1.PodRunning {
 		return nil, fmt.Errorf("pod %s/%s is not running (phase: %s)", pod.Namespace, pod.Name, pod.Status.Phase)
+	}
+
+	// Verify pod has Ready condition
+	hasReadyCondition := false
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			hasReadyCondition = true
+			break
+		}
+	}
+	if !hasReadyCondition {
+		return nil, fmt.Errorf("pod %s/%s is not ready (Ready condition not true)", pod.Namespace, pod.Name)
+	}
+
+	// Verify the Dragonfly container is ready
+	containerReady := false
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name == resources.DragonflyContainerName {
+			if status.Ready {
+				containerReady = true
+				break
+			}
+		}
+	}
+	if !containerReady {
+		return nil, fmt.Errorf("container %s in pod %s/%s is not ready", resources.DragonflyContainerName, pod.Namespace, pod.Name)
 	}
 
 	localStopChan := make(chan struct{}, 1)
@@ -317,20 +386,38 @@ func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *r
 
 // checkPersistenceInfo checks the persistence info from a pod's admin port
 // Uses port forwarding to access the pod's admin port
+// ensures container is Ready before attempting connection
 func checkPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, stopChan chan struct{}) (loading string, loadState string, err error) {
 	// Retry with different ports if we get port conflicts
-	maxRetries := 5
+	maxRetries := 10
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		loading, loadState, err = tryCheckPersistenceInfo(ctx, clientset, config, pod, stopChan)
 		if err == nil {
 			return loading, loadState, nil
 		}
-		if !strings.Contains(err.Error(), "address already in use") && !strings.Contains(err.Error(), "bind") && !strings.Contains(err.Error(), "unable to forward ports") {
+
+		// Check if error is due to container not being ready
+		errStr := err.Error()
+		isNotReadyError := strings.Contains(errStr, "is not ready") ||
+			strings.Contains(errStr, "not running") ||
+			strings.Contains(errStr, "Ready condition not true")
+
+		// Retry on port conflicts or container not ready
+		isRetryableError := strings.Contains(errStr, "address already in use") ||
+			strings.Contains(errStr, "bind") ||
+			strings.Contains(errStr, "unable to forward ports") ||
+			isNotReadyError
+
+		if !isRetryableError {
 			return "", "", err
 		}
+
 		if attempt < maxRetries-1 {
-			// Exponential backoff
+			// Exponential backoff, wait longer if container is not ready
 			backoff := time.Duration(attempt+1) * 200 * time.Millisecond
+			if isNotReadyError {
+				backoff = time.Duration(attempt+1) * 1 * time.Second
+			}
 			cleanupWait := 2 * time.Second
 			time.Sleep(backoff + cleanupWait)
 		}
