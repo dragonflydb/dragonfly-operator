@@ -35,6 +35,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -1143,18 +1144,21 @@ var _ = Describe("Dragonfly Dataset Loading Readiness Gate", Ordered, FlakeAttem
 				Name:      name,
 				Namespace: namespace,
 			}, &df)
-			if err == nil {
-				err = k8sClient.Delete(ctx, &df)
-				Expect(err).To(BeNil())
-				// Waiting by polling until the resource is deleted
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, types.NamespacedName{
-						Name:      name,
-						Namespace: namespace,
-					}, &df)
-					return err != nil
-				}, 1*time.Minute, 2*time.Second).Should(BeTrue(), "existing resource should be deleted")
+			if apierrors.IsNotFound(err) {
+				// Nothing to clean up
+				return
 			}
+			Expect(err).To(BeNil(), "unexpected error getting Dragonfly resource")
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil(), "failed to delete existing Dragonfly resource")
+			// Polling until the resource is deleted
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      name,
+					Namespace: namespace,
+				}, &df)
+				return apierrors.IsNotFound(err)
+			}, 1*time.Minute, 2*time.Second).Should(BeTrue(), "existing resource should be deleted")
 		})
 
 		It("Should create Dragonfly instance with snapshot", func() {
@@ -1358,20 +1362,20 @@ var _ = Describe("Dragonfly Dataset Loading Readiness Gate", Ordered, FlakeAttem
 				Name:      name,
 				Namespace: namespace,
 			}, &df)
-			if err == nil {
-				err = k8sClient.Delete(ctx, &df)
-				if err != nil {
-					GinkgoLogr.Error(err, "failed to delete Dragonfly resource during cleanup")
-				}
-				// Wait for deletion to complete
-				Eventually(func() bool {
-					err := k8sClient.Get(ctx, types.NamespacedName{
-						Name:      name,
-						Namespace: namespace,
-					}, &df)
-					return err != nil
-				}, 1*time.Minute, 2*time.Second).Should(BeTrue(), "resource should be deleted")
+			if apierrors.IsNotFound(err) {
+				// Nothing to clean up
+				return
 			}
+			Expect(err).To(BeNil(), "unexpected error getting Dragonfly resource during cleanup")
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil(), "failed to delete Dragonfly resource during cleanup")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      name,
+					Namespace: namespace,
+				}, &df)
+				return apierrors.IsNotFound(err)
+			}, 1*time.Minute, 2*time.Second).Should(BeTrue(), "resource should be deleted")
 		})
 	})
 })
