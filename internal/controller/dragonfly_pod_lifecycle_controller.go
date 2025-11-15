@@ -68,6 +68,11 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("failed to get dragonfly instance: %w", err))
 	}
 
+	podReady, readinessErr := dfi.isPodReady(ctx, &pod)
+	if readinessErr != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to verify pod readiness: %w", readinessErr)
+	}
+
 	master, err := dfi.getMaster(ctx)
 	if err != nil {
 		if isMasterError(err) {
@@ -79,7 +84,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				}
 			}
 
-			if isHealthy(&pod) {
+			if podReady {
 				master = &pod
 			} else {
 				if master, err = dfi.getHealthyPod(ctx); err != nil {
@@ -91,12 +96,17 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if err = dfi.configureReplication(ctx, master); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to configure replication: %w", err)
 			}
+			// re-evaluate readiness after replication changes.
+			podReady, readinessErr = dfi.isPodReady(ctx, &pod)
+			if readinessErr != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to verify pod readiness: %w", readinessErr)
+			}
 		} else {
 			return ctrl.Result{}, fmt.Errorf("failed to get master pod: %w", err)
 		}
 	}
 
-	if !isHealthy(&pod) {
+	if !podReady {
 		return ctrl.Result{}, nil
 	}
 

@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -124,6 +125,42 @@ func checkAndK8sPortForwardRedis(ctx context.Context, clientset *kubernetes.Clie
 		return nil, fmt.Errorf("no master pod found")
 	}
 
+	updatedMaster, err := clientset.CoreV1().Pods(master.Namespace).Get(ctx, master.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pod %s/%s: %w", master.Namespace, master.Name, err)
+	}
+	master = updatedMaster
+
+	if master.Status.Phase != corev1.PodRunning {
+		return nil, fmt.Errorf("pod %s/%s is not running (phase: %s)", master.Namespace, master.Name, master.Status.Phase)
+	}
+
+	// Verify pod has Ready condition
+	hasReadyCondition := false
+	for _, condition := range master.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			hasReadyCondition = true
+			break
+		}
+	}
+	if !hasReadyCondition {
+		return nil, fmt.Errorf("pod %s/%s is not ready (Ready condition not true)", master.Namespace, master.Name)
+	}
+
+	// Verify the Dragonfly container is ready
+	containerReady := false
+	for _, status := range master.Status.ContainerStatuses {
+		if status.Name == resources.DragonflyContainerName {
+			if status.Ready {
+				containerReady = true
+				break
+			}
+		}
+	}
+	if !containerReady {
+		return nil, fmt.Errorf("container %s in pod %s/%s is not ready", resources.DragonflyContainerName, master.Namespace, master.Name)
+	}
+
 	fw, err := portForward(ctx, clientset, config, master, stopChan, port)
 	if err != nil {
 		return nil, err
@@ -159,6 +196,170 @@ func checkAndK8sPortForwardRedis(ctx context.Context, clientset *kubernetes.Clie
 	return redisClient, nil
 }
 
+type portForwardResult struct {
+	LocalPort int
+	Cleanup   func()
+}
+
+// setupPortForwardWithCleanup sets up port forwarding with proper cleanup handling
+// it finds an available local port, forwards to the pod's remote port, and returns
+// the local port and a cleanup function. The cleanup function must be called to
+// ensure the port is released.
+func setupPortForwardWithCleanup(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, remotePort int, timeout time.Duration) (*portForwardResult, error) {
+	// Fetch pod to get latest status
+	updatedPod, err := clientset.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pod %s/%s: %w", pod.Namespace, pod.Name, err)
+	}
+	pod = updatedPod
+
+	// Verify pod is running
+	if pod.Status.Phase != corev1.PodRunning {
+		return nil, fmt.Errorf("pod %s/%s is not running (phase: %s)", pod.Namespace, pod.Name, pod.Status.Phase)
+	}
+
+	// Verify pod has Ready condition
+	hasReadyCondition := false
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			hasReadyCondition = true
+			break
+		}
+	}
+	if !hasReadyCondition {
+		return nil, fmt.Errorf("pod %s/%s is not ready (Ready condition not true)", pod.Namespace, pod.Name)
+	}
+
+	// Verify the Dragonfly container is ready
+	containerReady := false
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name == resources.DragonflyContainerName {
+			if status.Ready {
+				containerReady = true
+				break
+			}
+		}
+	}
+	if !containerReady {
+		return nil, fmt.Errorf("container %s in pod %s/%s is not ready", resources.DragonflyContainerName, pod.Namespace, pod.Name)
+	}
+
+	localStopChan := make(chan struct{}, 1)
+	portForwardDone := make(chan struct{}, 1)
+	portForwardClosed := new(bool)
+
+	// Port forward to pod
+	url := clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace(pod.Namespace).
+		Name(pod.Name).
+		SubResource("portforward").
+		URL()
+
+	transport, upgrader, err := spdy.RoundTripperFor(config)
+	if err != nil {
+		return nil, err
+	}
+
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, "POST", url)
+
+	// Find an available local port
+	var localPort int
+	maxPortAttempts := 10
+	for i := 0; i < maxPortAttempts; i++ {
+		listener, err := net.Listen("tcp", ":0")
+		if err != nil {
+			if i == maxPortAttempts-1 {
+				return nil, fmt.Errorf("unable to find available port after %d attempts: %w", maxPortAttempts, err)
+			}
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		localPort = listener.Addr().(*net.TCPAddr).Port
+		listener.Close()
+		time.Sleep(100 * time.Millisecond)
+		break
+	}
+
+	ports := []string{fmt.Sprintf("%d:%d", localPort, remotePort)}
+	readyChan := make(chan struct{}, 1)
+
+	fw, err := portforward.New(dialer, ports, localStopChan, readyChan, io.Discard, os.Stderr)
+	if err != nil {
+		return nil, err
+	}
+
+	errChan := make(chan error, 1)
+	go func() {
+		defer close(portForwardDone)
+		errChan <- fw.ForwardPorts()
+	}()
+
+	// Wait for port forward to be ready or error
+	portForwardCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	select {
+	case err = <-errChan:
+		// Port forward failed, close and wait for cleanup
+		if !*portForwardClosed && localStopChan != nil {
+			close(localStopChan)
+			*portForwardClosed = true
+		}
+		select {
+		case <-portForwardDone:
+		case <-time.After(2 * time.Second):
+		}
+		time.Sleep(500 * time.Millisecond)
+		return nil, errors.Wrap(err, "unable to forward ports")
+	case <-fw.Ready:
+		// Port forward ready, wait a bit to establish connection
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-portForwardCtx.Done():
+			if !*portForwardClosed && localStopChan != nil {
+				close(localStopChan)
+				*portForwardClosed = true
+			}
+			select {
+			case <-portForwardDone:
+			case <-time.After(2 * time.Second):
+			}
+			time.Sleep(500 * time.Millisecond)
+			return nil, portForwardCtx.Err()
+		}
+	case <-portForwardCtx.Done():
+		// Timeout waiting for port forward to be ready
+		if !*portForwardClosed && localStopChan != nil {
+			close(localStopChan)
+			*portForwardClosed = true
+		}
+		select {
+		case <-portForwardDone:
+		case <-time.After(2 * time.Second):
+		}
+		time.Sleep(500 * time.Millisecond)
+		return nil, fmt.Errorf("timeout waiting for port forward to be ready: %w", portForwardCtx.Err())
+	}
+
+	cleanup := func() {
+		if !*portForwardClosed && localStopChan != nil {
+			close(localStopChan)
+			*portForwardClosed = true
+		}
+		select {
+		case <-portForwardDone:
+		case <-time.After(3 * time.Second):
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	return &portForwardResult{
+		LocalPort: localPort,
+		Cleanup:   cleanup,
+	}, nil
+}
+
 func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, stopChan chan struct{}, port int) (*portforward.PortForwarder, error) {
 	url := clientset.CoreV1().RESTClient().Post().
 		Resource("pods").
@@ -181,4 +382,93 @@ func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *r
 		return nil, err
 	}
 	return fw, err
+}
+
+// checkPersistenceInfo checks the persistence info from a pod's admin port
+// Uses port forwarding to access the pod's admin port
+// ensures container is Ready before attempting connection
+func checkPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, stopChan chan struct{}) (loading string, loadState string, err error) {
+	// Retry with different ports if we get port conflicts
+	maxRetries := 10
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		loading, loadState, err = tryCheckPersistenceInfo(ctx, clientset, config, pod, stopChan)
+		if err == nil {
+			return loading, loadState, nil
+		}
+
+		// Check if error is due to container not being ready
+		errStr := err.Error()
+		isNotReadyError := strings.Contains(errStr, "is not ready") ||
+			strings.Contains(errStr, "not running") ||
+			strings.Contains(errStr, "Ready condition not true")
+
+		// Retry on port conflicts or container not ready
+		isRetryableError := strings.Contains(errStr, "address already in use") ||
+			strings.Contains(errStr, "bind") ||
+			strings.Contains(errStr, "unable to forward ports") ||
+			isNotReadyError
+
+		if !isRetryableError {
+			return "", "", err
+		}
+
+		if attempt < maxRetries-1 {
+			// Exponential backoff, wait longer if container is not ready
+			backoff := time.Duration(attempt+1) * 200 * time.Millisecond
+			if isNotReadyError {
+				backoff = time.Duration(attempt+1) * 1 * time.Second
+			}
+			cleanupWait := 2 * time.Second
+			time.Sleep(backoff + cleanupWait)
+		}
+	}
+	return "", "", err
+}
+
+func tryCheckPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod *corev1.Pod, stopChan chan struct{}) (loading string, loadState string, err error) {
+	// Setup port forwarding with proper cleanup
+	pfResult, err := setupPortForwardWithCleanup(ctx, clientset, config, pod, resources.DragonflyAdminPort, 30*time.Second)
+	if err != nil {
+		return "", "", err
+	}
+	defer pfResult.Cleanup()
+
+	adminClient := redis.NewClient(&redis.Options{
+		Addr:                  fmt.Sprintf("localhost:%d", pfResult.LocalPort),
+		DialTimeout:           15 * time.Second,
+		ReadTimeout:           10 * time.Second,
+		WriteTimeout:          10 * time.Second,
+		ContextTimeoutEnabled: true,
+	})
+	defer adminClient.Close()
+
+	infoCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	info, err := adminClient.Info(infoCtx, "persistence").Result()
+	if err != nil {
+		return "", "", fmt.Errorf("unable to get persistence info: %w", err)
+	}
+
+	// Parse info output
+	sc := bufio.NewScanner(strings.NewReader(info))
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			if key == "loading" {
+				loading = value
+			}
+			if key == "load_state" {
+				loadState = value
+			}
+		}
+	}
+
+	return loading, loadState, sc.Err()
 }

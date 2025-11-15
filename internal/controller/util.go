@@ -19,6 +19,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
