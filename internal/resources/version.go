@@ -16,6 +16,13 @@ limitations under the License.
 
 package resources
 
-const (
-	Version = "v1.34.1"
-)
+import "os"
+
+var Version = getenv("DRAGONFLY_DEFAULT_VERSION", "v1.34.2")
+
+func getenv(key, fallback string) string {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		return v
+	}
+	return fallback
+}
