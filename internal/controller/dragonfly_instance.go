@@ -384,6 +384,11 @@ func (dfi *DragonflyInstance) patchStatus(ctx context.Context, status dfv1alpha1
 	return nil
 }
 
+// isTerminating returns true if the dragonfly instance is being deleted
+func (dfi *DragonflyInstance) isTerminating() bool {
+	return dfi.df.ObjectMeta.DeletionTimestamp != nil
+}
+
 // detectOldMasters checks whether there are any old masters and deletes them
 func (dfi *DragonflyInstance) detectOldMasters(ctx context.Context, updateRevision string) error {
 	var masterPods corev1.PodList
