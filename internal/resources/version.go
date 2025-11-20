@@ -17,5 +17,5 @@ limitations under the License.
 package resources
 
 const (
-	Version = "v1.34.1"
+	Version = "v1.35.0"
 )
