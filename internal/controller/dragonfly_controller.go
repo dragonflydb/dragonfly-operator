@@ -86,13 +86,18 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return ctrl.Result{}, fmt.Errorf("failed to get statefulset: %w", err)
 		}
 
-		if result, err := dfi.allPodsHealthy(ctx, statefulSet.Status.UpdateRevision); !result.IsZero() || err != nil {
+		if result, err := dfi.allPodsHealthyAndHaveRole(ctx, statefulSet.Status.UpdateRevision); !result.IsZero() || err != nil {
 			return result, err
 		}
 
 		replicas, err := dfi.getReplicas(ctx)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get replicas: %w", err)
+		}
+
+		if len(replicas.Items) != int(dfi.df.Spec.Replicas)-1 {
+			dfi.log.Info("waiting for all replicas to be configured", "expected", *statefulSet.Spec.Replicas-1, "current", len(replicas.Items))
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 
 		// We want to update the replicas first then the master
@@ -104,7 +109,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		// if we are here it means that all latest replicas are in stable sync
 		// delete older version replicas
-		if result, err := dfi.updatedReplicas(ctx, replicas, statefulSet.Status.UpdateRevision); !result.IsZero() || err != nil {
+		if result, err := dfi.updateReplicas(ctx, replicas, statefulSet.Status.UpdateRevision); !result.IsZero() || err != nil {
 			return result, err
 		}
 
