@@ -70,8 +70,10 @@ func main() {
 	var probeAddr string
 	var versionFlag bool
 	var watchCurrentNamespace bool
+	var dragonflyImage string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.StringVar(&dragonflyImage, "dragonfly-image", "", "The default dragonfly image to use.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -145,9 +147,10 @@ func main() {
 
 	if err = (&controller.DragonflyReconciler{
 		Reconciler: controller.Reconciler{
-			Client:        mgr.GetClient(),
-			Scheme:        mgr.GetScheme(),
-			EventRecorder: eventRecorder,
+			Client:                mgr.GetClient(),
+			Scheme:                mgr.GetScheme(),
+			EventRecorder:         eventRecorder,
+			DefaultDragonflyImage: dragonflyImage,
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Dragonfly")
@@ -156,9 +159,10 @@ func main() {
 
 	if err = (&controller.DfPodLifeCycleReconciler{
 		Reconciler: controller.Reconciler{
-			Client:        mgr.GetClient(),
-			Scheme:        mgr.GetScheme(),
-			EventRecorder: eventRecorder,
+			Client:                mgr.GetClient(),
+			Scheme:                mgr.GetScheme(),
+			EventRecorder:         eventRecorder,
+			DefaultDragonflyImage: dragonflyImage,
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Health")

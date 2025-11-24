@@ -62,6 +62,9 @@ spec:
         - name: manager
           args:
             - --leader-elect
+            {{- if .Values.dragonflyImage }}
+            - --dragonfly-image={{ .Values.dragonflyImage }}
+            {{- end }}
             {{- if .Values.rbacProxy.enabled }}
             - --metrics-bind-address=127.0.0.1:8080
             {{- end }}

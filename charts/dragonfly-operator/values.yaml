@@ -14,6 +14,9 @@ crds:
 nameOverride: ""
 fullnameOverride: ""
 
+# -- Default dragonfly image to use
+dragonflyImage: ""
+
 # -- Additional labels to add to all resources
 additionalLabels: {}
   # app: dragonfly-operator
