@@ -74,3 +74,14 @@ Suffix + 48 char fullname = max 63 characters
 {{- define "dragonfly-operator.controllerServiceName" -}}
 {{- printf "%s-controller-svc" (include "dragonfly-operator.fullname" . | trunc 48 | trimSuffix "-" ) -}}
 {{- end -}}
+
+{{/*
+Allow the release namespace to be overridden for multi-namespace deployments in combined charts
+*/}}
+{{- define "dragonfly-operator.namespace" -}}
+{{- if .Values.namespaceOverride -}}
+{{- .Values.namespaceOverride -}}
+{{- else -}}
+{{- .Release.Namespace -}}
+{{- end -}}
+{{- end -}}
