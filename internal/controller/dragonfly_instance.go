@@ -46,10 +46,11 @@ type DragonflyInstance struct {
 	// Dragonfly is the relevant Dragonfly CRD that it performs actions over
 	df *dfv1alpha1.Dragonfly
 
-	client        client.Client
-	log           logr.Logger
-	scheme        *runtime.Scheme
-	eventRecorder record.EventRecorder
+	client                client.Client
+	log                   logr.Logger
+	scheme                *runtime.Scheme
+	eventRecorder         record.EventRecorder
+	defaultDragonflyImage string
 }
 
 // configureReplication configures the given pod as a master and other pods as replicas
@@ -487,7 +488,7 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 
 // reconcileResources creates or updates the dragonfly resources
 func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
-	dfResources, err := resources.GenerateDragonflyResources(dfi.df)
+	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage)
 	if err != nil {
 		return fmt.Errorf("failed to generate dragonfly resources")
 	}
