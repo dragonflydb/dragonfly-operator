@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "dragonfly-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: rbac
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "dragonfly-operator.namespace" . }}
 rules:
   - apiGroups:
       - ""

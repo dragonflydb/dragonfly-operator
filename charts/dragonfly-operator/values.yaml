@@ -13,6 +13,7 @@ crds:
 
 nameOverride: ""
 fullnameOverride: ""
+namespaceOverride: ""
 
 # -- Additional labels to add to all resources
 additionalLabels: {}
