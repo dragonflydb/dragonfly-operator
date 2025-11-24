@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "dragonfly-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: rbac
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "dragonfly-operator.namespace" . }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -13,4 +13,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: {{ include "dragonfly-operator.serviceAccountName" . }}
-    namespace: {{ .Release.Namespace }}
+    namespace: {{ include "dragonfly-operator.namespace" . }}
