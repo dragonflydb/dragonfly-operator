@@ -19,6 +19,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	appsv1 "k8s.io/api/apps/v1"
@@ -172,4 +173,24 @@ func isMasterError(err error) bool {
 	return errors.Is(err, ErrNoMaster) ||
 		errors.Is(err, ErrNoHealthyMaster) ||
 		errors.Is(err, ErrIncorrectMasters)
+}
+
+// Helper function to parse Redis INFO data
+func parseRedisInfo(info string) map[string]string {
+	data := map[string]string{}
+	for _, line := range strings.Split(info, "\n") {
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		kv := strings.Split(line, ":")
+		if len(kv) == 2 {
+			data[kv[0]] = strings.TrimSuffix(kv[1], "\r")
+		}
+	}
+	return data
+}
+
+// sanitizeIp Ipv6
+func sanitizeIp(masterIp string) string {
+	return strings.Trim(masterIp, "[]")
 }

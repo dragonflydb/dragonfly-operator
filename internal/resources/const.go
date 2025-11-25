@@ -84,9 +84,10 @@ const (
 	KubernetesPartOfLabelKey = "app.kubernetes.io/part-of"
 	KubernetesPartOf         = "dragonfly"
 
-	DragonflyNameLabelKey = "app"
+	MasterIpLabel         string = "master-ip"
+	DragonflyNameLabelKey        = "app"
 
-	MasterIpLabelKey = "master-ip"
+	MasterIp = "operator.dragonflydb.io/masterIP"
 
 	RoleLabelKey = "role"
 
@@ -99,6 +100,8 @@ var DefaultDragonflyArgs = []string{
 	"--alsologtostderr",
 	"--break_replication_on_master_restart=true",
 	"--primary_port_http_enabled=false",
+	"--bind=::",
+	"--admin_bind=::",
 	fmt.Sprintf("--admin_port=%d", DragonflyAdminPort),
 	"--admin_nopass",
 }
