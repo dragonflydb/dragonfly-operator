@@ -72,6 +72,16 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
 
+	// (Optional) Additional containers to add to dragonflycluster. Replace container on name collision.
+	// +optional
+	// +kubebuilder:validation:Optional
+	AdditionalContainers []corev1.Container `json:"additionalContainers,omitempty"`
+
+	// (Optional) Additional volumes to add to dragonflycluster. Replace volume on name collision.
+	// +optional
+	// +kubebuilder:validation:Optional
+	AdditionalVolumes []corev1.Volume `json:"additionalVolumes,omitempty"`
+
 	// (Optional) Dragonfly container resource limits. Any container limits
 	// can be specified.
 	// +optional
@@ -135,6 +145,11 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	TLSSecretRef *corev1.SecretReference `json:"tlsSecretRef,omitempty"`
 
+	// (Optional) Dragonfly SSD Tiering configuration
+	// +optional
+	// +kubebuilder:validation:Optional
+	Tiering *Tiering `json:"tiering,omitempty"`
+
 	// (Optional) Dragonfly Snapshot configuration
 	// +optional
 	// +kubebuilder:validation:Optional
@@ -154,6 +169,16 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	InitContainers []corev1.Container `json:"initContainers,omitempty"`
+
+	// (Optional) Dragonfly direct child resources additional annotations and labels
+	// +optional
+	// +kubebuilder:validation:Optional
+	OwnedObjectsMetadata *OwnedObjectsMetadata `json:"ownedObjectsMetadata,omitempty"`
+}
+
+type OwnedObjectsMetadata struct {
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
 }
 
 type ServiceSpec struct {
@@ -183,6 +208,13 @@ type ServiceSpec struct {
 	Labels map[string]string `json:"labels,omitempty"`
 }
 
+type Tiering struct {
+	// (Optional) Dragonfly PVC spec for cache tiering configuration
+	// +optional
+	// +kubebuilder:validation:Optional
+	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
+}
+
 type Snapshot struct {
 	// (Optional) The path to the snapshot directory
 	// This can also be an S3 URI with the prefix `s3://` when
@@ -195,6 +227,11 @@ type Snapshot struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	Cron string `json:"cron,omitempty"`
+
+	// (Optional) Enable snapshot on master only
+	// +optional
+	// +kubebuilder:validation:Optional
+	EnableOnMasterOnly bool `json:"enableOnMasterOnly,omitempty"`
 
 	// (Optional) Dragonfly PVC spec
 	// +optional

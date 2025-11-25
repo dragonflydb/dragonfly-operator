@@ -98,6 +98,7 @@ const (
 
 var DefaultDragonflyArgs = []string{
 	"--alsologtostderr",
+	"--break_replication_on_master_restart=true",
 	"--primary_port_http_enabled=false",
 	"--bind=::",
 	"--admin_bind=::",

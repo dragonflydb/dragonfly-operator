@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -67,18 +68,23 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("failed to get dragonfly instance: %w", err))
 	}
 
+	podReady, readinessErr := dfi.isPodReady(ctx, &pod)
+	if readinessErr != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to verify pod readiness: %w", readinessErr)
+	}
+
 	master, err := dfi.getMaster(ctx)
 	if err != nil {
 		if isMasterError(err) {
 			log.Info("failed to get master pod", "error", err)
 
-			if errors.Is(err, ErrIncorrectMasters) {
+			if errors.Is(err, ErrIncorrectMasters) || errors.Is(err, ErrNoHealthyMaster) {
 				if err = dfi.deleteMasterRoleLabel(ctx); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to delete master role label: %w", err)
 				}
 			}
 
-			if isHealthy(&pod) {
+			if podReady {
 				master = &pod
 			} else {
 				if master, err = dfi.getHealthyPod(ctx); err != nil {
@@ -90,12 +96,17 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			if err = dfi.configureReplication(ctx, master); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to configure replication: %w", err)
 			}
+			// re-evaluate readiness after replication changes.
+			podReady, readinessErr = dfi.isPodReady(ctx, &pod)
+			if readinessErr != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to verify pod readiness: %w", readinessErr)
+			}
 		} else {
 			return ctrl.Result{}, fmt.Errorf("failed to get master pod: %w", err)
 		}
 	}
 
-	if !isHealthy(&pod) {
+	if !podReady {
 		return ctrl.Result{}, nil
 	}
 

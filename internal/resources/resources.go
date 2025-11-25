@@ -56,15 +56,8 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 					UID:        df.UID,
 				},
 			},
-			Labels: map[string]string{
-				KubernetesAppComponentLabelKey: KubernetesAppComponent,
-				KubernetesAppInstanceLabelKey:  df.Name,
-				KubernetesAppNameLabelKey:      KubernetesAppName,
-				KubernetesAppVersionLabelKey:   Version,
-				KubernetesPartOfLabelKey:       KubernetesPartOf,
-				KubernetesManagedByLabelKey:    DragonflyOperatorName,
-				DragonflyNameLabelKey:          df.Name,
-			},
+			Labels:      generateResourceLabels(df),
+			Annotations: generateResourceAnnotations(df),
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:    &df.Spec.Replicas,
@@ -208,6 +201,35 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s/%s", AclFileArg, AclDir, AclFileName))
 	}
 
+	// Doc: https://www.dragonflydb.io/blog/a-preview-of-dragonfly-ssd-tiering
+	if df.Spec.Tiering != nil {
+
+		tieringVolumeName := "tiering"
+		tieringMountName := "/dragonfly/tiering"
+		tieringDirName := "vol"
+
+		if df.Spec.Tiering.PersistentVolumeClaimSpec != nil {
+			statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        tieringVolumeName,
+					Labels:      generateResourceLabels(df),
+					Annotations: generateResourceAnnotations(df),
+				},
+				Spec: *df.Spec.Tiering.PersistentVolumeClaimSpec,
+			})
+
+			statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(
+				statefulset.Spec.Template.Spec.Containers[0].VolumeMounts,
+				corev1.VolumeMount{
+					Name:      tieringVolumeName,
+					MountPath: tieringMountName,
+				},
+			)
+		}
+
+		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("--tiered_prefix=%s/%s", tieringMountName, tieringDirName))
+	}
+
 	if df.Spec.Snapshot != nil {
 		// err if pvc is not specified & s3 sir is not present while cron is specified
 		if df.Spec.Snapshot.Cron != "" && df.Spec.Snapshot.PersistentVolumeClaimSpec == nil && df.Spec.Snapshot.Dir == "" {
@@ -345,6 +367,14 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 		}
 	}
 
+	statefulset.Spec.Template.Spec.Containers = mergeNamedSlices(
+		statefulset.Spec.Template.Spec.Containers, df.Spec.AdditionalContainers,
+		func(c corev1.Container) string { return c.Name })
+
+	statefulset.Spec.Template.Spec.Volumes = mergeNamedSlices(
+		statefulset.Spec.Template.Spec.Volumes, df.Spec.AdditionalVolumes,
+		func(v corev1.Volume) string { return v.Name })
+
 	resources = append(resources, &statefulset)
 
 	serviceName := df.Name
@@ -365,15 +395,8 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 					UID:        df.UID,
 				},
 			},
-			Labels: map[string]string{
-				KubernetesAppComponentLabelKey: KubernetesAppComponent,
-				KubernetesAppInstanceLabelKey:  df.Name,
-				KubernetesAppNameLabelKey:      KubernetesAppName,
-				KubernetesAppVersionLabelKey:   Version,
-				KubernetesPartOfLabelKey:       KubernetesPartOf,
-				KubernetesManagedByLabelKey:    DragonflyOperatorName,
-				DragonflyNameLabelKey:          df.Name,
-			},
+			Labels:      generateResourceLabels(df),
+			Annotations: generateResourceAnnotations(df),
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
@@ -418,15 +441,8 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 					UID:        df.UID,
 				},
 			},
-			Labels: map[string]string{
-				KubernetesAppComponentLabelKey: KubernetesAppComponent,
-				KubernetesAppInstanceLabelKey:  df.Name,
-				KubernetesAppNameLabelKey:      KubernetesAppName,
-				KubernetesAppVersionLabelKey:   Version,
-				KubernetesPartOfLabelKey:       KubernetesPartOf,
-				KubernetesManagedByLabelKey:    DragonflyOperatorName,
-				DragonflyNameLabelKey:          df.Name,
-			},
+			Labels:      generateResourceLabels(df),
+			Annotations: generateResourceAnnotations(df),
 		},
 		Spec: policyv1.PodDisruptionBudgetSpec{
 			MaxUnavailable: &intstr.IntOrString{
@@ -448,4 +464,56 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 	}
 
 	return resources, nil
+}
+
+// mergeNamedSlices will merge base into override, override takes precendence
+func mergeNamedSlices[T any](base, override []T, getName func(T) string) []T {
+	existing := make(map[string]bool, len(override))
+	for _, item := range override {
+		existing[getName(item)] = true
+	}
+
+	result := make([]T, len(override))
+	copy(result, override)
+
+	for _, item := range base {
+		if !existing[getName(item)] {
+			result = append(result, item)
+		}
+	}
+
+	return result
+}
+
+func generateResourceLabels(df *resourcesv1.Dragonfly) map[string]string {
+	labels := map[string]string{
+		KubernetesAppComponentLabelKey: KubernetesAppComponent,
+		KubernetesAppInstanceLabelKey:  df.Name,
+		KubernetesAppNameLabelKey:      KubernetesAppName,
+		KubernetesAppVersionLabelKey:   Version,
+		KubernetesPartOfLabelKey:       KubernetesPartOf,
+		KubernetesManagedByLabelKey:    DragonflyOperatorName,
+		DragonflyNameLabelKey:          df.Name,
+	}
+
+	if df.Spec.OwnedObjectsMetadata != nil {
+		for key, value := range df.Spec.OwnedObjectsMetadata.Labels {
+			if _, ok := labels[key]; !ok {
+				labels[key] = value
+			}
+		}
+	}
+
+	return labels
+}
+
+func generateResourceAnnotations(df *resourcesv1.Dragonfly) map[string]string {
+	annotations := map[string]string{}
+	if df.Spec.OwnedObjectsMetadata != nil {
+		for key, value := range df.Spec.OwnedObjectsMetadata.Annotations {
+			annotations[key] = value
+		}
+	}
+
+	return annotations
 }
