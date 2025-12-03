@@ -29,6 +29,7 @@ import (
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
+	"github.com/redis/go-redis/v9/maintnotifications"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -120,6 +121,9 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.Pod, masterIp string) (bool, error) {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer redisClient.Close()
 
@@ -158,6 +162,9 @@ func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.
 func (dfi *DragonflyInstance) isReplicaStable(ctx context.Context, pod *corev1.Pod) (bool, error) {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer redisClient.Close()
 
@@ -418,6 +425,9 @@ func (dfi *DragonflyInstance) detectOldMasters(ctx context.Context, updateRevisi
 func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer redisClient.Close()
 
@@ -453,6 +463,9 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer redisClient.Close()
 
@@ -826,6 +839,9 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: net.JoinHostPort(newMaster.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer redisClient.Close()
 
