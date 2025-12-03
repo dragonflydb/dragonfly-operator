@@ -32,6 +32,7 @@ import (
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
+	"github.com/redis/go-redis/v9/maintnotifications"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -131,6 +132,9 @@ func checkAndK8sPortForwardRedis(ctx context.Context, clientset *kubernetes.Clie
 
 	redisOptions := &redis.Options{
 		Addr: fmt.Sprintf("localhost:%d", port),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	}
 
 	if password != "" {

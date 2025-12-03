@@ -11,6 +11,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
+	"github.com/redis/go-redis/v9/maintnotifications"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -73,7 +74,6 @@ func main() {
 }
 
 func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *rest.Config, pod corev1.Pod, port int) error {
-
 	url := clientset.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Namespace(pod.Namespace).
@@ -111,6 +111,9 @@ func portForward(ctx context.Context, clientset *kubernetes.Clientset, config *r
 func getRole(ctx context.Context, url string) (string, error) {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: url,
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer redisClient.Close()
 
