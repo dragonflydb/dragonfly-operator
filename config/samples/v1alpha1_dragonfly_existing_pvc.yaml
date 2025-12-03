@@ -1,0 +1,24 @@
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  labels:
+    app.kubernetes.io/name: dragonfly
+    app.kubernetes.io/instance: dragonfly-existing-pvc
+    app.kubernetes.io/part-of: dragonfly-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: dragonfly-operator
+  name: dragonfly-existing-pvc
+spec:
+  replicas: 2
+  snapshot:
+    # Use an existing PVC instead of creating a new one
+    existingPersistentVolumeClaimName: dragonfly-snapshots-pvc
+    cron: "0 */6 * * *"  # Snapshot every 6 hours
+  resources:
+    requests:
+      cpu: 500m
+      memory: 500Mi
+    limits:
+      cpu: 600m
+      memory: 750Mi
+
