@@ -6,7 +6,7 @@ metadata:
     {{- include "dragonfly-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
     control-plane: controller-manager
-  namespace: {{ .Release.Namespace | quote }}
+  namespace: {{ include "dragonfly-operator.namespace" . }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
