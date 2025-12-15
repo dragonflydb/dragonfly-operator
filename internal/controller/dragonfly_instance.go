@@ -29,6 +29,7 @@ import (
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
+	"github.com/redis/go-redis/v9/maintnotifications"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
@@ -47,10 +48,11 @@ type DragonflyInstance struct {
 	// Dragonfly is the relevant Dragonfly CRD that it performs actions over
 	df *dfv1alpha1.Dragonfly
 
-	client        client.Client
-	log           logr.Logger
-	scheme        *runtime.Scheme
-	eventRecorder record.EventRecorder
+	client                client.Client
+	log                   logr.Logger
+	scheme                *runtime.Scheme
+	eventRecorder         record.EventRecorder
+	defaultDragonflyImage string
 }
 
 // configureReplication configures the given pod as a master and other pods as replicas
@@ -85,7 +87,17 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context, master *
 	dfi.eventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
 
 	for _, pod := range pods.Items {
-		if pod.Name != master.Name && isHealthy(&pod) {
+		if pod.Name == master.Name {
+			continue
+		}
+
+		ready, readyErr := dfi.isPodReady(ctx, &pod)
+		if readyErr != nil {
+			dfi.log.Error(readyErr, "failed to check pod readiness", "pod", pod.Name)
+			return readyErr
+		}
+
+		if ready {
 			if err = dfi.configureReplica(ctx, &pod, master.Status.PodIP); err != nil {
 				dfi.log.Error(err, "failed to configure replica", "pod", pod.Name)
 				return err
@@ -111,6 +123,9 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.Pod, masterIp string) (bool, error) {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer redisClient.Close()
 
@@ -149,6 +164,9 @@ func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.
 func (dfi *DragonflyInstance) isReplicaStable(ctx context.Context, pod *corev1.Pod) (bool, error) {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer redisClient.Close()
 
@@ -166,24 +184,32 @@ func (dfi *DragonflyInstance) isReplicaStable(ctx context.Context, pod *corev1.P
 		return false, fmt.Errorf("empty info")
 	}
 
-	data := map[string]string{}
-	for _, line := range strings.Split(info, "\n") {
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		kv := strings.Split(line, ":")
-		data[kv[0]] = strings.TrimSuffix(kv[1], "\r")
-	}
+	replicationData := parseInfoToMap(info)
 
-	if data["master_sync_in_progress"] == "1" {
+	if val, ok := replicationData["master_sync_in_progress"]; ok && val == "1" {
 		return false, nil
 	}
 
-	if data["master_link_status"] != "up" {
+	if val, ok := replicationData["master_link_status"]; ok && val != "up" {
 		return false, nil
 	}
 
-	if data["master_last_io_seconds_ago"] == "-1" {
+	if val, ok := replicationData["master_last_io_seconds_ago"]; ok && val == "-1" {
+		return false, nil
+	}
+
+	persistenceInfo, err := redisClient.Info(ctx, "persistence").Result()
+	if err != nil {
+		return false, err
+	}
+
+	persistenceData := parseInfoToMap(persistenceInfo)
+
+	if val, ok := persistenceData["loading"]; ok && val != "0" && val != "" {
+		return false, nil
+	}
+
+	if val, ok := persistenceData["load_state"]; ok && val != "" && val != "done" {
 		return false, nil
 	}
 
@@ -214,9 +240,17 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 			}
 		}
 
-		if !roleExists(&pod) && isHealthy(&pod) {
-			if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
-				return err
+		if !roleExists(&pod) {
+			ready, readyErr := dfi.isPodReady(ctx, &pod)
+			if readyErr != nil {
+				dfi.log.Error(readyErr, "failed to check pod readiness", "pod", pod.Name)
+				return readyErr
+			}
+
+			if ready {
+				if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -286,7 +320,11 @@ func (dfi *DragonflyInstance) getMaster(ctx context.Context) (*corev1.Pod, error
 
 	var healthyMasters []corev1.Pod
 	for _, pod := range masterPods.Items {
-		if isHealthy(&pod) {
+		ready, readyErr := dfi.isPodReady(ctx, &pod)
+		if readyErr != nil {
+			return nil, fmt.Errorf("failed to verify master readiness: %w", readyErr)
+		}
+		if ready {
 			healthyMasters = append(healthyMasters, pod)
 		}
 	}
@@ -325,7 +363,11 @@ func (dfi *DragonflyInstance) getHealthyPod(ctx context.Context) (*corev1.Pod, e
 	}
 
 	for _, pod := range pods.Items {
-		if isHealthy(&pod) {
+		ready, readyErr := dfi.isPodReady(ctx, &pod)
+		if readyErr != nil {
+			return nil, fmt.Errorf("failed to verify pod readiness: %w", readyErr)
+		}
+		if ready {
 			return &pod, nil
 		}
 	}
@@ -382,6 +424,11 @@ func (dfi *DragonflyInstance) patchStatus(ctx context.Context, status dfv1alpha1
 	return nil
 }
 
+// isTerminating returns true if the dragonfly instance is being deleted
+func (dfi *DragonflyInstance) isTerminating() bool {
+	return dfi.df.ObjectMeta.DeletionTimestamp != nil
+}
+
 // detectOldMasters checks whether there are any old masters and deletes them
 func (dfi *DragonflyInstance) detectOldMasters(ctx context.Context, updateRevision string) error {
 	var masterPods corev1.PodList
@@ -411,6 +458,9 @@ func (dfi *DragonflyInstance) detectOldMasters(ctx context.Context, updateRevisi
 func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer redisClient.Close()
 
@@ -446,6 +496,9 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer redisClient.Close()
 
@@ -492,7 +545,7 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		}
 	}
 
-	dfResources, err := resources.GenerateDragonflyResources(dfi.df)
+	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage)
 	if err != nil {
 		return fmt.Errorf("failed to generate dragonfly resources")
 	}
@@ -628,6 +681,65 @@ func resourceSpecsEqual(desired, existing client.Object) bool {
 	return reflect.DeepEqual(desiredSpec.Interface(), existingSpec.Interface())
 }
 
+func parseInfoToMap(info string) map[string]string {
+	data := make(map[string]string)
+	for _, line := range strings.Split(info, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(strings.TrimSuffix(parts[1], "\r"))
+		data[key] = value
+	}
+	return data
+}
+
+func (dfi *DragonflyInstance) isDatasetLoaded(ctx context.Context, pod *corev1.Pod) (bool, error) {
+	if pod.Status.PodIP == "" {
+		return false, nil
+	}
+
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+	})
+	defer redisClient.Close()
+
+	persistenceInfo, err := redisClient.Info(ctx, "persistence").Result()
+	if err != nil {
+		return false, err
+	}
+
+	data := parseInfoToMap(persistenceInfo)
+
+	if val, ok := data["loading"]; ok && val != "" && val != "0" {
+		return false, nil
+	}
+
+	if val, ok := data["load_state"]; ok && val != "" && val != "done" {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func (dfi *DragonflyInstance) isPodReady(ctx context.Context, pod *corev1.Pod) (bool, error) {
+	if !isRunningAndReady(pod) || isTerminating(pod) {
+		return false, nil
+	}
+
+	loaded, err := dfi.isDatasetLoaded(ctx, pod)
+	if err != nil {
+		return false, fmt.Errorf("failed to determine dataset load status: %w", err)
+	}
+
+	return loaded, nil
+}
+
 // detectRollingUpdate checks whether the pod spec has changed and performs a rolling update if needed
 func (dfi *DragonflyInstance) detectRollingUpdate(ctx context.Context) (dfv1alpha1.DragonflyStatus, error) {
 	dfi.log.Info("checking if pod spec has changed")
@@ -704,8 +816,13 @@ func (dfi *DragonflyInstance) allPodsHealthy(ctx context.Context, updateRevision
 
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
-		if !isHealthy(&pod) {
-			dfi.log.Info("waiting for all pods to be healthy")
+		ready, readyErr := dfi.isPodReady(ctx, &pod)
+		if readyErr != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to verify pod readiness: %w", readyErr)
+		}
+
+		if !ready {
+			dfi.log.Info("waiting for pod to finish startup", "pod", pod.Name)
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 	}
@@ -766,7 +883,16 @@ func (dfi *DragonflyInstance) updatedMaster(ctx context.Context, oldMaster *core
 		}
 
 		for _, replica := range replicas.Items {
-			if replica.Name != newMaster.Name && isHealthy(&replica) {
+			if replica.Name == newMaster.Name {
+				continue
+			}
+
+			ready, readyErr := dfi.isPodReady(ctx, &replica)
+			if readyErr != nil {
+				return fmt.Errorf("failed to verify replica readiness: %w", readyErr)
+			}
+
+			if ready {
 				dfi.log.Info("configuring pod as replica to the right master", "pod", replica.Name)
 				if err = dfi.configureReplica(ctx, &replica, newMaster.Status.PodIP); err != nil {
 					return fmt.Errorf("failed to configure pod as replica: %w", err)
@@ -790,6 +916,9 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: net.JoinHostPort(newMaster.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer redisClient.Close()
 

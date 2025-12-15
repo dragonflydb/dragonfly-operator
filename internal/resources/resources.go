@@ -35,12 +35,16 @@ var (
 
 // GenerateDragonflyResources returns the resources required for a Dragonfly
 // Instance
-func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, error) {
+func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage string) ([]client.Object, error) {
 	var resources []client.Object
 
 	image := df.Spec.Image
 	if image == "" {
-		image = fmt.Sprintf("%s:%s", DragonflyImage, Version)
+		if defaultDragonflyImage != "" {
+			image = defaultDragonflyImage
+		} else {
+			image = fmt.Sprintf("%s:%s", DragonflyImage, Version)
+		}
 	}
 
 	// Create a StatefulSet, Headless Service

@@ -63,6 +63,11 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("failed to get dragonfly instance: %w", err))
 	}
 
+	if dfi.isTerminating() {
+		// Ignore dragonfly instance that is being foreground deleted
+		return ctrl.Result{}, nil
+	}
+
 	if err = dfi.reconcileResources(ctx); err != nil {
 		if strings.Contains(err.Error(), "HPA deletion initiated") {
 			log.Info("requeuing to verify HPA deletion")

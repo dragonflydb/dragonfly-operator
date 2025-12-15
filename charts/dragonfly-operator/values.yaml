@@ -13,6 +13,10 @@ crds:
 
 nameOverride: ""
 fullnameOverride: ""
+namespaceOverride: ""
+
+# -- Default dragonfly image to use
+dragonflyImage: ""
 
 # -- Additional labels to add to all resources
 additionalLabels: {}
