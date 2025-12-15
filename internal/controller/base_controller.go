@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -27,9 +28,10 @@ import (
 )
 
 type Reconciler struct {
-	Client        client.Client
-	Scheme        *runtime.Scheme
-	EventRecorder record.EventRecorder
+	Client                client.Client
+	Scheme                *runtime.Scheme
+	EventRecorder         record.EventRecorder
+	DefaultDragonflyImage string
 }
 
 func (r *Reconciler) getDragonflyInstance(ctx context.Context, namespacedName types.NamespacedName, log logr.Logger) (*DragonflyInstance, error) {
@@ -41,10 +43,11 @@ func (r *Reconciler) getDragonflyInstance(ctx context.Context, namespacedName ty
 	}
 
 	return &DragonflyInstance{
-		df:            &df,
-		client:        r.Client,
-		log:           log,
-		scheme:        r.Scheme,
-		eventRecorder: r.EventRecorder,
+		df:                    &df,
+		client:                r.Client,
+		log:                   log,
+		scheme:                r.Scheme,
+		eventRecorder:         r.EventRecorder,
+		defaultDragonflyImage: r.DefaultDragonflyImage,
 	}, nil
 }
