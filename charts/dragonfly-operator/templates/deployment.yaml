@@ -6,6 +6,13 @@ metadata:
     {{- include "dragonfly-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: controller
     control-plane: controller-manager
+    {{- with .Values.deploymentLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.deploymentAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   namespace: {{ include "dragonfly-operator.namespace" . }}
 spec:
   replicas: {{ .Values.replicaCount }}

@@ -38,6 +38,12 @@ podAnnotations:
 
 podLabels: {}
 
+# Additional annotations to add to deployments
+deploymentAnnotations: {}
+
+# Additional labels to add to deployments
+deploymentLabels: {}
+
 podSecurityContext:
   runAsNonRoot: true
 
