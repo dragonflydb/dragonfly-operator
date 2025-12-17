@@ -96,7 +96,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		if len(replicas.Items) != int(dfi.df.Spec.Replicas)-1 {
-			dfi.log.Info("waiting for all replicas to be configured", "expected", *statefulSet.Spec.Replicas-1, "current", len(replicas.Items))
+			dfi.log.Info("waiting for all replicas to be configured", "expected", int(dfi.df.Spec.Replicas)-1, "current", len(replicas.Items))
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 

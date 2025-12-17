@@ -770,12 +770,12 @@ func (dfi *DragonflyInstance) verifyUpdatedReplicas(ctx context.Context, replica
 
 // updateReplicas updates the replicas to the latest version
 func (dfi *DragonflyInstance) updateReplicas(ctx context.Context, replicas *corev1.PodList, updateRevision string) (ctrl.Result, error) {
+	_, err := dfi.getMaster(ctx)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get master before deleting replica: %w", err)
+	}
 	for _, replica := range replicas.Items {
 		if !isPodOnLatestVersion(&replica, updateRevision) {
-			_, err := dfi.getMaster(ctx)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("skipping deleting replica: failed to get master: %w", err)
-			}
 			dfi.log.Info("deleting replica", "pod", replica.Name)
 			dfi.eventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Rollout", "Deleting replica")
 			if err := dfi.client.Delete(ctx, &replica); err != nil {
