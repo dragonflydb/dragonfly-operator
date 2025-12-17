@@ -34,12 +34,16 @@ var (
 
 // GenerateDragonflyResources returns the resources required for a Dragonfly
 // Instance
-func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, error) {
+func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage string) ([]client.Object, error) {
 	var resources []client.Object
 
 	image := df.Spec.Image
 	if image == "" {
-		image = fmt.Sprintf("%s:%s", DragonflyImage, Version)
+		if defaultDragonflyImage != "" {
+			image = defaultDragonflyImage
+		} else {
+			image = fmt.Sprintf("%s:%s", DragonflyImage, Version)
+		}
 	}
 
 	// Create a StatefulSet, Headless Service
@@ -231,8 +235,13 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 	}
 
 	if df.Spec.Snapshot != nil {
+		// validate mutual exclusivity of PVC spec and existing PVC name
+		if df.Spec.Snapshot.PersistentVolumeClaimSpec != nil && df.Spec.Snapshot.ExistingPersistentVolumeClaimName != "" {
+			return nil, fmt.Errorf("persistentVolumeClaimSpec and existingPersistentVolumeClaimName are mutually exclusive")
+		}
+
 		// err if pvc is not specified & s3 sir is not present while cron is specified
-		if df.Spec.Snapshot.Cron != "" && df.Spec.Snapshot.PersistentVolumeClaimSpec == nil && df.Spec.Snapshot.Dir == "" {
+		if df.Spec.Snapshot.Cron != "" && df.Spec.Snapshot.PersistentVolumeClaimSpec == nil && df.Spec.Snapshot.ExistingPersistentVolumeClaimName == "" && df.Spec.Snapshot.Dir == "" {
 			return nil, fmt.Errorf("cron specified without a persistent volume claim")
 		}
 
@@ -253,6 +262,23 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly) ([]client.Object, err
 					},
 				},
 				Spec: *df.Spec.Snapshot.PersistentVolumeClaimSpec,
+			})
+
+			statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+				Name:      SnapshotsVolumeName,
+				MountPath: snapshotDir,
+			})
+		}
+
+		if df.Spec.Snapshot.ExistingPersistentVolumeClaimName != "" {
+			// use an existing PVC
+			statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, corev1.Volume{
+				Name: SnapshotsVolumeName,
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: df.Spec.Snapshot.ExistingPersistentVolumeClaimName,
+					},
+				},
 			})
 
 			statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = append(statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{

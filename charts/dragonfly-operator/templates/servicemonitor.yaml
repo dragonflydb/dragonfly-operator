@@ -33,7 +33,7 @@ spec:
   jobLabel: {{ template "dragonfly-operator.fullname" . }}
   namespaceSelector:
     matchNames:
-    - {{ .Release.Namespace }}
+    - {{ include "dragonfly-operator.namespace" . }}
   selector:
     matchLabels:
       {{- include "dragonfly-operator.selectorLabels" . | nindent 6 }}

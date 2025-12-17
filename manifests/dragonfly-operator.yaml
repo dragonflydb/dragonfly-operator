@@ -6416,6 +6416,10 @@ spec:
                   enableOnMasterOnly:
                     description: (Optional) Enable snapshot on master only
                     type: boolean
+                  existingPersistentVolumeClaimName:
+                    description: (Optional) Name of an existing PVC to use for Dragonfly
+                      snapshots
+                    type: string
                   persistentVolumeClaimSpec:
                     description: (Optional) Dragonfly PVC spec
                     properties:
@@ -7399,7 +7403,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: docker.dragonflydb.io/dragonflydb/operator:v1.3.0
+        image: docker.dragonflydb.io/dragonflydb/operator:v1.3.1
         livenessProbe:
           httpGet:
             path: /healthz

@@ -18,7 +18,7 @@ jobs:
       IMG: ghcr.io/dragonflydb/operator:${{ github.sha }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
 
@@ -26,12 +26,12 @@ jobs:
         run: |
           make docker-build
 
-      - uses: helm/kind-action@v1.12.0
+      - uses: helm/kind-action@v1.13.0
         with:
           cluster_name: kind
           config: ./hack/kind-config.yaml
       - name: Run tests
-        timeout-minutes: 12
+        timeout-minutes: 16
         run: |
           make docker-kind-load
           make deploy
@@ -52,7 +52,7 @@ jobs:
       IMG: ghcr.io/dragonflydb/operator:${{ github.ref_name }}
       VERSION: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           submodules: true
           fetch-depth: 0
@@ -81,9 +81,9 @@ jobs:
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
           helm registry login -u ${{ github.actor }} --password-stdin ghcr.io
-          
+
           helm package charts/dragonfly-operator
-          
+
           helm push dragonfly-operator-${{ env.VERSION }}.tgz oci://ghcr.io/dragonflydb/dragonfly-operator/helm
 
       - name: Build and Publish image into GHCR
