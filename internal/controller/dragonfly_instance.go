@@ -152,8 +152,12 @@ func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.
 		}
 	}
 
-	if masterIp != redisMasterIp && masterIp != pod.Labels[resources.MasterIpLabelKey] {
-		return false, nil
+	// for compatibility, label can be removed in future version
+	// check if the masterIp matches either the label (for compatibility) or the annotation
+	if masterIp != redisMasterIp {
+		if masterIp != pod.Labels[resources.MasterIpLabelKey] && masterIp != pod.Annotations[resources.MasterIpAnnotationKey] {
+			return false, nil
+		}
 	}
 
 	return true, nil
@@ -230,7 +234,7 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 			if err != nil {
 				return err
 			}
-			// configuring to the right master
+			// Configure to the right master if not correct
 			if !ok {
 				dfi.log.Info("configuring pod as replica to the right master", "pod", pod.Name)
 				if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
@@ -254,6 +258,7 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 		}
 	}
 
+	dfi.log.Info("All pods are configured correctly", "dfi", dfi.df.Name)
 	return nil
 }
 
@@ -432,8 +437,11 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	})
 	defer redisClient.Close()
 
-	dfi.log.Info("trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp, "addr", redisClient.Options().Addr)
-	resp, err := redisClient.SlaveOf(ctx, masterIp, fmt.Sprint(resources.DragonflyAdminPort)).Result()
+	// Sanitize masterIp in case ipv6
+	masterIp = sanitizeIp(masterIp)
+
+	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp, "addr", redisClient.Options().Addr)
+	resp, err := redisClient.SlaveOf(ctx, masterIp, strconv.Itoa(resources.DragonflyAdminPort)).Result()
 	if err != nil {
 		return fmt.Errorf("error running SLAVE OF command: %s", err)
 	}
@@ -449,12 +457,21 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		}
 	}
 
-	dfi.log.Info("marking pod role as replica", "pod", pod.Name)
-	patchFrom := client.MergeFrom(pod.DeepCopy())
+	dfi.log.Info("Marking pod role as replica", "pod", pod.Name, "masterIp", masterIp)
 	pod.Labels[resources.RoleLabelKey] = resources.Replica
-	pod.Labels[resources.MasterIpLabelKey] = masterIp
-	if err := dfi.client.Patch(ctx, pod, patchFrom); err != nil {
-		return fmt.Errorf("failed to update the role label on the pod: %w", err)
+	if pod.Annotations == nil {
+		pod.Annotations = make(map[string]string)
+	}
+	pod.Annotations[resources.MasterIpAnnotationKey] = masterIp
+
+	// for compatibility, to be removed in future version
+	ip := net.ParseIP(masterIp)
+	if ip != nil && ip.To4() != nil {
+		pod.Labels[resources.MasterIpLabelKey] = masterIp
+	}
+
+	if err := dfi.client.Update(ctx, pod); err != nil {
+		return fmt.Errorf("could not update replica metadata: %w", err)
 	}
 
 	return nil
@@ -488,12 +505,19 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 		}
 	}
 
-	dfi.log.Info("marking pod role as master", "pod", pod.Name)
-	patchFrom := client.MergeFrom(pod.DeepCopy())
+	masterIp := pod.Status.PodIP
+
+	dfi.log.Info("Marking pod role as master", "pod", pod.Name, "masterIp", masterIp)
 	pod.Labels[resources.RoleLabelKey] = resources.Master
 	delete(pod.Labels, resources.MasterIpLabelKey)
-	if err := dfi.client.Patch(ctx, pod, patchFrom); err != nil {
-		return fmt.Errorf("failed to update the role label on the pod: %w", err)
+
+	if pod.Annotations == nil {
+		pod.Annotations = make(map[string]string)
+	}
+	pod.Annotations[resources.MasterIpAnnotationKey] = masterIp
+
+	if err := dfi.client.Update(ctx, pod); err != nil {
+		return err
 	}
 
 	return nil
@@ -855,12 +879,18 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 		return fmt.Errorf("response of `REPLTAKEOVER` on replica is not OK: %s", resp)
 	}
 
-	patchFrom := client.MergeFrom(newMaster.DeepCopy())
+	masterIp := newMaster.Status.PodIP
+
 	newMaster.Labels[resources.RoleLabelKey] = resources.Master
 	delete(newMaster.Labels, resources.MasterIpLabelKey)
 
+	if newMaster.Annotations == nil {
+		newMaster.Annotations = make(map[string]string)
+	}
+	newMaster.Annotations[resources.MasterIpAnnotationKey] = masterIp
+
 	// update the label on the pod
-	if err := dfi.client.Patch(ctx, newMaster, patchFrom); err != nil {
+	if err := dfi.client.Update(ctx, newMaster); err != nil {
 		return fmt.Errorf("failed to update the role label on the pod: %w", err)
 	}
 

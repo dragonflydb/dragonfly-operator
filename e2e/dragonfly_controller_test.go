@@ -461,8 +461,8 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU].Equal(newResources.Requests[corev1.ResourceCPU])).To(BeTrue())
 			Expect(ss.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory].Equal(newResources.Requests[corev1.ResourceMemory])).To(BeTrue())
 
-			// check for annotations
-			Expect(ss.Spec.Template.ObjectMeta.Annotations).To(Equal(newAnnotations))
+			// check for annotations (allow additional operator-managed keys)
+			Expect(ss.Spec.Template.ObjectMeta.Annotations).To(HaveKeyWithValue("foo", "bar"))
 
 			// check for tolerations
 			Expect(ss.Spec.Template.Spec.Tolerations).To(Equal(newTolerations))
@@ -488,8 +488,8 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 				Expect(pod.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU].Equal(newResources.Requests[corev1.ResourceCPU])).To(BeTrue())
 				Expect(pod.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory].Equal(newResources.Requests[corev1.ResourceMemory])).To(BeTrue())
 
-				// check for annotations
-				Expect(pod.ObjectMeta.Annotations).To(Equal(newAnnotations))
+				// check for annotations (allow additional operator-managed keys)
+				Expect(pod.ObjectMeta.Annotations).To(HaveKeyWithValue("foo", "bar"))
 
 				// check for tolerations
 				Expect(pod.Spec.Tolerations).To(ContainElements(newTolerations))

@@ -19,6 +19,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	appsv1 "k8s.io/api/apps/v1"
@@ -172,4 +173,9 @@ func isMasterError(err error) bool {
 	return errors.Is(err, ErrNoMaster) ||
 		errors.Is(err, ErrNoHealthyMaster) ||
 		errors.Is(err, ErrIncorrectMasters)
+}
+
+// sanitizeIp removes surrounding brackets from IPv6 addresses.
+func sanitizeIp(masterIp string) string {
+	return strings.Trim(masterIp, "[]")
 }
