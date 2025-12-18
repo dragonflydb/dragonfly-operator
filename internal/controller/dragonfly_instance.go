@@ -437,6 +437,12 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	})
 	defer redisClient.Close()
 
+	// Determine if we're switching from master to replica, or just pointing to a new master
+	wasMaster, err := dfi.hasMasterRole(ctx, redisClient)
+	if err != nil {
+		return fmt.Errorf("failed to determine the current role of the instance: %w", err)
+	}
+
 	// Sanitize masterIp in case ipv6
 	masterIp = sanitizeIp(masterIp)
 
@@ -472,6 +478,11 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 
 	if err := dfi.client.Update(ctx, pod); err != nil {
 		return fmt.Errorf("could not update replica metadata: %w", err)
+	}
+
+	if wasMaster {
+		// Prevent clients from sending commands to this old master
+		dfi.disconnectClients(ctx, redisClient, pod)
 	}
 
 	return nil
@@ -521,6 +532,56 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 	}
 
 	return nil
+}
+
+// disconnectClients disconnects all non-replication clients from a pod.
+func (dfi *DragonflyInstance) disconnectClients(ctx context.Context, redisClient *redis.Client, pod *corev1.Pod) {
+	dfi.log.Info("disconnecting clients from replica", "pod", pod.Name)
+	clientList, err := redisClient.ClientList(ctx).Result()
+	if err != nil {
+		dfi.log.Error(err, "failed to get client list from replica", "pod", pod.Name)
+		return
+	}
+
+	clients := []string{}
+	for _, clientInfo := range strings.Split(clientList, "\n") {
+		if clientInfo == "" {
+			continue
+		}
+		// Example clientInfo: "id=2 addr=10.42.1.123:50342 ... name=..."
+		// Avoid killing replication or internal clients
+		if strings.Contains(clientInfo, "addr=127.0.0.1") || strings.Contains(clientInfo, "name=repl_") {
+			continue
+		}
+
+		parts := strings.Split(clientInfo, " ")
+		for _, part := range parts {
+			if strings.HasPrefix(part, "addr=") {
+				addr := strings.TrimPrefix(part, "addr=")
+				// Avoid killing the client that is running the command
+				if addr == redisClient.Options().Addr {
+					continue
+				}
+				if _, err := redisClient.ClientKill(ctx, addr).Result(); err != nil {
+					// Log and continue, don't block for a single failed kill
+					dfi.log.Error(err, "failed to kill client", "addr", addr)
+				} else {
+					clients = append(clients, addr)
+				}
+				break
+			}
+		}
+	}
+	dfi.log.Info("killed clients", "pod", pod.Name, "clients", clients)
+}
+
+// hasMasterRole returns true if the given pod is a master based on the replication info.
+func (dfi *DragonflyInstance) hasMasterRole(ctx context.Context, redisClient *redis.Client) (bool, error) {
+	replInfo, err := redisClient.Info(ctx, "replication").Result()
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(replInfo, "role:master"), nil
 }
 
 // reconcileResources creates or updates the dragonfly resources
