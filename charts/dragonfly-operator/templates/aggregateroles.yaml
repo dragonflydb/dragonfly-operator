@@ -77,4 +77,14 @@ rules:
       - patch
       - update
       - watch
+  - apiGroups:
+      - dragonflydb.io
+    resources:
+      - dragonflies/status
+    verbs:
+      - get
+      - list
+      - watch
+      - patch
+      - update
 {{- end }}
