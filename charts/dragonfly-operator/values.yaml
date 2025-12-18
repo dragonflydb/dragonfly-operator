@@ -22,6 +22,7 @@ dragonflyImage: ""
 additionalLabels: {}
   # app: dragonfly-operator
 
+# -- Create aggregated cluster roles for view, edit, and admin
 createAggregateRoles: true
 
 serviceAccount:
