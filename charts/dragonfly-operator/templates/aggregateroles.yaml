@@ -83,6 +83,4 @@ rules:
       - get
       - list
       - watch
-      - patch
-      - update
 {{- end }}
