@@ -84,13 +84,15 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				}
 			}
 
-			if podReady {
-				master = &pod
-			} else {
-				if master, err = dfi.getHealthyPod(ctx); err != nil {
-					log.Info("no healthy pod available to set up a master")
-					return ctrl.Result{}, nil
-				}
+			allPods, err := dfi.getPods(ctx)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to list dragonfly pods: %w", err)
+			}
+
+			master = selectMasterCandidate(allPods, &dfi) 
+			if master == nil {
+				log.Info("no healthy pod available to set up a master")
+				return ctrl.Result{}, nil
 			}
 
 			if err = dfi.configureReplication(ctx, master); err != nil {
