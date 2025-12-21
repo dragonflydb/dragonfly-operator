@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"strconv"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	appsv1 "k8s.io/api/apps/v1"
@@ -180,6 +181,14 @@ func sanitizeIp(masterIp string) string {
 	return strings.Trim(masterIp, "[]")
 }
 
+// getOrdinal returns the ordinal of the pod.
+func getOrdinal(podName string) int {
+	ordinal, err := strconv.Atoi(strings.Split(podName, "-")[1])
+	if err != nil {
+		return -1
+	}
+	return ordinal
+}
 
 // selectMasterCandidate deterministically selects a master candidate from the given list of pods.
 func selectMasterCandidate(pods []corev1.Pod, dfi *DragonflyInstance) *corev1.Pod {
@@ -187,7 +196,7 @@ func selectMasterCandidate(pods []corev1.Pod, dfi *DragonflyInstance) *corev1.Po
     
     for _, p := range pods {
         // Only consider pods that are running and healthy.
-        if !podIsReady(p) { continue }
+        if !isReady(&p) { continue }
 
         // Prefer Pod-0, then Pod-1, etc.
         if bestCandidate == nil || getOrdinal(p.Name) < getOrdinal(bestCandidate.Name) {
