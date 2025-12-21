@@ -89,7 +89,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				return ctrl.Result{}, fmt.Errorf("failed to list dragonfly pods: %w", err)
 			}
 
-			master = selectMasterCandidate(allPods, &dfi) 
+			master = selectMasterCandidate(allPods, dfi) 
 			if master == nil {
 				log.Info("no healthy pod available to set up a master")
 				return ctrl.Result{}, nil
