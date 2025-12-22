@@ -19,8 +19,8 @@ package controller
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"strconv"
+	"strings"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	appsv1 "k8s.io/api/apps/v1"
@@ -192,16 +192,18 @@ func getOrdinal(podName string) int {
 
 // selectMasterCandidate deterministically selects a master candidate from the given list of pods.
 func selectMasterCandidate(pods []corev1.Pod, dfi *DragonflyInstance) *corev1.Pod {
-    var bestCandidate *corev1.Pod
-    
-    for _, p := range pods {
-        // Only consider pods that are running and healthy.
-        if !isReady(&p) { continue }
+	var bestCandidate *corev1.Pod
 
-        // Prefer Pod-0, then Pod-1, etc.
-        if bestCandidate == nil || getOrdinal(p.Name) < getOrdinal(bestCandidate.Name) {
-            bestCandidate = &p
-        }
-    }
-    return bestCandidate
+	for _, p := range pods {
+		// Only consider pods that are running and healthy.
+		if !isReady(&p) {
+			continue
+		}
+
+		// Prefer Pod-0, then Pod-1, etc.
+		if bestCandidate == nil || getOrdinal(p.Name) < getOrdinal(bestCandidate.Name) {
+			bestCandidate = &p
+		}
+	}
+	return bestCandidate
 }
