@@ -95,7 +95,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				return ctrl.Result{}, nil
 			}
 
-			if err = dfi.configureReplication(ctx, master); err != nil {
+		if err = dfi.configureReplication(ctx, master); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to configure replication: %w", err)
 			}
 			// re-evaluate readiness after replication changes.
@@ -105,6 +105,16 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			}
 		} else {
 			return ctrl.Result{}, fmt.Errorf("failed to get master pod: %w", err)
+		}
+	}
+
+	isMaster, err := dfi.checkMasterStatus(ctx, master)
+	if err != nil {
+		log.Info("failed to verify master status in redis (ignoring)", "error", err)
+	} else if !isMaster {
+		log.Info("Pod labeled as master is running as replica. Promoting it.", "pod", master.Name)
+		if err := dfi.replicaOfNoOne(ctx, master); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to promote master: %w", err)
 		}
 	}
 
