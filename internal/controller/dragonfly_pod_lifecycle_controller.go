@@ -84,16 +84,18 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				}
 			}
 
-			if podReady {
-				master = &pod
-			} else {
-				if master, err = dfi.getHealthyPod(ctx); err != nil {
-					log.Info("no healthy pod available to set up a master")
-					return ctrl.Result{}, nil
-				}
+			allPods, err := dfi.getPods(ctx)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to list dragonfly pods: %w", err)
 			}
 
-			if err = dfi.configureReplication(ctx, master); err != nil {
+			master = selectMasterCandidate(allPods.Items, dfi)
+			if master == nil {
+				log.Info("no healthy pod available to set up a master")
+				return ctrl.Result{}, nil
+			}
+
+		if err = dfi.configureReplication(ctx, master); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to configure replication: %w", err)
 			}
 			// re-evaluate readiness after replication changes.
@@ -106,20 +108,36 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
+	isReplica, err := dfi.checkReplicaRole(ctx, master)
+	if err != nil {
+		log.Info("failed to verify master status in redis (ignoring)", "error", err)
+	} else if isReplica {
+		log.Info("Pod labeled as master is running as replica. Promoting it.", "pod", master.Name)
+		if err := dfi.replicaOfNoOne(ctx, master); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to promote master: %w", err)
+		}
+	}
+
 	if !podReady {
 		return ctrl.Result{}, nil
 	}
 
 	if roleExists(&pod) {
-		if dfi.getStatus().Phase != PhaseReady && dfi.getStatus().Phase != PhaseReadyOld {
+		if dfi.getStatus().Phase != PhaseReady && dfi.getStatus().Phase != PhaseReadyOld && dfi.getStatus().Phase != PhaseConfiguring {
 			return ctrl.Result{}, nil
 		}
 
 		// is something wrong? check if all replicas have a matching role and revamp accordingly
 		log.Info("non-deletion event for a pod with an existing role. checking if something is wrong", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
 
-		if err = dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
+		if allConfigured, err := dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to check and configure replicas: %w", err)
+		} else if dfi.getStatus().Phase == PhaseConfiguring && allConfigured {
+			status := dfi.getStatus()
+			status.Phase = PhaseReady
+			if err = dfi.patchStatus(ctx, status); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update the dragonfly status: %w", err)
+			}
 		}
 
 		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Checked and configured replication")
