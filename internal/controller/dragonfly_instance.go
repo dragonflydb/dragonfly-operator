@@ -77,12 +77,6 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context, master *
 		return err
 	}
 
-	dfiStatus.Phase = PhaseReady
-	if err = dfi.patchStatus(ctx, dfiStatus); err != nil {
-		dfi.log.Error(err, "failed to update the dragonfly status")
-		return err
-	}
-
 	dfi.eventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
 
 	for _, pod := range pods.Items {
@@ -102,6 +96,12 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context, master *
 				return err
 			}
 		}
+	}
+
+	dfiStatus.Phase = PhaseReady
+	if err = dfi.patchStatus(ctx, dfiStatus); err != nil {
+		dfi.log.Error(err, "failed to update the dragonfly status")
+		return err
 	}
 
 	return nil
