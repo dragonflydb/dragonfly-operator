@@ -120,11 +120,9 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// is something wrong? check if all replicas have a matching role and revamp accordingly
 		log.Info("non-deletion event for a pod with an existing role. checking if something is wrong", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
 
-		if err = dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
+		if allConfigured, err := dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to check and configure replicas: %w", err)
-		}
-
-		if dfi.getStatus().Phase == PhaseConfiguring {
+		} else if dfi.getStatus().Phase == PhaseConfiguring && allConfigured {
 			status := dfi.getStatus()
 			status.Phase = PhaseReady
 			if err = dfi.patchStatus(ctx, status); err != nil {
