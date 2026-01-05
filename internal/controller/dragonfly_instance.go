@@ -748,8 +748,8 @@ func (dfi *DragonflyInstance) deleteRoleLabel(ctx context.Context, pod *corev1.P
 	return nil
 }
 
-// allPodsHealthy checks whether all pods are healthy, and deletes pods that are outdated and failed to start
-func (dfi *DragonflyInstance) allPodsHealthy(ctx context.Context, updateRevision string) (ctrl.Result, error) {
+// allPodsHealthyAndHaveRole checks whether all pods are healthy, and deletes pods that are outdated and failed to start
+func (dfi *DragonflyInstance) allPodsHealthyAndHaveRole(ctx context.Context, updateRevision string) (ctrl.Result, error) {
 	pods, err := dfi.getPods(ctx)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get dragonfly pods: %w", err)
@@ -771,6 +771,11 @@ func (dfi *DragonflyInstance) allPodsHealthy(ctx context.Context, updateRevision
 
 		if !ready {
 			dfi.log.Info("waiting for pod to finish startup", "pod", pod.Name)
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+
+		if !roleExists(&pod) {
+			dfi.log.Info("waiting for pod to be assigned a role", "pod", pod.Name)
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 	}
@@ -801,8 +806,12 @@ func (dfi *DragonflyInstance) verifyUpdatedReplicas(ctx context.Context, replica
 	return ctrl.Result{}, nil
 }
 
-// updatedReplicas updates the replicas to the latest version
-func (dfi *DragonflyInstance) updatedReplicas(ctx context.Context, replicas *corev1.PodList, updateRevision string) (ctrl.Result, error) {
+// updateReplicas updates the replicas to the latest version
+func (dfi *DragonflyInstance) updateReplicas(ctx context.Context, replicas *corev1.PodList, updateRevision string) (ctrl.Result, error) {
+	_, err := dfi.getMaster(ctx)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get master before deleting replica: %w", err)
+	}
 	for _, replica := range replicas.Items {
 		if !isPodOnLatestVersion(&replica, updateRevision) {
 			dfi.log.Info("deleting replica", "pod", replica.Name)
