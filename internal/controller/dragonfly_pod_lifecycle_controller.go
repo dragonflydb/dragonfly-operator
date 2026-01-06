@@ -111,7 +111,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	masterPod, err := dfi.getMaster(ctx)
 	if err != nil {
 		log.Info("failed to verify master status in redis (ignoring)", "error", err)
-	} else if isReplica {
+	} else if masterPod.Name != master.Name {
 		log.Info("Pod labeled as master is running as replica. Promoting it.", "pod", master.Name)
 		if err := dfi.replicaOfNoOne(ctx, master); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to promote master: %w", err)
