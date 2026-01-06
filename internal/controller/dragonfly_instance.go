@@ -911,3 +911,26 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 
 	return nil
 }
+
+func (dfi *DragonflyInstance) getRedisRole(ctx context.Context, pod *corev1.Pod) (string, error) {
+	if pod.Status.PodIP == "" {
+		return "", fmt.Errorf("pod IP not available for %s", pod.Name)
+	}
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+	})
+	defer redisClient.Close()
+
+	resp, err := redisClient.Info(ctx, "replication").Result()
+	if err != nil {
+		return "", err
+	}
+
+	for _, line := range strings.Split(resp, "\n") {
+		if strings.HasPrefix(line, "role:") {
+			role := strings.Trim(strings.Split(line, ":")[1], "\r")
+			return strings.TrimSpace(role), nil
+		}
+	}
+	return "", fmt.Errorf("role not found in replication info for pod %s", pod.Name)
+}
