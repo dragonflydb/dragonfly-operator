@@ -95,7 +95,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				return ctrl.Result{}, nil
 			}
 
-		if err = dfi.configureReplication(ctx, master); err != nil {
+			if err = dfi.configureReplication(ctx, master); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to configure replication: %w", err)
 			}
 			// re-evaluate readiness after replication changes.
@@ -108,7 +108,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	isReplica, err := dfi.checkReplicaRole(ctx, master)
+	masterPod, err := dfi.getMaster(ctx)
 	if err != nil {
 		log.Info("failed to verify master status in redis (ignoring)", "error", err)
 	} else if isReplica {
@@ -132,7 +132,10 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		if allConfigured, err := dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to check and configure replicas: %w", err)
-		} else if dfi.getStatus().Phase == PhaseConfiguring && allConfigured {
+		} else if !allConfigured {
+			log.Info("not all replicas are ready, requeueing")
+			return ctrl.Result{Requeue: true}, nil
+		} else if dfi.getStatus().Phase == PhaseConfiguring {
 			status := dfi.getStatus()
 			status.Phase = PhaseReady
 			if err = dfi.patchStatus(ctx, status); err != nil {
