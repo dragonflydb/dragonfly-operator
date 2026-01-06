@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -75,22 +76,30 @@ type DragonflySpec struct {
 	// (Optional) Additional containers to add to dragonflycluster. Replace container on name collision.
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=array
 	AdditionalContainers []corev1.Container `json:"additionalContainers,omitempty"`
 
 	// (Optional) Additional volumes to add to dragonflycluster. Replace volume on name collision.
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=array
 	AdditionalVolumes []corev1.Volume `json:"additionalVolumes,omitempty"`
 
 	// (Optional) Dragonfly container resource limits. Any container limits
 	// can be specified.
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// (Optional) Dragonfly pod affinity
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
 
 	// (Optional) Dragonfly pod node selector
@@ -106,11 +115,15 @@ type DragonflySpec struct {
 	// (Optional) Dragonfly pod tolerations
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=array
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 
 	// (Optional) Dragonfly pod topologySpreadConstraints
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=array
 	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
 
 	// (Optional) Dragonfly Authentication mechanism
@@ -121,11 +134,15 @@ type DragonflySpec struct {
 	// (Optional) Dragonfly container security context
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 
 	// (Optional) Dragonfly pod security context
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
 
 	// (Optional) Dragonfly pod service account name
@@ -168,7 +185,14 @@ type DragonflySpec struct {
 	// (Optional) Dragonfly pod init containers
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=array
 	InitContainers []corev1.Container `json:"initContainers,omitempty"`
+
+	// (Optional) Dragonfly autoscaler configuration
+	// +optional
+	// +kubebuilder:validation:Optional
+	Autoscaler *AutoscalerSpec `json:"autoscaler,omitempty"`
 
 	// (Optional) Dragonfly direct child resources additional annotations and labels
 	// +optional
@@ -212,6 +236,8 @@ type Tiering struct {
 	// (Optional) Dragonfly PVC spec for cache tiering configuration
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
 }
 
@@ -236,6 +262,8 @@ type Snapshot struct {
 	// (Optional) Dragonfly PVC spec
 	// +optional
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
 	PersistentVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"persistentVolumeClaimSpec,omitempty"`
 
 	// (Optional) Name of an existing PVC to use for Dragonfly snapshots
@@ -253,6 +281,44 @@ type Authentication struct {
 	// client certificate is signed by this CA. Server TLS must be enabled for this.
 	// +optional
 	ClientCaCertSecret *corev1.SecretKeySelector `json:"clientCaCertSecret,omitempty"`
+}
+
+// AutoscalerSpec defines the autoscaling configuration for Dragonfly
+type AutoscalerSpec struct {
+	// Whether autoscaling is enabled
+	// +kubebuilder:validation:Required
+	Enabled bool `json:"enabled"`
+
+	// Minimum number of replicas
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Required
+	MinReplicas int32 `json:"minReplicas"`
+
+	// Maximum number of replicas
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Required
+	MaxReplicas int32 `json:"maxReplicas"`
+
+	// Scaling behavior policies
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
+	Behavior *autoscalingv2.HorizontalPodAutoscalerBehavior `json:"behavior,omitempty"`
+
+	// Metrics to be used for autoscaling
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=array
+	Metrics []autoscalingv2.MetricSpec `json:"metrics,omitempty"`
+
+	// Target CPU utilization percentage
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	TargetCPUUtilizationPercentage *int32 `json:"targetCPUUtilizationPercentage,omitempty"`
 }
 
 // DragonflyStatus defines the observed state of Dragonfly

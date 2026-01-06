@@ -185,7 +185,7 @@ func main() {
 	if watchNamespaces != "" {
 		setupLog.Info(fmt.Sprintf("Watch namespaces: %s", watchNamespaces))
 	} else {
-		setupLog.Info(fmt.Sprintf("Watch all namespaces."))
+		setupLog.Info("Watch all namespaces.")
 	}
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
