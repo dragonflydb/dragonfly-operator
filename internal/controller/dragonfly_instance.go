@@ -267,7 +267,11 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 		}
 	}
 
-	dfi.log.Info("All pods are configured correctly", "dfi", dfi.df.Name)
+	if allConfigured {
+		dfi.log.Info("All pods are configured correctly", "dfi", dfi.df.Name)
+	} else {
+		dfi.log.Info("Some pods are not yet configured correctly", "dfi", dfi.df.Name)
+	}
 	return allConfigured, nil
 }
 
