@@ -198,15 +198,16 @@ func getOrdinal(podName string) int {
 func selectMasterCandidate(pods []corev1.Pod, dfi *DragonflyInstance) *corev1.Pod {
 	var bestCandidate *corev1.Pod
 
-	for _, p := range pods {
+	for i := range pods {
+		p := &pods[i]
 		// Only consider pods that are running and healthy.
-		if !isReady(&p) {
+		if !isReady(p) {
 			continue
 		}
 
 		// Prefer Pod-0, then Pod-1, etc.
 		if bestCandidate == nil || getOrdinal(p.Name) < getOrdinal(bestCandidate.Name) {
-			bestCandidate = &p
+			bestCandidate = p
 		}
 	}
 	return bestCandidate
