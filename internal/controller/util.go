@@ -183,7 +183,11 @@ func sanitizeIp(masterIp string) string {
 
 // getOrdinal returns the ordinal of the pod.
 func getOrdinal(podName string) int {
-	ordinal, err := strconv.Atoi(strings.Split(podName, "-")[1])
+	parts := strings.Split(podName, "-")
+	if len(parts) < 2 {
+		return -1
+	}
+	ordinal, err := strconv.Atoi(parts[len(parts)-1])
 	if err != nil {
 		return -1
 	}
