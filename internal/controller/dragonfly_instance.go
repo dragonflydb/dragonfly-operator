@@ -77,14 +77,9 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context, master *
 		return err
 	}
 
-	dfiStatus.Phase = PhaseReady
-	if err = dfi.patchStatus(ctx, dfiStatus); err != nil {
-		dfi.log.Error(err, "failed to update the dragonfly status")
-		return err
-	}
-
 	dfi.eventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
 
+	allConfigured := true
 	for _, pod := range pods.Items {
 		if pod.Name == master.Name {
 			continue
@@ -101,6 +96,16 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context, master *
 				dfi.log.Error(err, "failed to configure replica", "pod", pod.Name)
 				return err
 			}
+		} else {
+			allConfigured = false
+		}
+	}
+
+	if allConfigured {
+		dfiStatus.Phase = PhaseReady
+		if err = dfi.patchStatus(ctx, dfiStatus); err != nil {
+			dfi.log.Error(err, "failed to update the dragonfly status")
+			return err
 		}
 	}
 
@@ -220,25 +225,26 @@ func (dfi *DragonflyInstance) isReplicaStable(ctx context.Context, pod *corev1.P
 }
 
 // checkAndConfigureReplicas checks whether all replicas are configured correctly and if not configures them to the right master
-func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, masterIp string) error {
+func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, masterIp string) (bool, error) {
 	pods, err := dfi.getPods(ctx)
 	if err != nil {
 		dfi.log.Error(err, "failed to get dragonfly pods")
-		return err
+		return false, err
 	}
 
+	allConfigured := true
 	for _, pod := range pods.Items {
 		if isReplica(&pod) {
 			dfi.log.Info("checking if replica is configured correctly", "pod", pod.Name)
 			ok, err := dfi.checkReplicaRole(ctx, &pod, masterIp)
 			if err != nil {
-				return err
+				return false, err
 			}
 			// Configure to the right master if not correct
 			if !ok {
 				dfi.log.Info("configuring pod as replica to the right master", "pod", pod.Name)
 				if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
-					return err
+					return false, err
 				}
 			}
 		}
@@ -247,19 +253,26 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 			ready, readyErr := dfi.isPodReady(ctx, &pod)
 			if readyErr != nil {
 				dfi.log.Error(readyErr, "failed to check pod readiness", "pod", pod.Name)
-				return readyErr
+				return false, readyErr
 			}
 
 			if ready {
 				if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
-					return err
+					return false, err
 				}
+			} else {
+				// Pod exists but is not ready to be configured yet
+				allConfigured = false
 			}
 		}
 	}
 
-	dfi.log.Info("All pods are configured correctly", "dfi", dfi.df.Name)
-	return nil
+	if allConfigured {
+		dfi.log.Info("All pods are configured correctly", "dfi", dfi.df.Name)
+	} else {
+		dfi.log.Info("Some pods are not yet configured correctly", "dfi", dfi.df.Name)
+	}
+	return allConfigured, nil
 }
 
 // getStatefulSet gets the statefulset object for the dragonfly instance
@@ -910,4 +923,27 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 	}
 
 	return nil
+}
+
+func (dfi *DragonflyInstance) getRedisRole(ctx context.Context, pod *corev1.Pod) (string, error) {
+	if pod.Status.PodIP == "" {
+		return "", fmt.Errorf("pod IP not available for %s", pod.Name)
+	}
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+	})
+	defer redisClient.Close()
+
+	resp, err := redisClient.Info(ctx, "replication").Result()
+	if err != nil {
+		return "", err
+	}
+
+	for _, line := range strings.Split(resp, "\n") {
+		if strings.HasPrefix(line, "role:") {
+			role := strings.Trim(strings.Split(line, ":")[1], "\r")
+			return strings.TrimSpace(role), nil
+		}
+	}
+	return "", fmt.Errorf("role not found in replication info for pod %s", pod.Name)
 }

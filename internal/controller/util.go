@@ -19,6 +19,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
@@ -178,4 +179,36 @@ func isMasterError(err error) bool {
 // sanitizeIp removes surrounding brackets from IPv6 addresses.
 func sanitizeIp(masterIp string) string {
 	return strings.Trim(masterIp, "[]")
+}
+
+// getOrdinal returns the ordinal of the pod.
+func getOrdinal(podName string) int {
+	parts := strings.Split(podName, "-")
+	if len(parts) < 2 {
+		return -1
+	}
+	ordinal, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		return -1
+	}
+	return ordinal
+}
+
+// selectMasterCandidate deterministically selects a master candidate from the given list of pods.
+func selectMasterCandidate(pods []corev1.Pod, dfi *DragonflyInstance) *corev1.Pod {
+	var bestCandidate *corev1.Pod
+
+	for i := range pods {
+		p := &pods[i]
+		// Only consider pods that are running and healthy.
+		if !isReady(p) {
+			continue
+		}
+
+		// Prefer Pod-0, then Pod-1, etc.
+		if bestCandidate == nil || getOrdinal(p.Name) < getOrdinal(bestCandidate.Name) {
+			bestCandidate = p
+		}
+	}
+	return bestCandidate
 }
