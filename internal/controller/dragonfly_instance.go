@@ -922,6 +922,9 @@ func (dfi *DragonflyInstance) getRedisRole(ctx context.Context, pod *corev1.Pod)
 	}
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer redisClient.Close()
 
