@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	corev1 "k8s.io/api/core/v1"
@@ -89,7 +90,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				return ctrl.Result{}, fmt.Errorf("failed to list dragonfly pods: %w", err)
 			}
 
-			master = selectMasterCandidate(allPods.Items, dfi)
+			master = selectMasterCandidate(allPods.Items)
 			if master == nil {
 				log.Info("no healthy pod available to set up a master")
 				return ctrl.Result{}, nil
@@ -108,13 +109,19 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	role, err := dfi.getRedisRole(ctx, master)
+	masterPod, err := dfi.getMaster(ctx)
 	if err != nil {
-		log.Error(err, "failed to get redis role for labeled master", "pod", master.Name)
-	} else if role == resources.Replica {
-		log.Info("Pod labeled as master is running as replica. Promoting it.", "pod", master.Name)
-		if err := dfi.replicaOfNoOne(ctx, master); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to promote master: %w", err)
+		log.Info("failed to verify master status in redis (ignoring)", "error", err)
+	} else {
+		role, err := dfi.getRedisRole(ctx, masterPod)
+		if err != nil {
+			log.Error(err, "failed to get redis role for labeled master", "pod", master.Name)
+		} else if role == resources.Replica {
+			log.Info("Pod labeled as master is running as replica. Promoting it.", "pod", master.Name)
+			if err := dfi.replicaOfNoOne(ctx, master); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to promote master: %w", err)
+			}
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 		}
 	}
 

@@ -19,6 +19,7 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -185,17 +186,17 @@ func sanitizeIp(masterIp string) string {
 func getOrdinal(podName string) int {
 	parts := strings.Split(podName, "-")
 	if len(parts) < 2 {
-		return -1
+		return math.MaxInt
 	}
 	ordinal, err := strconv.Atoi(parts[len(parts)-1])
 	if err != nil {
-		return -1
+		return math.MaxInt
 	}
 	return ordinal
 }
 
 // selectMasterCandidate deterministically selects a master candidate from the given list of pods.
-func selectMasterCandidate(pods []corev1.Pod, dfi *DragonflyInstance) *corev1.Pod {
+func selectMasterCandidate(pods []corev1.Pod) *corev1.Pod {
 	var bestCandidate *corev1.Pod
 
 	for i := range pods {
