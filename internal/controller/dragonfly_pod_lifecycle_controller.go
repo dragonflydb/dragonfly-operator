@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	corev1 "k8s.io/api/core/v1"
@@ -84,25 +85,57 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				}
 			}
 
-			if podReady {
-				master = &pod
-			} else {
-				if master, err = dfi.getHealthyPod(ctx); err != nil {
-					log.Info("no healthy pod available to set up a master")
-					return ctrl.Result{}, nil
-				}
+			allPods, err := dfi.getPods(ctx)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to list dragonfly pods: %w", err)
 			}
 
+			masterCandidate := selectMasterCandidate(allPods.Items)
+			if masterCandidate == nil {
+				log.Info("no healthy pod available to set up a master")
+				return ctrl.Result{}, nil
+			}
+
+			masterReady, err := dfi.isPodReady(ctx, masterCandidate)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to check master candidate readiness: %w", err)
+			}
+			if !masterReady {
+				log.Info("master candidate not fully ready, requeueing", "pod", masterCandidate.Name)
+				return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+			}
+			master = masterCandidate
+
 			if err = dfi.configureReplication(ctx, master); err != nil {
+				// Check for transient replication errors.
+				if isReplicationCancelledError(err) {
+					log.Info("replication cancelled during initial setup (transient), will retry", "error", err)
+					return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+				}
 				return ctrl.Result{}, fmt.Errorf("failed to configure replication: %w", err)
 			}
-			// re-evaluate readiness after replication changes.
-			podReady, readinessErr = dfi.isPodReady(ctx, &pod)
-			if readinessErr != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to verify pod readiness: %w", readinessErr)
-			}
+			// Replication was just configured. Return and let the next reconciliation
+			// work with fresh pod data (the pod now has updated labels).
+			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Initial replication configured")
+			return ctrl.Result{}, nil
 		} else {
 			return ctrl.Result{}, fmt.Errorf("failed to get master pod: %w", err)
+		}
+	}
+
+	masterPod, err := dfi.getMaster(ctx)
+	if err != nil {
+		log.Info("failed to verify master status in redis (ignoring)", "error", err)
+	} else {
+		role, err := dfi.getRedisRole(ctx, masterPod)
+		if err != nil {
+			log.Error(err, "failed to get redis role for labeled master", "pod", master.Name)
+		} else if role == resources.Replica {
+			log.Info("Pod labeled as master is running as replica. Promoting it.", "pod", master.Name)
+			if err := dfi.replicaOfNoOne(ctx, master); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to promote master: %w", err)
+			}
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 		}
 	}
 
@@ -111,15 +144,29 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if roleExists(&pod) {
-		if dfi.getStatus().Phase != PhaseReady && dfi.getStatus().Phase != PhaseReadyOld {
+		if dfi.getStatus().Phase != PhaseReady && dfi.getStatus().Phase != PhaseReadyOld && dfi.getStatus().Phase != PhaseConfiguring {
 			return ctrl.Result{}, nil
 		}
 
 		// is something wrong? check if all replicas have a matching role and revamp accordingly
 		log.Info("non-deletion event for a pod with an existing role. checking if something is wrong", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
 
-		if err = dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
+		if allConfigured, err := dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
+			// Check for transient replication errors
+			if isReplicationCancelledError(err) {
+				log.Info("replication cancelled (transient), will retry", "error", err)
+				return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+			}
 			return ctrl.Result{}, fmt.Errorf("failed to check and configure replicas: %w", err)
+		} else if !allConfigured {
+			log.Info("not all replicas are ready, requeueing")
+			return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+		} else if dfi.getStatus().Phase == PhaseConfiguring {
+			status := dfi.getStatus()
+			status.Phase = PhaseReady
+			if err = dfi.patchStatus(ctx, status); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update the dragonfly status: %w", err)
+			}
 		}
 
 		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Checked and configured replication")
@@ -127,6 +174,11 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("pod does not have a role label", "pod", pod.Name)
 
 		if err = dfi.configureReplica(ctx, &pod, master.Status.PodIP); err != nil {
+			// Check for transient replication errors
+			if isReplicationCancelledError(err) {
+				log.Info("replication cancelled (transient), will retry", "error", err)
+				return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+			}
 			return ctrl.Result{}, fmt.Errorf("failed to configure pod as replica: %w", err)
 		}
 
