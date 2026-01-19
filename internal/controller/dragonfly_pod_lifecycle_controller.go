@@ -90,13 +90,28 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				return ctrl.Result{}, fmt.Errorf("failed to list dragonfly pods: %w", err)
 			}
 
-			master = selectMasterCandidate(allPods.Items)
-			if master == nil {
+			masterCandidate := selectMasterCandidate(allPods.Items)
+			if masterCandidate == nil {
 				log.Info("no healthy pod available to set up a master")
 				return ctrl.Result{}, nil
 			}
 
+			masterReady, err := dfi.isPodReady(ctx, masterCandidate)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to check master candidate readiness: %w", err)
+			}
+			if !masterReady {
+				log.Info("master candidate not fully ready, requeueing", "pod", masterCandidate.Name)
+				return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+			}
+			master = masterCandidate
+
 			if err = dfi.configureReplication(ctx, master); err != nil {
+				// Check for transient replication errors.
+				if isReplicationCancelledError(err) {
+					log.Info("replication cancelled during initial setup (transient), will retry", "error", err)
+					return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+				}
 				return ctrl.Result{}, fmt.Errorf("failed to configure replication: %w", err)
 			}
 			// re-evaluate readiness after replication changes.
@@ -138,10 +153,15 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("non-deletion event for a pod with an existing role. checking if something is wrong", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
 
 		if allConfigured, err := dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
+			// Check for transient replication errors
+			if isReplicationCancelledError(err) {
+				log.Info("replication cancelled (transient), will retry", "error", err)
+				return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+			}
 			return ctrl.Result{}, fmt.Errorf("failed to check and configure replicas: %w", err)
 		} else if !allConfigured {
 			log.Info("not all replicas are ready, requeueing")
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
 		} else if dfi.getStatus().Phase == PhaseConfiguring {
 			status := dfi.getStatus()
 			status.Phase = PhaseReady
@@ -155,6 +175,11 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("pod does not have a role label", "pod", pod.Name)
 
 		if err = dfi.configureReplica(ctx, &pod, master.Status.PodIP); err != nil {
+			// Check for transient replication errors
+			if isReplicationCancelledError(err) {
+				log.Info("replication cancelled (transient), will retry", "error", err)
+				return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+			}
 			return ctrl.Result{}, fmt.Errorf("failed to configure pod as replica: %w", err)
 		}
 

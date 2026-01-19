@@ -110,6 +110,10 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 		master, err := dfi.getMaster(ctx)
 		if err != nil {
+			if isMasterError(err) {
+				log.Info("waiting for master to be established", "error", err)
+				return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+			}
 			return ctrl.Result{}, fmt.Errorf("failed to get master: %w", err)
 		}
 

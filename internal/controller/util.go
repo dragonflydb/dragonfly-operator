@@ -177,6 +177,15 @@ func isMasterError(err error) bool {
 		errors.Is(err, ErrIncorrectMasters)
 }
 
+// isReplicationCancelledError checks if the error is a transient "replication cancelled" error from DragonflyDB.
+// This typically happens when multiple SLAVE OF commands are sent concurrently to the same pod.
+func isReplicationCancelledError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "replication cancelled")
+}
+
 // sanitizeIp removes surrounding brackets from IPv6 addresses.
 func sanitizeIp(masterIp string) string {
 	return strings.Trim(masterIp, "[]")
@@ -201,8 +210,8 @@ func selectMasterCandidate(pods []corev1.Pod) *corev1.Pod {
 
 	for i := range pods {
 		p := &pods[i]
-		// Only consider pods that are running and healthy.
-		if !isReady(p) {
+		// We can't use isReady() because the readiness probe might not pass until replication is configured.
+		if p.Status.Phase != corev1.PodRunning || p.Status.PodIP == "" {
 			continue
 		}
 
