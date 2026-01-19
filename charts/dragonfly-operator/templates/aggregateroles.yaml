@@ -1,0 +1,86 @@
+{{- if .Values.createAggregateRoles }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-aggregate-to-view
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - dragonflydb.io
+    resources:
+      - dragonflies
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - dragonflydb.io
+    resources:
+      - dragonflies/status
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-aggregate-to-edit
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - dragonflydb.io
+    resources:
+      - dragonflies
+    verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - dragonflydb.io
+    resources:
+      - dragonflies/status
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-aggregate-to-admin
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - dragonflydb.io
+    resources:
+      - dragonflies
+    verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - dragonflydb.io
+    resources:
+      - dragonflies/status
+    verbs:
+      - get
+      - list
+      - watch
+{{- end }}

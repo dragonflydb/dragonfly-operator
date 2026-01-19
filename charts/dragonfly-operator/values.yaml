@@ -22,6 +22,9 @@ dragonflyImage: ""
 additionalLabels: {}
   # app: dragonfly-operator
 
+# -- Create aggregated cluster roles for view, edit, and admin
+createAggregateRoles: true
+
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
@@ -60,7 +63,7 @@ rbacProxy:
     repository: quay.io/brancz/kube-rbac-proxy
     pullPolicy: IfNotPresent
     # Overrides the image tag whose default is the chart appVersion.
-    tag: v0.13.1
+    tag: v0.20.2
 
   extraArgs: {}
 
