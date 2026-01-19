@@ -114,11 +114,10 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				}
 				return ctrl.Result{}, fmt.Errorf("failed to configure replication: %w", err)
 			}
-			// re-evaluate readiness after replication changes.
-			podReady, readinessErr = dfi.isPodReady(ctx, &pod)
-			if readinessErr != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to verify pod readiness: %w", readinessErr)
-			}
+			// Replication was just configured. Return and let the next reconciliation
+			// work with fresh pod data (the pod now has updated labels).
+			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Initial replication configured")
+			return ctrl.Result{}, nil
 		} else {
 			return ctrl.Result{}, fmt.Errorf("failed to get master pod: %w", err)
 		}
