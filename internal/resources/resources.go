@@ -401,6 +401,10 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		statefulset.Spec.Template.Spec.Volumes, df.Spec.AdditionalVolumes,
 		func(v corev1.Volume) string { return v.Name })
 
+	if df.Spec.PersistentVolumeClaimRetentionPolicy != nil {
+		statefulset.Spec.PersistentVolumeClaimRetentionPolicy = df.Spec.PersistentVolumeClaimRetentionPolicy
+	}
+
 	resources = append(resources, &statefulset)
 
 	serviceName := df.Name
