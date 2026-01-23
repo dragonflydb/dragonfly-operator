@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -28,7 +29,7 @@ import (
 // DragonflySpec defines the desired state of Dragonfly.
 // An empty podManagementPolicy is treated as OrderedReady, so updates to an
 // existing instance are still accepted when the field was left unset.
-// +kubebuilder:validation:XValidation:rule="(has(self.podManagementPolicy) && self.podManagementPolicy != '' ? self.podManagementPolicy : 'OrderedReady') == (has(oldSelf.podManagementPolicy) && oldSelf.podManagementPolicy != '' ? oldSelf.podManagementPolicy : 'OrderedReady')",message="podManagementPolicy is immutable; delete and recreate the Dragonfly instance to change it"
+// +kubebuilder:validation:XValidation:rule="(has(self.podManagementPolicy) && self.podManagementPolicy != ” ? self.podManagementPolicy : 'OrderedReady') == (has(oldSelf.podManagementPolicy) && oldSelf.podManagementPolicy != ” ? oldSelf.podManagementPolicy : 'OrderedReady')",message="podManagementPolicy is immutable; delete and recreate the Dragonfly instance to change it"
 type DragonflySpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
@@ -109,6 +110,12 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	AdditionalVolumeMounts []corev1.VolumeMount `json:"additionalVolumeMounts,omitempty"`
+
+	// (Optional) PersistentVolumeClaimRetentionPolicy for StatefulSet PVCs.
+	// Controls whether PVCs are deleted when the StatefulSet is deleted or scaled down.
+	// +optional
+	// +kubebuilder:validation:Optional
+	PersistentVolumeClaimRetentionPolicy *appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy `json:"persistentVolumeClaimRetentionPolicy,omitempty"`
 
 	// (Optional) Dragonfly container resource limits. Any container limits
 	// can be specified.
