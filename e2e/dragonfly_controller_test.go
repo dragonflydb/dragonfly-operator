@@ -633,8 +633,8 @@ user john on >peacepass -@all +@string +hset
 			Expect(err).To(BeNil())
 		})
 		It("Resource should exist", func() {
-			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			// Wait until Dragonfly object is marked initialized and ready
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for statefulset
@@ -705,8 +705,8 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 		})
 
 		It("Resources should exist", func() {
-			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			// Wait until Dragonfly object is marked initialized and ready
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
@@ -824,8 +824,8 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 		})
 
 		It("Resources should exist", func() {
-			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			// Wait until Dragonfly object is marked initialized and ready
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
