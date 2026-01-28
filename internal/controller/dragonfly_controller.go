@@ -19,10 +19,12 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -40,6 +42,7 @@ type DragonflyReconciler struct {
 //+kubebuilder:rbac:groups=dragonflydb.io,resources=dragonflies/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=dragonflydb.io,resources=dragonflies/finalizers,verbs=update
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
@@ -66,6 +69,10 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if err = dfi.reconcileResources(ctx); err != nil {
+		if strings.Contains(err.Error(), "HPA deletion initiated") {
+			log.Info("requeuing to verify HPA deletion")
+			return ctrl.Result{RequeueAfter: time.Second * 2}, nil
+		}
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile dragonfly resources: %w", err)
 	}
 
@@ -151,6 +158,7 @@ func (r *DragonflyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&dfv1alpha1.Dragonfly{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&appsv1.StatefulSet{}, builder.MatchEveryOwner).
 		Owns(&corev1.Service{}, builder.MatchEveryOwner).
+		Owns(&autoscalingv2.HorizontalPodAutoscaler{}, builder.MatchEveryOwner).
 		Named("Dragonfly").
 		Complete(r)
 }
