@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -174,6 +175,12 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	OwnedObjectsMetadata *OwnedObjectsMetadata `json:"ownedObjectsMetadata,omitempty"`
+
+	// (Optional) PersistentVolumeClaimRetentionPolicy for StatefulSet PVCs.
+	// Controls whether PVCs are deleted when the StatefulSet is deleted or scaled down.
+	// +optional
+	// +kubebuilder:validation:Optional
+	PersistentVolumeClaimRetentionPolicy *appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy `json:"persistentVolumeClaimRetentionPolicy,omitempty"`
 }
 
 type OwnedObjectsMetadata struct {
