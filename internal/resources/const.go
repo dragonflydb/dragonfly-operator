@@ -94,6 +94,11 @@ const (
 	Master = "master"
 
 	Replica = "replica"
+
+	// TrafficLabelKey is used to gate traffic to pods via Service selector
+	TrafficLabelKey = "traffic"
+	TrafficEnabled  = "enabled"
+	TrafficDisabled = "disabled"
 )
 
 var DefaultDragonflyArgs = []string{

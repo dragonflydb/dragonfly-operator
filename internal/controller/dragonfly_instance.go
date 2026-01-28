@@ -433,7 +433,7 @@ func (dfi *DragonflyInstance) detectOldMasters(ctx context.Context, updateRevisi
 func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	redisClient := redis.NewClient(&redis.Options{
 		ClientName: resources.DragonflyOperatorName,
-		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		Addr:       net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		MaintNotificationsConfig: &maintnotifications.Config{
 			Mode: maintnotifications.ModeDisabled,
 		},
@@ -449,6 +449,30 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	// Sanitize masterIp in case ipv6
 	masterIp = sanitizeIp(masterIp)
 
+	// If this pod was master, drain traffic BEFORE changing role to prevent READONLY errors
+	if wasMaster {
+		dfi.log.Info("draining traffic from old master before demotion", "pod", pod.Name)
+
+		// 1. Disable traffic to remove from service endpoints
+		if err := dfi.disableTraffic(ctx, pod); err != nil {
+			dfi.log.Error(err, "failed to disable traffic on pod", "pod", pod.Name)
+			// Continue anyway - best effort
+		}
+
+		// 2. Wait for endpoints to propagate (removes pod from service)
+		if err := dfi.waitForServiceEndpointRemoved(ctx, pod.Status.PodIP, EndpointPropagationTimeout); err != nil {
+			dfi.log.Error(err, "warning: endpoints may not have fully propagated", "pod", pod.Name)
+			// Continue anyway - best effort
+		}
+
+		// 3. Disconnect existing clients while still master (they can still write)
+		dfi.disconnectClients(ctx, redisClient, pod)
+
+		// 4. Small drain window to allow in-flight requests to complete
+		time.Sleep(ConnectionDrainPeriod)
+	}
+
+	// 5. Now safe to change role - pod is no longer receiving traffic
 	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp, "addr", redisClient.Options().Addr)
 	resp, err := redisClient.SlaveOf(ctx, masterIp, strconv.Itoa(resources.DragonflyAdminPort)).Result()
 	if err != nil {
@@ -466,8 +490,10 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		}
 	}
 
+	// 6. Update labels to replica with traffic disabled
 	dfi.log.Info("Marking pod role as replica", "pod", pod.Name, "masterIp", masterIp)
 	pod.Labels[resources.RoleLabelKey] = resources.Replica
+	pod.Labels[resources.TrafficLabelKey] = resources.TrafficDisabled
 	if pod.Annotations == nil {
 		pod.Annotations = make(map[string]string)
 	}
@@ -483,11 +509,6 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		return fmt.Errorf("could not update replica metadata: %w", err)
 	}
 
-	if wasMaster {
-		// Prevent clients from sending commands to this old master
-		dfi.disconnectClients(ctx, redisClient, pod)
-	}
-
 	return nil
 }
 
@@ -495,7 +516,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	redisClient := redis.NewClient(&redis.Options{
 		ClientName: resources.DragonflyOperatorName,
-		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		Addr:       net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		MaintNotificationsConfig: &maintnotifications.Config{
 			Mode: maintnotifications.ModeDisabled,
 		},
@@ -522,8 +543,9 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 
 	masterIp := pod.Status.PodIP
 
-	dfi.log.Info("Marking pod role as master", "pod", pod.Name, "masterIp", masterIp)
+	dfi.log.Info("Marking pod role as master with traffic enabled", "pod", pod.Name, "masterIp", masterIp)
 	pod.Labels[resources.RoleLabelKey] = resources.Master
+	pod.Labels[resources.TrafficLabelKey] = resources.TrafficEnabled
 	delete(pod.Labels, resources.MasterIpLabelKey)
 
 	if pod.Annotations == nil {
@@ -533,6 +555,12 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 
 	if err := dfi.client.Update(ctx, pod); err != nil {
 		return err
+	}
+
+	// Wait for service endpoints to include this new master
+	if err := dfi.waitForServiceEndpointIP(ctx, pod.Status.PodIP, EndpointPropagationTimeout); err != nil {
+		dfi.log.Error(err, "warning: endpoints may not have propagated for new master", "pod", pod.Name)
+		// Continue anyway - best effort, don't fail the promotion
 	}
 
 	return nil
@@ -935,18 +963,47 @@ func (dfi *DragonflyInstance) updatedMaster(ctx context.Context, oldMaster *core
 
 // replTakeover runs the replTakeOver on the given replica pod
 func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev1.Pod, oldMaster *corev1.Pod) error {
-	dfi.log.Info("running REPLTAKEOVER on replica", "pod", newMaster.Name)
+	dfi.log.Info("running REPLTAKEOVER with traffic gating", "newMaster", newMaster.Name, "oldMaster", oldMaster.Name)
 
-	redisClient := redis.NewClient(&redis.Options{
+	// 1. First disable traffic on old master to remove from service endpoints
+	dfi.log.Info("disabling traffic on old master before takeover", "pod", oldMaster.Name)
+	if err := dfi.disableTraffic(ctx, oldMaster); err != nil {
+		dfi.log.Error(err, "failed to disable traffic on old master", "pod", oldMaster.Name)
+		// Continue anyway - best effort
+	}
+
+	// 2. Wait for endpoints to remove old master
+	if err := dfi.waitForServiceEndpointRemoved(ctx, oldMaster.Status.PodIP, EndpointPropagationTimeout); err != nil {
+		dfi.log.Error(err, "warning: endpoints may not have removed old master", "pod", oldMaster.Name)
+		// Continue anyway - best effort
+	}
+
+	// 3. Disconnect clients from old master
+	oldMasterClient := redis.NewClient(&redis.Options{
 		ClientName: resources.DragonflyOperatorName,
-		Addr: net.JoinHostPort(newMaster.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		Addr:       net.JoinHostPort(oldMaster.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		MaintNotificationsConfig: &maintnotifications.Config{
 			Mode: maintnotifications.ModeDisabled,
 		},
 	})
-	defer redisClient.Close()
+	dfi.disconnectClients(ctx, oldMasterClient, oldMaster)
+	oldMasterClient.Close()
 
-	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
+	// Small drain window
+	time.Sleep(ConnectionDrainPeriod)
+
+	// 4. Run REPLTAKEOVER on new master
+	newMasterClient := redis.NewClient(&redis.Options{
+		ClientName: resources.DragonflyOperatorName,
+		Addr:       net.JoinHostPort(newMaster.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
+	})
+	defer newMasterClient.Close()
+
+	dfi.log.Info("running REPLTAKEOVER command", "pod", newMaster.Name)
+	resp, err := newMasterClient.Do(ctx, "repltakeover", "10000").Result()
 	if err != nil {
 		return fmt.Errorf("error running REPLTAKEOVER command: %w", err)
 	}
@@ -955,9 +1012,12 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 		return fmt.Errorf("response of `REPLTAKEOVER` on replica is not OK: %s", resp)
 	}
 
+	// 5. Update new master labels with traffic enabled
 	masterIp := newMaster.Status.PodIP
 
+	dfi.log.Info("updating new master labels with traffic enabled", "pod", newMaster.Name)
 	newMaster.Labels[resources.RoleLabelKey] = resources.Master
+	newMaster.Labels[resources.TrafficLabelKey] = resources.TrafficEnabled
 	delete(newMaster.Labels, resources.MasterIpLabelKey)
 
 	if newMaster.Annotations == nil {
@@ -965,16 +1025,127 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 	}
 	newMaster.Annotations[resources.MasterIpAnnotationKey] = masterIp
 
-	// update the label on the pod
 	if err := dfi.client.Update(ctx, newMaster); err != nil {
 		return fmt.Errorf("failed to update the role label on the pod: %w", err)
 	}
 
-	// delete the old master, so that it gets recreated with the new version
-	dfi.log.Info("deleting master", "pod", oldMaster.Name)
+	// 6. Wait for new master in endpoints before deleting old master
+	if err := dfi.waitForServiceEndpointIP(ctx, newMaster.Status.PodIP, EndpointPropagationTimeout); err != nil {
+		dfi.log.Error(err, "warning: endpoints may not have propagated for new master", "pod", newMaster.Name)
+		// Continue anyway - best effort
+	}
+
+	// 7. NOW safe to delete old master - new master is receiving traffic
+	dfi.log.Info("deleting old master", "pod", oldMaster.Name)
 	if err := dfi.client.Delete(ctx, oldMaster); err != nil {
 		return fmt.Errorf("failed to delete pod: %w", err)
 	}
 
 	return nil
 }
+
+// getServiceName returns the actual Service name for this Dragonfly instance,
+// accounting for custom service name overrides in spec.serviceSpec.name
+func (dfi *DragonflyInstance) getServiceName() string {
+	if dfi.df.Spec.ServiceSpec != nil && dfi.df.Spec.ServiceSpec.Name != "" {
+		return dfi.df.Spec.ServiceSpec.Name
+	}
+	return dfi.df.Name
+}
+
+// waitForServiceEndpointIP waits until the Service endpoints contain the expected IP
+func (dfi *DragonflyInstance) waitForServiceEndpointIP(ctx context.Context, expectedIP string, timeout time.Duration) error {
+	serviceName := dfi.getServiceName()
+	dfi.log.Info("waiting for endpoint to include IP", "service", serviceName, "ip", expectedIP)
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timed out waiting for endpoint IP %s in service %s", expectedIP, serviceName)
+		default:
+			var endpoints corev1.Endpoints
+			if err := dfi.client.Get(ctx, client.ObjectKey{
+				Namespace: dfi.df.Namespace,
+				Name:      serviceName,
+			}, &endpoints); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to get endpoints: %w", err)
+				}
+				// Endpoints not found yet, continue waiting
+			} else {
+				for _, subset := range endpoints.Subsets {
+					for _, addr := range subset.Addresses {
+						if addr.IP == expectedIP {
+							dfi.log.Info("endpoint now includes IP", "service", serviceName, "ip", expectedIP)
+							return nil
+						}
+					}
+				}
+			}
+			time.Sleep(EndpointPollInterval)
+		}
+	}
+}
+
+// waitForServiceEndpointRemoved waits until the Service endpoints no longer contain the given IP
+func (dfi *DragonflyInstance) waitForServiceEndpointRemoved(ctx context.Context, removedIP string, timeout time.Duration) error {
+	serviceName := dfi.getServiceName()
+	dfi.log.Info("waiting for endpoint to remove IP", "service", serviceName, "ip", removedIP)
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timed out waiting for endpoint IP %s to be removed from service %s", removedIP, serviceName)
+		default:
+			var endpoints corev1.Endpoints
+			if err := dfi.client.Get(ctx, client.ObjectKey{
+				Namespace: dfi.df.Namespace,
+				Name:      serviceName,
+			}, &endpoints); err != nil {
+				if apierrors.IsNotFound(err) {
+					// Endpoints not found means IP is definitely not there
+					dfi.log.Info("endpoints not found, IP removed", "service", serviceName, "ip", removedIP)
+					return nil
+				}
+				return fmt.Errorf("failed to get endpoints: %w", err)
+			}
+
+			found := false
+			for _, subset := range endpoints.Subsets {
+				for _, addr := range subset.Addresses {
+					if addr.IP == removedIP {
+						found = true
+						break
+					}
+				}
+				if found {
+					break
+				}
+			}
+
+			if !found {
+				dfi.log.Info("endpoint no longer includes IP", "service", serviceName, "ip", removedIP)
+				return nil
+			}
+			time.Sleep(EndpointPollInterval)
+		}
+	}
+}
+
+// disableTraffic removes a pod from service endpoints by setting traffic label to disabled
+func (dfi *DragonflyInstance) disableTraffic(ctx context.Context, pod *corev1.Pod) error {
+	dfi.log.Info("disabling traffic on pod", "pod", pod.Name)
+	patchFrom := client.MergeFrom(pod.DeepCopy())
+	if pod.Labels == nil {
+		pod.Labels = make(map[string]string)
+	}
+	pod.Labels[resources.TrafficLabelKey] = resources.TrafficDisabled
+	return dfi.client.Patch(ctx, pod, patchFrom)
+}
+

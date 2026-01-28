@@ -476,3 +476,71 @@ func tryCheckPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientse
 
 	return loading, loadState, sc.Err()
 }
+
+// WriteTestResult holds the results of a continuous write test
+type WriteTestResult struct {
+	TotalWrites    int
+	SuccessWrites  int
+	FailedWrites   int
+	ReadOnlyErrors int
+	OtherErrors    []string
+}
+
+// runContinuousWrites performs continuous write operations against a Redis client
+// and tracks success/failure counts, specifically counting READONLY errors.
+// It runs for the specified duration and returns aggregate results.
+func runContinuousWrites(ctx context.Context, rc *redis.Client, duration time.Duration, writeInterval time.Duration) *WriteTestResult {
+	result := &WriteTestResult{
+		OtherErrors: make([]string, 0),
+	}
+
+	deadline := time.Now().Add(duration)
+	counter := 0
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return result
+		default:
+			key := fmt.Sprintf("test-key-%d", counter)
+			value := fmt.Sprintf("test-value-%d-%d", counter, time.Now().UnixNano())
+
+			result.TotalWrites++
+			err := rc.Set(ctx, key, value, 0).Err()
+			if err != nil {
+				result.FailedWrites++
+				errStr := err.Error()
+				if strings.Contains(errStr, "READONLY") {
+					result.ReadOnlyErrors++
+				} else {
+					// Limit other errors to avoid memory bloat
+					if len(result.OtherErrors) < 100 {
+						result.OtherErrors = append(result.OtherErrors, errStr)
+					}
+				}
+			} else {
+				result.SuccessWrites++
+			}
+
+			counter++
+			time.Sleep(writeInterval)
+		}
+	}
+
+	return result
+}
+
+// runContinuousWritesAsync starts continuous writes in a goroutine and returns
+// a channel that will receive the result when done, plus a cancel function.
+func runContinuousWritesAsync(ctx context.Context, rc *redis.Client, duration time.Duration, writeInterval time.Duration) (<-chan *WriteTestResult, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	resultChan := make(chan *WriteTestResult, 1)
+
+	go func() {
+		result := runContinuousWrites(ctx, rc, duration, writeInterval)
+		resultChan <- result
+		close(resultChan)
+	}()
+
+	return resultChan, cancel
+}

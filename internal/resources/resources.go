@@ -429,6 +429,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 				DragonflyNameLabelKey:     df.Name,
 				KubernetesAppNameLabelKey: KubernetesAppName,
 				RoleLabelKey:              Master,
+				TrafficLabelKey:           TrafficEnabled,
 			},
 			Ports: []corev1.ServicePort{
 				{
