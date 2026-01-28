@@ -7403,7 +7403,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: docker.dragonflydb.io/dragonflydb/operator:v1.3.1
+        image: docker.dragonflydb.io/dragonflydb/operator:v1.4.0
         livenessProbe:
           httpGet:
             path: /healthz
