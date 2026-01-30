@@ -889,9 +889,9 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			// recreate Redis Client on the new pod
 			stopChan = make(chan struct{}, 1)
 			rc, err = checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6394)
+			Expect(err).To(BeNil())
 			defer close(stopChan)
 			defer rc.Close()
-			Expect(err).To(BeNil())
 
 			// check if the Data exists
 			data, err := rc.Get(ctx, "foo").Result()
