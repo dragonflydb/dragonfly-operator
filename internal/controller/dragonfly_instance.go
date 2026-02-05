@@ -490,11 +490,13 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		}
 	}
 
-	// 6. Update labels to replica with traffic disabled
+	// 6. Update labels to replica (only disable traffic if this pod was master)
 	patchFrom := client.MergeFrom(pod.DeepCopy())
 	dfi.log.Info("Marking pod role as replica", "pod", pod.Name, "masterIp", masterIp)
 	pod.Labels[resources.RoleLabelKey] = resources.Replica
-	pod.Labels[resources.TrafficLabelKey] = resources.TrafficDisabled
+	if wasMaster {
+		pod.Labels[resources.TrafficLabelKey] = resources.TrafficDisabled
+	}
 	if pod.Annotations == nil {
 		pod.Annotations = make(map[string]string)
 	}
