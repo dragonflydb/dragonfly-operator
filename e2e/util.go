@@ -36,6 +36,7 @@ import (
 	"github.com/redis/go-redis/v9/maintnotifications"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -43,6 +44,8 @@ import (
 	"k8s.io/client-go/transport/spdy"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+const endpointPollInterval = 500 * time.Millisecond
 
 func parseTieredEntriesFromInfo(info string) (int64, error) {
 	sc := bufio.NewScanner(strings.NewReader(info))
@@ -475,4 +478,149 @@ func tryCheckPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientse
 	}
 
 	return loading, loadState, sc.Err()
+}
+
+// EndpointTransition captures ordering when an old endpoint IP is removed and
+// a new endpoint IP is added.
+type EndpointTransition struct {
+	OldRemovedAt time.Time
+	NewAddedAt   time.Time
+	NewIP        string
+}
+
+func waitForEndpointTransition(ctx context.Context, k8sClient client.Client, serviceName, namespace, oldIP string, timeout time.Duration) (*EndpointTransition, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	transition := &EndpointTransition{}
+	for {
+		select {
+		case <-ctx.Done():
+			if ctx.Err() == context.Canceled {
+				return nil, ctx.Err()
+			}
+			if ctx.Err() == context.DeadlineExceeded {
+				return nil, context.DeadlineExceeded
+			}
+			return nil, fmt.Errorf("timed out waiting for endpoint transition for service %s", serviceName)
+		default:
+			ips, err := getServiceEndpointIPs(ctx, k8sClient, serviceName, namespace)
+			if err != nil {
+				return nil, err
+			}
+
+			oldPresent := ipInSlice(oldIP, ips)
+			if transition.OldRemovedAt.IsZero() && !oldPresent {
+				transition.OldRemovedAt = time.Now()
+			}
+
+			if !transition.OldRemovedAt.IsZero() && transition.NewAddedAt.IsZero() && len(ips) > 0 {
+				transition.NewAddedAt = time.Now()
+				transition.NewIP = ips[0]
+			}
+
+			if !transition.OldRemovedAt.IsZero() && !transition.NewAddedAt.IsZero() {
+				return transition, nil
+			}
+
+			time.Sleep(endpointPollInterval)
+		}
+	}
+}
+
+func getServiceEndpointIPs(ctx context.Context, k8sClient client.Client, serviceName, namespace string) ([]string, error) {
+	var endpoints corev1.Endpoints
+	if err := k8sClient.Get(ctx, types.NamespacedName{Name: serviceName, Namespace: namespace}, &endpoints); err != nil {
+		if apierrors.IsNotFound(err) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+
+	ips := make([]string, 0)
+	for _, subset := range endpoints.Subsets {
+		for _, addr := range subset.Addresses {
+			ips = append(ips, addr.IP)
+		}
+	}
+	return ips, nil
+}
+
+func ipInSlice(ip string, ips []string) bool {
+	for _, candidate := range ips {
+		if candidate == ip {
+			return true
+		}
+	}
+	return false
+}
+
+// WriteTestResult holds the results of a continuous write test
+type WriteTestResult struct {
+	TotalWrites    int
+	SuccessWrites  int
+	FailedWrites   int
+	ReadOnlyErrors int
+	OtherErrors    []string
+}
+
+// runContinuousWrites performs continuous write operations against a Redis client
+// and tracks success/failure counts, specifically counting READONLY errors.
+// It runs for the specified duration and returns aggregate results.
+func runContinuousWrites(ctx context.Context, rc *redis.Client, duration time.Duration, writeInterval time.Duration) *WriteTestResult {
+	result := &WriteTestResult{
+		OtherErrors: make([]string, 0),
+	}
+
+	deadline := time.Now().Add(duration)
+	counter := 0
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return result
+		default:
+			key := fmt.Sprintf("test-key-%d", counter)
+			value := fmt.Sprintf("test-value-%d-%d", counter, time.Now().UnixNano())
+
+			result.TotalWrites++
+			opCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+			err := rc.Set(opCtx, key, value, 0).Err()
+			cancel()
+			if err != nil {
+				result.FailedWrites++
+				errStr := err.Error()
+				if strings.Contains(errStr, "READONLY") {
+					result.ReadOnlyErrors++
+				} else {
+					// Limit other errors to avoid memory bloat
+					if len(result.OtherErrors) < 100 {
+						result.OtherErrors = append(result.OtherErrors, errStr)
+					}
+				}
+			} else {
+				result.SuccessWrites++
+			}
+
+			counter++
+			time.Sleep(writeInterval)
+		}
+	}
+
+	return result
+}
+
+// runContinuousWritesAsync starts continuous writes in a goroutine and returns
+// a channel that will receive the result when done, plus a cancel function.
+func runContinuousWritesAsync(ctx context.Context, rc *redis.Client, duration time.Duration, writeInterval time.Duration) (<-chan *WriteTestResult, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	resultChan := make(chan *WriteTestResult, 1)
+
+	go func() {
+		result := runContinuousWrites(ctx, rc, duration, writeInterval)
+		resultChan <- result
+		close(resultChan)
+	}()
+
+	return resultChan, cancel
 }

@@ -633,8 +633,8 @@ user john on >peacepass -@all +@string +hset
 			Expect(err).To(BeNil())
 		})
 		It("Resource should exist", func() {
-			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			// Wait until Dragonfly object is marked initialized and ready
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for statefulset
@@ -705,8 +705,8 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 		})
 
 		It("Resources should exist", func() {
-			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			// Wait until Dragonfly object is marked initialized and ready
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
@@ -755,14 +755,21 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 
 			Expect(rc.Set(ctx, "foo", payload, 0).Err()).To(BeNil())
 
-			// Inserted one big key, tiered entries should be 1
-			infoStr, err = rc.Info(ctx, "tiered").Result()
-			Expect(err).To(BeNil())
-
-			fmt.Println("Tiered entried Info: ", infoStr)
-			entries, err = parseTieredEntriesFromInfo(infoStr)
-			Expect(err).To(BeNil())
-			Expect(entries).To(Equal(int64(1))) // make sure this matches your expectation
+			// Inserted one big key, tiered entries should eventually be 1
+			Eventually(func() error {
+				infoStr, err := rc.Info(ctx, "tiered").Result()
+				if err != nil {
+					return err
+				}
+				entries, err := parseTieredEntriesFromInfo(infoStr)
+				if err != nil {
+					return err
+				}
+				if entries != int64(1) {
+					return fmt.Errorf("tiered_entries=%d", entries)
+				}
+				return nil
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 			// Fetch and compare by size
 			data, err := rc.Get(ctx, "foo").Bytes()
@@ -824,8 +831,8 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 		})
 
 		It("Resources should exist", func() {
-			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			// Wait until Dragonfly object is marked initialized and ready
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
