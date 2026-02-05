@@ -122,7 +122,7 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.Pod, masterIp string) (bool, error) {
 	redisClient := redis.NewClient(&redis.Options{
 		ClientName: resources.DragonflyOperatorName,
-		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		Addr:       net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		MaintNotificationsConfig: &maintnotifications.Config{
 			Mode: maintnotifications.ModeDisabled,
 		},
@@ -168,7 +168,7 @@ func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.
 func (dfi *DragonflyInstance) isReplicaStable(ctx context.Context, pod *corev1.Pod) (bool, error) {
 	redisClient := redis.NewClient(&redis.Options{
 		ClientName: resources.DragonflyOperatorName,
-		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		Addr:       net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		MaintNotificationsConfig: &maintnotifications.Config{
 			Mode: maintnotifications.ModeDisabled,
 		},
@@ -491,6 +491,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	}
 
 	// 6. Update labels to replica with traffic disabled
+	patchFrom := client.MergeFrom(pod.DeepCopy())
 	dfi.log.Info("Marking pod role as replica", "pod", pod.Name, "masterIp", masterIp)
 	pod.Labels[resources.RoleLabelKey] = resources.Replica
 	pod.Labels[resources.TrafficLabelKey] = resources.TrafficDisabled
@@ -505,7 +506,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		pod.Labels[resources.MasterIpLabelKey] = masterIp
 	}
 
-	if err := dfi.client.Update(ctx, pod); err != nil {
+	if err := dfi.client.Patch(ctx, pod, patchFrom); err != nil {
 		return fmt.Errorf("could not update replica metadata: %w", err)
 	}
 
@@ -747,7 +748,7 @@ func (dfi *DragonflyInstance) isDatasetLoaded(ctx context.Context, pod *corev1.P
 
 	redisClient := redis.NewClient(&redis.Options{
 		ClientName: resources.DragonflyOperatorName,
-		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		Addr:       net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 	})
 	defer redisClient.Close()
 
@@ -1148,4 +1149,3 @@ func (dfi *DragonflyInstance) disableTraffic(ctx context.Context, pod *corev1.Po
 	pod.Labels[resources.TrafficLabelKey] = resources.TrafficDisabled
 	return dfi.client.Patch(ctx, pod, patchFrom)
 }
-
