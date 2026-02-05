@@ -544,6 +544,7 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 
 	masterIp := pod.Status.PodIP
 
+	patchFrom := client.MergeFrom(pod.DeepCopy())
 	dfi.log.Info("Marking pod role as master with traffic enabled", "pod", pod.Name, "masterIp", masterIp)
 	pod.Labels[resources.RoleLabelKey] = resources.Master
 	pod.Labels[resources.TrafficLabelKey] = resources.TrafficEnabled
@@ -554,7 +555,7 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 	}
 	pod.Annotations[resources.MasterIpAnnotationKey] = masterIp
 
-	if err := dfi.client.Update(ctx, pod); err != nil {
+	if err := dfi.client.Patch(ctx, pod, patchFrom); err != nil {
 		return err
 	}
 
@@ -1016,6 +1017,7 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 	// 5. Update new master labels with traffic enabled
 	masterIp := newMaster.Status.PodIP
 
+	patchFrom := client.MergeFrom(newMaster.DeepCopy())
 	dfi.log.Info("updating new master labels with traffic enabled", "pod", newMaster.Name)
 	newMaster.Labels[resources.RoleLabelKey] = resources.Master
 	newMaster.Labels[resources.TrafficLabelKey] = resources.TrafficEnabled
@@ -1026,7 +1028,7 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 	}
 	newMaster.Annotations[resources.MasterIpAnnotationKey] = masterIp
 
-	if err := dfi.client.Update(ctx, newMaster); err != nil {
+	if err := dfi.client.Patch(ctx, newMaster, patchFrom); err != nil {
 		return fmt.Errorf("failed to update the role label on the pod: %w", err)
 	}
 
