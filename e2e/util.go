@@ -36,6 +36,7 @@ import (
 	"github.com/redis/go-redis/v9/maintnotifications"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -43,6 +44,8 @@ import (
 	"k8s.io/client-go/transport/spdy"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+const endpointPollInterval = 500 * time.Millisecond
 
 func parseTieredEntriesFromInfo(info string) (int64, error) {
 	sc := bufio.NewScanner(strings.NewReader(info))
@@ -477,6 +480,81 @@ func tryCheckPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientse
 	return loading, loadState, sc.Err()
 }
 
+// EndpointTransition captures ordering when an old endpoint IP is removed and
+// a new endpoint IP is added.
+type EndpointTransition struct {
+	OldRemovedAt time.Time
+	NewAddedAt   time.Time
+	NewIP        string
+}
+
+func waitForEndpointTransition(ctx context.Context, k8sClient client.Client, serviceName, namespace, oldIP string, timeout time.Duration) (*EndpointTransition, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	transition := &EndpointTransition{}
+	for {
+		select {
+		case <-ctx.Done():
+			if ctx.Err() == context.Canceled {
+				return nil, ctx.Err()
+			}
+			if ctx.Err() == context.DeadlineExceeded {
+				return nil, context.DeadlineExceeded
+			}
+			return nil, fmt.Errorf("timed out waiting for endpoint transition for service %s", serviceName)
+		default:
+			ips, err := getServiceEndpointIPs(ctx, k8sClient, serviceName, namespace)
+			if err != nil {
+				return nil, err
+			}
+
+			oldPresent := ipInSlice(oldIP, ips)
+			if transition.OldRemovedAt.IsZero() && !oldPresent {
+				transition.OldRemovedAt = time.Now()
+			}
+
+			if !transition.OldRemovedAt.IsZero() && transition.NewAddedAt.IsZero() && len(ips) > 0 {
+				transition.NewAddedAt = time.Now()
+				transition.NewIP = ips[0]
+			}
+
+			if !transition.OldRemovedAt.IsZero() && !transition.NewAddedAt.IsZero() {
+				return transition, nil
+			}
+
+			time.Sleep(endpointPollInterval)
+		}
+	}
+}
+
+func getServiceEndpointIPs(ctx context.Context, k8sClient client.Client, serviceName, namespace string) ([]string, error) {
+	var endpoints corev1.Endpoints
+	if err := k8sClient.Get(ctx, types.NamespacedName{Name: serviceName, Namespace: namespace}, &endpoints); err != nil {
+		if apierrors.IsNotFound(err) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+
+	ips := make([]string, 0)
+	for _, subset := range endpoints.Subsets {
+		for _, addr := range subset.Addresses {
+			ips = append(ips, addr.IP)
+		}
+	}
+	return ips, nil
+}
+
+func ipInSlice(ip string, ips []string) bool {
+	for _, candidate := range ips {
+		if candidate == ip {
+			return true
+		}
+	}
+	return false
+}
+
 // WriteTestResult holds the results of a continuous write test
 type WriteTestResult struct {
 	TotalWrites    int
@@ -506,7 +584,9 @@ func runContinuousWrites(ctx context.Context, rc *redis.Client, duration time.Du
 			value := fmt.Sprintf("test-value-%d-%d", counter, time.Now().UnixNano())
 
 			result.TotalWrites++
-			err := rc.Set(ctx, key, value, 0).Err()
+			opCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+			err := rc.Set(opCtx, key, value, 0).Err()
+			cancel()
 			if err != nil {
 				result.FailedWrites++
 				errStr := err.Error()
