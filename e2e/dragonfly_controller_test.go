@@ -74,12 +74,13 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Namespace: namespace,
 		},
 		Spec: resourcesv1.DragonflySpec{
+			Replicas:        3,
+			Resources:       &resourcesReq,
+			Args:            args,
+			ImagePullPolicy: corev1.PullIfNotPresent,
 			OwnedObjectsMetadata: &resourcesv1.OwnedObjectsMetadata{
 				Labels: labels,
 			},
-			Replicas:  3,
-			Resources: &resourcesReq,
-			Args:      args,
 			Env: []corev1.EnvVar{
 				{
 					Name:  "ENV-1",
@@ -585,6 +586,17 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 
 			err = k8sClient.Delete(ctx, &df)
 			Expect(err).To(BeNil())
+
+			// Clean up secrets
+			var secret corev1.Secret
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "df-secret",
+				Namespace: namespace,
+			}, &secret)
+			if err == nil {
+				err = k8sClient.Delete(ctx, &secret)
+				Expect(err).To(BeNil())
+			}
 		})
 	})
 })
@@ -620,8 +632,9 @@ user john on >peacepass -@all +@string +hset
 					Namespace: namespace,
 				},
 				Spec: resourcesv1.DragonflySpec{
-					Replicas: 1,
-					Args:     args,
+					Replicas:        1,
+					Args:            args,
+					ImagePullPolicy: corev1.PullIfNotPresent,
 					AclFromSecret: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: "df-acl",
@@ -669,6 +682,17 @@ user john on >peacepass -@all +@string +hset
 
 			err = k8sClient.Delete(ctx, &df)
 			Expect(err).To(BeNil())
+
+			// Clean up secrets
+			var secret corev1.Secret
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "df-acl",
+				Namespace: namespace,
+			}, &secret)
+			if err == nil {
+				err = k8sClient.Delete(ctx, &secret)
+				Expect(err).To(BeNil())
+			}
 		})
 	})
 })
@@ -686,7 +710,8 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 					Namespace: namespace,
 				},
 				Spec: resourcesv1.DragonflySpec{
-					Replicas: 1,
+					Replicas:        1,
+					ImagePullPolicy: corev1.PullIfNotPresent,
 					Tiering: &resourcesv1.Tiering{
 						PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{
@@ -803,8 +828,9 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 					Namespace: namespace,
 				},
 				Spec: resourcesv1.DragonflySpec{
-					Replicas: 1,
-					Args:     args,
+					Replicas:        1,
+					Args:            args,
+					ImagePullPolicy: corev1.PullIfNotPresent,
 					Snapshot: &resourcesv1.Snapshot{
 						Cron: schedule,
 						PersistentVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
@@ -934,7 +960,8 @@ var _ = Describe("Dragonfly with additional container and volume", Ordered, Flak
 					Namespace: namespace,
 				},
 				Spec: resourcesv1.DragonflySpec{
-					Replicas: 1,
+					Replicas:        1,
+					ImagePullPolicy: corev1.PullIfNotPresent,
 					AdditionalContainers: []corev1.Container{
 						{
 							Name:    sidecarName,
@@ -1037,8 +1064,9 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 			Namespace: namespace,
 		},
 		Spec: resourcesv1.DragonflySpec{
-			Replicas: 2,
-			Args:     args,
+			Replicas:        2,
+			Args:            args,
+			ImagePullPolicy: corev1.PullIfNotPresent,
 			TLSSecretRef: &corev1.SecretReference{
 				Name: "df-tls",
 			},
@@ -1122,6 +1150,26 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 
 			err = k8sClient.Delete(ctx, &df)
 			Expect(err).To(BeNil())
+
+			// Clean up secrets
+			var secret corev1.Secret
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "df-tls",
+				Namespace: namespace,
+			}, &secret)
+			if err == nil {
+				err = k8sClient.Delete(ctx, &secret)
+				Expect(err).To(BeNil())
+			}
+
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "df-password",
+				Namespace: namespace,
+			}, &secret)
+			if err == nil {
+				err = k8sClient.Delete(ctx, &secret)
+				Expect(err).To(BeNil())
+			}
 		})
 	})
 })
