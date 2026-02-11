@@ -136,23 +136,8 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			Expect(err).To(BeNil())
 
-			// Wait for all pods to have role labels (with endpoint propagation, this may take longer)
-			Eventually(func() bool {
-				var pods corev1.PodList
-				err := k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-					resources.DragonflyNameLabelKey:    name,
-					resources.KubernetesPartOfLabelKey: "dragonfly",
-				})
-				if err != nil || len(pods.Items) != replicas {
-					return false
-				}
-				for _, pod := range pods.Items {
-					if _, ok := pod.Labels[resources.RoleLabelKey]; !ok {
-						return false
-					}
-				}
-				return true
-			}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "all pods should have role labels")
+			err = waitForAllPodsToHaveRoleLabels(ctx, k8sClient, name, namespace, replicas, 2*time.Minute)
+			Expect(err).To(BeNil())
 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
@@ -202,23 +187,8 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 			Expect(err).To(BeNil())
 
-			// Wait for all pods to have role labels (with endpoint propagation, this may take longer)
-			Eventually(func() bool {
-				var pods corev1.PodList
-				err := k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-					resources.DragonflyNameLabelKey:    name,
-					resources.KubernetesPartOfLabelKey: "dragonfly",
-				})
-				if err != nil || len(pods.Items) != replicas {
-					return false
-				}
-				for _, pod := range pods.Items {
-					if _, ok := pod.Labels[resources.RoleLabelKey]; !ok {
-						return false
-					}
-				}
-				return true
-			}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "all pods should have role labels")
+			err = waitForAllPodsToHaveRoleLabels(ctx, k8sClient, name, namespace, replicas, 2*time.Minute)
+			Expect(err).To(BeNil())
 
 			// Check if there are relevant pods with expected roles
 			var pods corev1.PodList
@@ -491,6 +461,7 @@ var _ = Describe("DF Rolling Update Under Load", Ordered, FlakeAttempts(3), func
 			Expect(err).To(BeNil())
 
 			transitionCtx, transitionCancel := context.WithCancel(ctx)
+			defer transitionCancel()
 			transitionCh := make(chan *EndpointTransition, 1)
 			transitionErrCh := make(chan error, 1)
 			go func() {

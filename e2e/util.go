@@ -89,6 +89,40 @@ func waitForStatefulSetReady(ctx context.Context, c client.Client, name, namespa
 	}
 }
 
+func waitForAllPodsToHaveRoleLabels(ctx context.Context, c client.Client, name, namespace string, expectedCount int, maxDuration time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, maxDuration)
+	defer cancel()
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		var pods corev1.PodList
+		err := c.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+			resources.DragonflyNameLabelKey:    name,
+			resources.KubernetesPartOfLabelKey: "dragonfly",
+		})
+		if err == nil && len(pods.Items) == expectedCount {
+			allHaveRoleLabels := true
+			for _, pod := range pods.Items {
+				if _, ok := pod.Labels[resources.RoleLabelKey]; !ok {
+					allHaveRoleLabels = false
+					break
+				}
+			}
+			if allHaveRoleLabels {
+				return nil
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timed out waiting for %d pods to have role labels", expectedCount)
+		case <-ticker.C:
+		}
+	}
+}
+
 func isStatefulSetReady(ctx context.Context, c client.Client, name, namespace string) (bool, error) {
 	var statefulSet appsv1.StatefulSet
 	if err := c.Get(ctx, types.NamespacedName{

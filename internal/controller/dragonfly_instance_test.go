@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -57,9 +58,10 @@ type respServer struct {
 }
 
 func newRespServer(t *testing.T, addr string) *respServer {
+	t.Helper()
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		t.Skipf("skipping: cannot listen on %s: %v", addr, err)
+		t.Fatalf("failed to listen on %s: %v", addr, err)
 	}
 	s := &respServer{
 		ln:     ln,
@@ -176,7 +178,7 @@ func readCommand(reader *bufio.Reader) ([]string, error) {
 			return nil, err
 		}
 		buf := make([]byte, n+2)
-		if _, err := reader.Read(buf); err != nil {
+		if _, err := io.ReadFull(reader, buf); err != nil {
 			return nil, err
 		}
 		args = append(args, string(buf[:n]))

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -469,7 +470,9 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		dfi.disconnectClients(ctx, redisClient, pod)
 
 		// 4. Small drain window to allow in-flight requests to complete
-		time.Sleep(ConnectionDrainPeriod)
+		if err := waitForDrainPeriod(ctx, ConnectionDrainPeriod); err != nil {
+			return fmt.Errorf("drain period interrupted: %w", err)
+		}
 	}
 
 	// 5. Now safe to change role - pod is no longer receiving traffic
@@ -994,7 +997,9 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 	oldMasterClient.Close()
 
 	// Small drain window
-	time.Sleep(ConnectionDrainPeriod)
+	if err := waitForDrainPeriod(ctx, ConnectionDrainPeriod); err != nil {
+		return fmt.Errorf("drain period interrupted: %w", err)
+	}
 
 	// 4. Run REPLTAKEOVER on new master
 	newMasterClient := redis.NewClient(&redis.Options{
@@ -1065,32 +1070,38 @@ func (dfi *DragonflyInstance) waitForServiceEndpointIP(ctx context.Context, expe
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	ticker := time.NewTicker(EndpointPollInterval)
+	defer ticker.Stop()
 
 	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for endpoint IP %s in service %s", expectedIP, serviceName)
-		default:
-			var endpoints corev1.Endpoints
-			if err := dfi.client.Get(ctx, client.ObjectKey{
-				Namespace: dfi.df.Namespace,
-				Name:      serviceName,
-			}, &endpoints); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return fmt.Errorf("failed to get endpoints: %w", err)
-				}
-				// Endpoints not found yet, continue waiting
-			} else {
-				for _, subset := range endpoints.Subsets {
-					for _, addr := range subset.Addresses {
-						if addr.IP == expectedIP {
-							dfi.log.Info("endpoint now includes IP", "service", serviceName, "ip", expectedIP)
-							return nil
-						}
+		if err := ctx.Err(); err != nil {
+			return endpointWaitContextError("include", expectedIP, serviceName, err)
+		}
+
+		var endpoints corev1.Endpoints
+		if err := dfi.client.Get(ctx, client.ObjectKey{
+			Namespace: dfi.df.Namespace,
+			Name:      serviceName,
+		}, &endpoints); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get endpoints: %w", err)
+			}
+			// Endpoints not found yet, continue waiting
+		} else {
+			for _, subset := range endpoints.Subsets {
+				for _, addr := range subset.Addresses {
+					if addr.IP == expectedIP {
+						dfi.log.Info("endpoint now includes IP", "service", serviceName, "ip", expectedIP)
+						return nil
 					}
 				}
 			}
-			time.Sleep(EndpointPollInterval)
+		}
+
+		select {
+		case <-ctx.Done():
+			return endpointWaitContextError("include", expectedIP, serviceName, ctx.Err())
+		case <-ticker.C:
 		}
 	}
 }
@@ -1102,45 +1113,70 @@ func (dfi *DragonflyInstance) waitForServiceEndpointRemoved(ctx context.Context,
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	ticker := time.NewTicker(EndpointPollInterval)
+	defer ticker.Stop()
 
 	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for endpoint IP %s to be removed from service %s", removedIP, serviceName)
-		default:
-			var endpoints corev1.Endpoints
-			if err := dfi.client.Get(ctx, client.ObjectKey{
-				Namespace: dfi.df.Namespace,
-				Name:      serviceName,
-			}, &endpoints); err != nil {
-				if apierrors.IsNotFound(err) {
-					// Endpoints not found means IP is definitely not there
-					dfi.log.Info("endpoints not found, IP removed", "service", serviceName, "ip", removedIP)
-					return nil
-				}
-				return fmt.Errorf("failed to get endpoints: %w", err)
-			}
+		if err := ctx.Err(); err != nil {
+			return endpointWaitContextError("remove", removedIP, serviceName, err)
+		}
 
-			found := false
-			for _, subset := range endpoints.Subsets {
-				for _, addr := range subset.Addresses {
-					if addr.IP == removedIP {
-						found = true
-						break
-					}
-				}
-				if found {
+		var endpoints corev1.Endpoints
+		if err := dfi.client.Get(ctx, client.ObjectKey{
+			Namespace: dfi.df.Namespace,
+			Name:      serviceName,
+		}, &endpoints); err != nil {
+			if apierrors.IsNotFound(err) {
+				// Endpoints not found means IP is definitely not there
+				dfi.log.Info("endpoints not found, IP removed", "service", serviceName, "ip", removedIP)
+				return nil
+			}
+			return fmt.Errorf("failed to get endpoints: %w", err)
+		}
+
+		found := false
+		for _, subset := range endpoints.Subsets {
+			for _, addr := range subset.Addresses {
+				if addr.IP == removedIP {
+					found = true
 					break
 				}
 			}
-
-			if !found {
-				dfi.log.Info("endpoint no longer includes IP", "service", serviceName, "ip", removedIP)
-				return nil
+			if found {
+				break
 			}
-			time.Sleep(EndpointPollInterval)
+		}
+
+		if !found {
+			dfi.log.Info("endpoint no longer includes IP", "service", serviceName, "ip", removedIP)
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return endpointWaitContextError("remove", removedIP, serviceName, ctx.Err())
+		case <-ticker.C:
 		}
 	}
+}
+
+func waitForDrainPeriod(ctx context.Context, drainPeriod time.Duration) error {
+	timer := time.NewTimer(drainPeriod)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func endpointWaitContextError(action, ip, serviceName string, err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("timed out waiting for endpoint IP %s to %s in service %s: %w", ip, action, serviceName, err)
+	}
+	return fmt.Errorf("waiting for endpoint IP %s to %s in service %s canceled: %w", ip, action, serviceName, err)
 }
 
 // disableTraffic removes a pod from service endpoints by setting traffic label to disabled
