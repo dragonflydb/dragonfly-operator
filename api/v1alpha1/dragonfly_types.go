@@ -174,6 +174,23 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	OwnedObjectsMetadata *OwnedObjectsMetadata `json:"ownedObjectsMetadata,omitempty"`
+
+	// (Optional) Dragonfly Pod Disruption Budget configuration
+	// +optional
+	// +kubebuilder:validation:Optional
+	Pdb *PdbSpec `json:"pdb,omitempty"`
+}
+
+type PdbSpec struct {
+	// (Optional) Dragonfly Pod Disruption Budget minAvailable configuration
+	// +optional
+	// +kubebuilder:validation:Optional
+	MinAvailable string `json:"minAvailable,omitempty"`
+
+	// (Optional) Dragonfly Pod Disruption Budget maxUnavailable configuration
+	// +optional
+	// +kubebuilder:validation:Optional
+	MaxUnavailable string `json:"maxUnavailable,omitempty"`
 }
 
 type OwnedObjectsMetadata struct {

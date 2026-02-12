@@ -6056,6 +6056,16 @@ spec:
                       type: string
                     type: object
                 type: object
+              pdb:
+                description: (Optional) Dragonfly Pod Disruption Budget configuration
+                properties:
+                  maxUnavailable:
+                    description: (Optional) Dragonfly Pod Disruption Budget maxUnavailable configuration
+                    type: string
+                  minAvailable:
+                    description: (Optional) Dragonfly Pod Disruption Budget minAvailable configuration
+                    type: string
+                type: object
               podSecurityContext:
                 description: (Optional) Dragonfly pod security context
                 properties:

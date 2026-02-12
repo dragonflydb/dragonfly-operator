@@ -471,10 +471,6 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 			Annotations: generateResourceAnnotations(df),
 		},
 		Spec: policyv1.PodDisruptionBudgetSpec{
-			MaxUnavailable: &intstr.IntOrString{
-				Type:   intstr.Int,
-				IntVal: 1,
-			},
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					DragonflyNameLabelKey:     df.Name,
@@ -483,6 +479,20 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 				},
 			},
 		},
+	}
+
+	// Apply custom PDB configuration
+	if df.Spec.Pdb.MaxUnavailable != "" {
+		maxUnavailable := intstr.Parse(df.Spec.Pdb.MaxUnavailable)
+		pdb.Spec.MaxUnavailable = &maxUnavailable
+	} else if df.Spec.Pdb.MinAvailable != "" {
+		minAvailable := intstr.Parse(df.Spec.Pdb.MinAvailable)
+		pdb.Spec.MinAvailable = &minAvailable
+	} else {
+		pdb.Spec.MaxUnavailable = &intstr.IntOrString{
+			Type:   intstr.Int,
+			IntVal: 1,
+		}
 	}
 
 	if df.Spec.Replicas > 1 {
