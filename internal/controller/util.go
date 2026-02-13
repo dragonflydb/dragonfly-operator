@@ -19,6 +19,8 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
@@ -175,7 +177,48 @@ func isMasterError(err error) bool {
 		errors.Is(err, ErrIncorrectMasters)
 }
 
+// isReplicationCancelledError checks if the error is a transient "replication cancelled" error from DragonflyDB.
+// This typically happens when multiple SLAVE OF commands are sent concurrently to the same pod.
+func isReplicationCancelledError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "replication cancelled")
+}
+
 // sanitizeIp removes surrounding brackets from IPv6 addresses.
 func sanitizeIp(masterIp string) string {
 	return strings.Trim(masterIp, "[]")
+}
+
+// getOrdinal returns the ordinal of the pod.
+func getOrdinal(podName string) int {
+	parts := strings.Split(podName, "-")
+	if len(parts) < 2 {
+		return math.MaxInt
+	}
+	ordinal, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		return math.MaxInt
+	}
+	return ordinal
+}
+
+// selectMasterCandidate deterministically selects a master candidate from the given list of pods.
+func selectMasterCandidate(pods []corev1.Pod) *corev1.Pod {
+	var bestCandidate *corev1.Pod
+
+	for i := range pods {
+		p := &pods[i]
+		// We can't use isReady() because the readiness probe might not pass until replication is configured.
+		if p.Status.Phase != corev1.PodRunning || p.Status.PodIP == "" {
+			continue
+		}
+
+		// Prefer Pod-0, then Pod-1, etc.
+		if bestCandidate == nil || getOrdinal(p.Name) < getOrdinal(bestCandidate.Name) {
+			bestCandidate = p
+		}
+	}
+	return bestCandidate
 }

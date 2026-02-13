@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -205,6 +206,43 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			// One Master & Three Replicas
 			Expect(podRoles[resources.Master]).To(HaveLen(1))
 			Expect(podRoles[resources.Replica]).To(HaveLen(replicas - 1))
+		})
+
+		It("Should recover from stuck Configuring phase", func() {
+			// Ensure we start from a healthy state
+			err := waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 1*time.Minute)
+			Expect(err).To(BeNil())
+
+			// 1. Manually set Phase to Configuring
+			var df dfv1alpha1.Dragonfly
+			err = k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, &df)
+			Expect(err).To(BeNil())
+
+			patch := client.MergeFrom(df.DeepCopy())
+			df.Status.Phase = controller.PhaseConfiguring
+			err = k8sClient.Status().Patch(ctx, &df, patch)
+			Expect(err).To(BeNil())
+
+			// 2. Trigger reconciliation by annotating the master pod
+			// The podRoles map should have the current master from previous steps
+			var pod corev1.Pod
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: namespace,
+				Name:      podRoles[resources.Master][0],
+			}, &pod)
+			Expect(err).To(BeNil())
+
+			patchPod := client.MergeFrom(pod.DeepCopy())
+			if pod.Annotations == nil {
+				pod.Annotations = make(map[string]string)
+			}
+			pod.Annotations["trigger-reconcile"] = fmt.Sprintf("%d", time.Now().Unix())
+			err = k8sClient.Patch(ctx, &pod, patchPod)
+			Expect(err).To(BeNil())
+
+			// 3. Expect controller to detect valid roles and move back to Ready
+			err = waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 1*time.Minute)
+			Expect(err).To(BeNil())
 		})
 
 		It("Cleanup", func() {
