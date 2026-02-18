@@ -12,7 +12,15 @@ metadata:
   name: {{ include "dragonfly-operator.fullname" . }}-controller-manager-metrics
 spec:
   endpoints:
-  - targetPort: {{ .Values.service.metricsPort }}
+  {{- if .Values.rbacProxy.enabled }}
+  - port: https
+    scheme: https
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    tlsConfig:
+      insecureSkipVerify: true
+  {{- else }}
+  - port: metrics
+  {{- end }}
     {{- if .Values.serviceMonitor.interval }}
     interval: {{ .Values.serviceMonitor.interval }}
     {{- end }}
