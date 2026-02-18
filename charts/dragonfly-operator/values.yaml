@@ -173,6 +173,16 @@ serviceMonitor:
   #     replacement: mydbname
   #     targetLabel: dbname
 
+  # When rbacProxy is enabled, a ClusterRoleBinding is needed to grant the
+  # Prometheus service account access to the /metrics endpoint via kube-rbac-proxy.
+  rbacProxyMetricsReader:
+    # -- Create a ClusterRoleBinding for the Prometheus service account
+    create: false
+    # -- Name of the Prometheus ServiceAccount
+    serviceAccountName: ""
+    # -- Namespace of the Prometheus ServiceAccount
+    serviceAccountNamespace: ""
+  
 grafanaDashboard:
   enabled: false
   folder: database

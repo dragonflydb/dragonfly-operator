@@ -30,3 +30,25 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "dragonfly-operator.serviceAccountName" . }}
     namespace: {{ include "dragonfly-operator.namespace" . }}
+{{- if .Values.serviceMonitor.enabled }}
+{{- if .Values.rbacProxy.enabled }}
+{{- if .Values.serviceMonitor.rbacProxyMetricsReader.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-metrics-reader-clusterrolebinding
+  labels:
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kube-rbac-proxy
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "dragonfly-operator.fullname" . }}-metrics-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceMonitor.rbacProxyMetricsReader.serviceAccountName }}
+    namespace: {{ .Values.serviceMonitor.rbacProxyMetricsReader.serviceAccountNamespace }}
+{{- end }}
+{{- end }}
+{{- end }}
