@@ -67,6 +67,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("failed to get dragonfly instance: %w", err))
 	}
+	defer dfi.Close()
 
 	podReady, readinessErr := dfi.isPodReady(ctx, &pod)
 	if readinessErr != nil {

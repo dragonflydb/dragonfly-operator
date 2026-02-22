@@ -59,6 +59,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("failed to get dragonfly instance: %w", err))
 	}
+	defer dfi.Close()
 
 	if dfi.isTerminating() {
 		// Ignore dragonfly instance that is being foreground deleted
