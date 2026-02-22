@@ -47,8 +47,8 @@ roleRef:
   name: {{ include "dragonfly-operator.fullname" . }}-metrics-reader
 subjects:
   - kind: ServiceAccount
-    name: {{ .Values.serviceMonitor.rbacProxyMetricsReader.serviceAccountName }}
-    namespace: {{ .Values.serviceMonitor.rbacProxyMetricsReader.serviceAccountNamespace }}
+    name: {{ required "serviceMonitor.rbacProxyMetricsReader.serviceAccountName is required when rbacProxyMetricsReader.create is true" .Values.serviceMonitor.rbacProxyMetricsReader.serviceAccountName }}
+    namespace: {{ required "serviceMonitor.rbacProxyMetricsReader.serviceAccountNamespace is required when rbacProxyMetricsReader.create is true" .Values.serviceMonitor.rbacProxyMetricsReader.serviceAccountNamespace }}
 {{- end }}
 {{- end }}
 {{- end }}
