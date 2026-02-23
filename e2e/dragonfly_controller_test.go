@@ -669,6 +669,8 @@ user john on >peacepass -@all +@string +hset
 
 			err = k8sClient.Delete(ctx, &df)
 			Expect(err).To(BeNil())
+
+			_ = k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "df-acl", Namespace: namespace}})
 		})
 	})
 })
@@ -1122,6 +1124,9 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 
 			err = k8sClient.Delete(ctx, &df)
 			Expect(err).To(BeNil())
+
+			_ = k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "df-tls", Namespace: namespace}})
+			_ = k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "df-password", Namespace: namespace}})
 		})
 	})
 })
