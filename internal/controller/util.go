@@ -205,13 +205,12 @@ func getOrdinal(podName string) int {
 }
 
 // selectMasterCandidate deterministically selects a master candidate from the given list of pods.
-func selectMasterCandidate(pods []corev1.Pod) *corev1.Pod {
+func selectMasterCandidate(pods []corev1.Pod, isReady func(*corev1.Pod) bool) *corev1.Pod {
 	var bestCandidate *corev1.Pod
 
 	for i := range pods {
 		p := &pods[i]
-		// We can't use isReady() because the readiness probe might not pass until replication is configured.
-		if p.Status.Phase != corev1.PodRunning || p.Status.PodIP == "" {
+		if !isReady(p) {
 			continue
 		}
 

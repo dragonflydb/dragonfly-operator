@@ -126,8 +126,8 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 // checkReplicaRole returns true if the given pod is a replica and is connected to the correct master.
 func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.Pod, masterIp string) (bool, error) {
 	redisClient := redis.NewClient(&redis.Options{
-		ClientName: resources.DragonflyOperatorName,
-		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		ClientName:   resources.DragonflyOperatorName,
+		Addr:         net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		DialTimeout:  10 * time.Second,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -175,8 +175,8 @@ func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.
 // isReplicaStable returns true if the given replica is stable.
 func (dfi *DragonflyInstance) isReplicaStable(ctx context.Context, pod *corev1.Pod) (bool, error) {
 	redisClient := redis.NewClient(&redis.Options{
-		ClientName: resources.DragonflyOperatorName,
-		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		ClientName:   resources.DragonflyOperatorName,
+		Addr:         net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		DialTimeout:  10 * time.Second,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -451,8 +451,8 @@ func (dfi *DragonflyInstance) detectOldMasters(ctx context.Context, updateRevisi
 // replicaOf configures the pod as a replica to the given master instance
 func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	redisClient := redis.NewClient(&redis.Options{
-		ClientName: resources.DragonflyOperatorName,
-		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		ClientName:   resources.DragonflyOperatorName,
+		Addr:         net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		DialTimeout:  10 * time.Second,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -517,8 +517,8 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 // replicaOfNoOne configures the pod as a master along while updating other pods to be replicas
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	redisClient := redis.NewClient(&redis.Options{
-		ClientName: resources.DragonflyOperatorName,
-		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		ClientName:   resources.DragonflyOperatorName,
+		Addr:         net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		DialTimeout:  10 * time.Second,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -772,7 +772,7 @@ func (dfi *DragonflyInstance) isDatasetLoaded(ctx context.Context, pod *corev1.P
 
 	redisClient := redis.NewClient(&redis.Options{
 		ClientName: resources.DragonflyOperatorName,
-		Addr: net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		Addr:       net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 	})
 	defer redisClient.Close()
 
@@ -880,7 +880,7 @@ func (dfi *DragonflyInstance) allPodsHealthyAndHaveRole(ctx context.Context, upd
 			continue
 		}
 
-		if !isPodOnLatestVersion(&pod, updateRevision) && !isTerminating(&pod) && !isRunningAndReady(&pod) {
+		if !isPodOnLatestVersion(&pod, updateRevision) && !isRunningAndReady(&pod) {
 			dfi.log.Info("deleting failed to start pod", "pod", pod.Name)
 			if err := dfi.client.Delete(ctx, &pod); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to delete pod: %w", err)
@@ -996,8 +996,8 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 	dfi.log.Info("running REPLTAKEOVER on replica", "pod", newMaster.Name)
 
 	redisClient := redis.NewClient(&redis.Options{
-		ClientName: resources.DragonflyOperatorName,
-		Addr: net.JoinHostPort(newMaster.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		ClientName:   resources.DragonflyOperatorName,
+		Addr:         net.JoinHostPort(newMaster.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		DialTimeout:  10 * time.Second,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
