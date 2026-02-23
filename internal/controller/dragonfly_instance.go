@@ -1018,6 +1018,7 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 
 	masterIp := newMaster.Status.PodIP
 
+	patch := client.MergeFrom(newMaster.DeepCopy())
 	newMaster.Labels[resources.RoleLabelKey] = resources.Master
 	delete(newMaster.Labels, resources.MasterIpLabelKey)
 
@@ -1027,7 +1028,7 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 	newMaster.Annotations[resources.MasterIpAnnotationKey] = masterIp
 
 	// update the label on the pod
-	if err := dfi.client.Update(ctx, newMaster); err != nil {
+	if err := dfi.client.Patch(ctx, newMaster, patch); err != nil {
 		return fmt.Errorf("failed to update the role label on the pod: %w", err)
 	}
 
