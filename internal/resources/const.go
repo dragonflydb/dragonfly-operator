@@ -94,6 +94,8 @@ const (
 	Master = "master"
 
 	Replica = "replica"
+
+	ReplicationReadyConditionType = "dragonflydb.io/replication-ready"
 )
 
 var DefaultDragonflyArgs = []string{

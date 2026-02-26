@@ -4461,6 +4461,13 @@ spec:
                         type: string
                     type: object
                 type: object
+              enableReplicationReadinessGate:
+                description: |-
+                  (Optional) When enabled, adds a custom readiness gate to pods that prevents
+                  them from being considered Ready until replication is fully synced.
+                  Protects against data loss during external node drains.
+                  WARNING: Enabling this on an existing cluster will trigger a rolling update.
+                type: boolean
               env:
                 description: (Optional) Env variables to add to the Dragonfly pods.
                 items:

@@ -85,6 +85,13 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context, master *
 
 	dfi.eventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Updated master instance")
 
+	if dfi.df.Spec.EnableReplicationReadinessGate {
+		if err = dfi.patchReplicationReadyCondition(ctx, master, true); err != nil {
+			dfi.log.Error(err, "failed to patch replication ready condition on master", "pod", master.Name)
+			return err
+		}
+	}
+
 	for _, pod := range pods.Items {
 		if pod.Name == master.Name {
 			continue
@@ -754,6 +761,50 @@ func (dfi *DragonflyInstance) isPodReady(ctx context.Context, pod *corev1.Pod) (
 	return loaded, nil
 }
 
+// patchReplicationReadyCondition sets or updates the dragonflydb.io/replication-ready
+// condition on the pod's status. This condition is used as a ReadinessGate so that
+// Kubernetes (and the PDB) considers a pod not-ready while replication is in progress.
+func (dfi *DragonflyInstance) patchReplicationReadyCondition(ctx context.Context, pod *corev1.Pod, ready bool) error {
+	condType := corev1.PodConditionType(resources.ReplicationReadyConditionType)
+	desiredStatus := corev1.ConditionFalse
+	if ready {
+		desiredStatus = corev1.ConditionTrue
+	}
+
+	for _, c := range pod.Status.Conditions {
+		if c.Type == condType && c.Status == desiredStatus {
+			return nil
+		}
+	}
+
+	dfi.log.Info("patching replication ready condition", "pod", pod.Name, "ready", ready)
+
+	patchFrom := client.MergeFrom(pod.DeepCopy())
+
+	now := metav1.Now()
+	found := false
+	for i, c := range pod.Status.Conditions {
+		if c.Type == condType {
+			pod.Status.Conditions[i].Status = desiredStatus
+			pod.Status.Conditions[i].LastTransitionTime = now
+			found = true
+			break
+		}
+	}
+	if !found {
+		pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
+			Type:               condType,
+			Status:             desiredStatus,
+			LastTransitionTime: now,
+		})
+	}
+
+	if err := dfi.client.Status().Patch(ctx, pod, patchFrom); err != nil {
+		return fmt.Errorf("failed to patch replication ready condition on pod %s: %w", pod.Name, err)
+	}
+	return nil
+}
+
 // detectRollingUpdate checks whether the pod spec has changed and performs a rolling update if needed
 func (dfi *DragonflyInstance) detectRollingUpdate(ctx context.Context) (dfv1alpha1.DragonflyStatus, error) {
 	dfi.log.Info("checking if pod spec has changed")
@@ -811,6 +862,13 @@ func (dfi *DragonflyInstance) deleteRoleLabel(ctx context.Context, pod *corev1.P
 		return err
 	}
 
+	if dfi.df.Spec.EnableReplicationReadinessGate {
+		if err := dfi.patchReplicationReadyCondition(ctx, pod, false); err != nil {
+			dfi.log.Error(err, "failed to clear replication ready condition after role removal", "pod", pod.Name)
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -858,6 +916,12 @@ func (dfi *DragonflyInstance) verifyUpdatedReplicas(ctx context.Context, replica
 			ok, err := dfi.isReplicaStable(ctx, &replica)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to check if replica is stable: %w", err)
+			}
+
+			if dfi.df.Spec.EnableReplicationReadinessGate {
+				if patchErr := dfi.patchReplicationReadyCondition(ctx, &replica, ok); patchErr != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to patch replication ready condition: %w", patchErr)
+				}
 			}
 
 			if !ok {

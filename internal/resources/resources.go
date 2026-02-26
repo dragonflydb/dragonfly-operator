@@ -143,6 +143,12 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		},
 	}
 
+	if df.Spec.EnableReplicationReadinessGate {
+		statefulset.Spec.Template.Spec.ReadinessGates = []corev1.PodReadinessGate{
+			{ConditionType: corev1.PodConditionType(ReplicationReadyConditionType)},
+		}
+	}
+
 	if len(df.Spec.InitContainers) > 0 {
 		statefulset.Spec.Template.Spec.InitContainers = df.Spec.InitContainers
 	}

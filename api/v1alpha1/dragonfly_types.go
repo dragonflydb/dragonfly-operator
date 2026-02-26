@@ -174,6 +174,14 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	OwnedObjectsMetadata *OwnedObjectsMetadata `json:"ownedObjectsMetadata,omitempty"`
+
+	// (Optional) When enabled, adds a custom readiness gate to pods that prevents
+	// them from being considered Ready until replication is fully synced.
+	// Protects against data loss during external node drains.
+	// WARNING: Enabling this on an existing cluster will trigger a rolling update.
+	// +optional
+	// +kubebuilder:validation:Optional
+	EnableReplicationReadinessGate bool `json:"enableReplicationReadinessGate,omitempty"`
 }
 
 type OwnedObjectsMetadata struct {
