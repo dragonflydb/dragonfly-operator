@@ -137,7 +137,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if roleExists(&pod) {
-		if dfi.getStatus().Phase != PhaseReady && dfi.getStatus().Phase != PhaseReadyOld {
+		if dfi.getStatus().Phase != PhaseReady && dfi.getStatus().Phase != PhaseReadyOld && dfi.getStatus().Phase != PhaseConfiguring {
 			return ctrl.Result{}, nil
 		}
 
@@ -151,6 +151,14 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to check and configure replicas: %w", err)
+		}
+
+		if dfi.getStatus().Phase == PhaseConfiguring {
+			status := dfi.getStatus()
+			status.Phase = PhaseReady
+			if err = dfi.patchStatus(ctx, status); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update the dragonfly status: %w", err)
+			}
 		}
 
 		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Checked and configured replication")
