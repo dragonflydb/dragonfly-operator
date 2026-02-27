@@ -6056,6 +6056,31 @@ spec:
                       type: string
                     type: object
                 type: object
+              pdb:
+                description: (Optional) Dragonfly Pod Disruption Budget configuration
+                properties:
+                  maxUnavailable:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      (Optional) Maximum number of Dragonfly pods that can be unavailable during voluntary disruptions.
+                      Accepts an absolute number (e.g. "1") or a percentage of total pods (e.g. "25%").
+                      Cannot be used together with MinAvailable; only one of maxUnavailable or minAvailable should be set.
+                    x-kubernetes-int-or-string: true
+                  minAvailable:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      (Optional) Minimum number of Dragonfly pods that must be available during voluntary disruptions.
+                      Accepts an absolute number (e.g. "1") or a percentage of total pods (e.g. "25%").
+                      Cannot be used together with MaxUnavailable; only one of minAvailable or maxUnavailable should be set.
+                    x-kubernetes-int-or-string: true
+                type: object
+                x-kubernetes-validations:
+                - message: minAvailable and maxUnavailable cannot be both set
+                  rule: '!(has(self.minAvailable) && has(self.maxUnavailable))'
               podSecurityContext:
                 description: (Optional) Dragonfly pod security context
                 properties:
