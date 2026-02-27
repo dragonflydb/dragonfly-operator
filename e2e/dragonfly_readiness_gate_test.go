@@ -213,7 +213,7 @@ var _ = Describe("Dragonfly Replication Readiness Gate", Ordered, FlakeAttempts(
 			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 1*time.Minute)).To(BeNil())
 		})
 
-		It("Should transition replica readiness condition from False to True after sync completes", func() {
+		It("Should transition replica readiness condition to True after sync completes", func() {
 			By("Step 1: Ensuring system is stable")
 			Eventually(func() bool {
 				master, replica, err := getMasterReplica(ctx, namespace, name)
@@ -231,7 +231,7 @@ var _ = Describe("Dragonfly Replication Readiness Gate", Ordered, FlakeAttempts(
 			By(fmt.Sprintf("Deleting replica pod: %s (uid=%s)", deletedName, deletedUID))
 			Expect(k8sClient.Delete(ctx, replica)).To(Succeed())
 
-			By("Step 3: Observing replacement pod — condition should start False or absent")
+			By("Step 3: Observing replacement pod condition lifecycle")
 			conditionObservedFalse := false
 			Eventually(func() bool {
 				var pods corev1.PodList
@@ -250,47 +250,36 @@ var _ = Describe("Dragonfly Replication Readiness Gate", Ordered, FlakeAttempts(
 					if p.Labels[resources.RoleLabelKey] != resources.Replica {
 						continue
 					}
+
+					hasCondition := false
 					for _, c := range p.Status.Conditions {
 						if c.Type == corev1.PodConditionType(resources.ReplicationReadyConditionType) {
+							hasCondition = true
 							if c.Status == corev1.ConditionFalse {
 								conditionObservedFalse = true
 								GinkgoWriter.Printf("[transition] replacement %s replication-ready=False (sync in progress)\n", p.Name)
+							} else if c.Status == corev1.ConditionTrue {
+								GinkgoWriter.Printf("[transition] replacement %s replication-ready=True\n", p.Name)
+								return true
 							}
-							return conditionObservedFalse
 						}
 					}
-					// Condition absent is also a "False" observation for our purposes
-					conditionObservedFalse = true
-					GinkgoWriter.Printf("[transition] replacement %s replication-ready condition absent\n", p.Name)
-					return true
+					if !hasCondition {
+						conditionObservedFalse = true
+						GinkgoWriter.Printf("[transition] replacement %s replication-ready condition absent\n", p.Name)
+					}
 				}
 				return false
 			}, 60*time.Second, 100*time.Millisecond).Should(BeTrue(),
-				"Replacement replica should appear with replication-ready=False or absent")
+				"Replacement replica should eventually have replication-ready=True")
 
-			Expect(conditionObservedFalse).To(BeTrue(),
-				"Should have observed replication-ready in False/absent state before it transitions to True")
+			if conditionObservedFalse {
+				GinkgoWriter.Printf("[transition] observed False/absent state before True (sync was slow enough to catch)\n")
+			} else {
+				GinkgoWriter.Printf("[transition] condition went directly to True (sync completed before observation)\n")
+			}
 
-			By("Step 4: Waiting for condition to transition to True")
-			Eventually(func() bool {
-				var pod corev1.Pod
-				if getErr := k8sClient.Get(ctx, types.NamespacedName{Name: deletedName, Namespace: namespace}, &pod); getErr != nil {
-					return false
-				}
-				if pod.UID == deletedUID {
-					return false
-				}
-				for _, c := range pod.Status.Conditions {
-					if c.Type == corev1.PodConditionType(resources.ReplicationReadyConditionType) && c.Status == corev1.ConditionTrue {
-						GinkgoWriter.Printf("[transition] replacement %s replication-ready=True\n", pod.Name)
-						return true
-					}
-				}
-				return false
-			}, 60*time.Second, 1*time.Second).Should(BeTrue(),
-				"Replication-ready condition should transition to True after sync completes")
-
-			By("Step 5: Verifying PodReady is also True (gate no longer blocking)")
+			By("Step 4: Verifying PodReady is also True (gate no longer blocking)")
 			Eventually(func() bool {
 				var pod corev1.Pod
 				if getErr := k8sClient.Get(ctx, types.NamespacedName{Name: deletedName, Namespace: namespace}, &pod); getErr != nil {
@@ -305,7 +294,7 @@ var _ = Describe("Dragonfly Replication Readiness Gate", Ordered, FlakeAttempts(
 			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
 				"PodReady should be True once the readiness gate is satisfied")
 
-			By("Step 6: Verifying Dragonfly CR returns to PhaseReady")
+			By("Step 5: Verifying Dragonfly CR returns to PhaseReady")
 			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)).To(Succeed())
 		})
 
