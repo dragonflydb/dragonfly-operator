@@ -6050,6 +6050,13 @@ spec:
                 description: (Optional) Dragonfly memcached port
                 format: int32
                 type: integer
+              networkPolicyEnabled:
+                default: true
+                description: |-
+                  (Optional) Whether to create a NetworkPolicy for this Dragonfly instance.
+                  The NetworkPolicy restricts admin port access to operator and peer pods only.
+                  Defaults to true.
+                type: boolean
               nodeSelector:
                 additionalProperties:
                   type: string
@@ -7194,6 +7201,18 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - policy
   resources:

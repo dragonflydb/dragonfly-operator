@@ -32,6 +32,7 @@ import (
 	"github.com/redis/go-redis/v9/maintnotifications"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -664,6 +665,16 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 			},
 		}); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to delete pod disruption budget: %w", err)
+		}
+	}
+	if dfi.df.Spec.NetworkPolicyEnabled != nil && !*dfi.df.Spec.NetworkPolicyEnabled {
+		if err = dfi.client.Delete(ctx, &networkingv1.NetworkPolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      dfi.df.Name,
+				Namespace: dfi.df.Namespace,
+			},
+		}); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete network policy: %w", err)
 		}
 	}
 	status := dfi.getStatus()
