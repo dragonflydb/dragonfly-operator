@@ -203,6 +203,37 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		})
 
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s/%s", AclFileArg, AclDir, AclFileName))
+
+		statefulset.Spec.Template.Spec.Containers = append(statefulset.Spec.Template.Spec.Containers, corev1.Container{
+			Name:            AclWatcherContainerName,
+			Image:           AclWatcherImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Env: []corev1.EnvVar{
+				{
+					Name:  "ACL_DIR",
+					Value: AclDir,
+				},
+				{
+					Name:  "ACL_FILE",
+					Value: fmt.Sprintf("%s/%s", AclDir, AclFileName),
+				},
+				{
+					Name:  "REDIS_HOST",
+					Value: "127.0.0.1",
+				},
+				{
+					Name:  "REDIS_PORT",
+					Value: fmt.Sprintf("%d", DragonflyAdminPort),
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      AclVolumeName,
+					MountPath: AclDir,
+					ReadOnly:  true,
+				},
+			},
+		})
 	}
 
 	// Doc: https://www.dragonflydb.io/blog/a-preview-of-dragonfly-ssd-tiering

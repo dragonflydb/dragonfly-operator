@@ -63,6 +63,9 @@ const (
 	// DragonflyImage is the default image of the Dragonfly to use
 	DragonflyImage = "docker.dragonflydb.io/dragonflydb/dragonfly"
 
+	// AclWatcherImage is the default image used for the ACL watcher sidecar.
+	AclWatcherImage = "ghcr.io/dragonflydb/acl-watcher:latest"
+
 	// Recommended Kubernetes Application Labels
 	// KubernetesAppNameLabel is the name of the application
 	KubernetesAppNameLabelKey = "app.kubernetes.io/name"
@@ -94,6 +97,8 @@ const (
 	Master = "master"
 
 	Replica = "replica"
+
+	AclWatcherContainerName = "acl-watcher"
 )
 
 var DefaultDragonflyArgs = []string{
