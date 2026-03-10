@@ -1033,6 +1033,7 @@ func (dfi *DragonflyInstance) getRedisRole(ctx context.Context, pod *corev1.Pod)
 		return "", fmt.Errorf("pod IP not available for %s", pod.Name)
 	}
 	redisClient := redis.NewClient(&redis.Options{
+		ClientName:   resources.DragonflyOperatorName,
 		Addr:         net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		DialTimeout:  10 * time.Second,
 		ReadTimeout:  10 * time.Second,
