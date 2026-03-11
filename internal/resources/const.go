@@ -95,6 +95,8 @@ const (
 
 	Replica = "replica"
 
+	ReplicationReadyConditionType = "dragonflydb.io/replication-ready"
+
 	OperatorControlPlaneLabelKey   = "control-plane"
 	OperatorControlPlaneLabelValue = "controller-manager"
 )

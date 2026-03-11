@@ -176,6 +176,14 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	OwnedObjectsMetadata *OwnedObjectsMetadata `json:"ownedObjectsMetadata,omitempty"`
 
+	// (Optional) When enabled, adds a custom readiness gate to pods that prevents
+	// them from being considered Ready until replication is fully synced.
+	// Protects against data loss during external node drains.
+	// WARNING: Enabling this on an existing cluster will trigger a rolling update.
+	// +optional
+	// +kubebuilder:validation:Optional
+	EnableReplicationReadinessGate bool `json:"enableReplicationReadinessGate,omitempty"`
+
 	// (Optional) Whether to create a NetworkPolicy for this Dragonfly instance.
 	// The NetworkPolicy restricts admin port access to operator and peer pods only.
 	// Defaults to true.
@@ -183,6 +191,7 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default:=true
 	NetworkPolicyEnabled *bool `json:"networkPolicyEnabled,omitempty"`
+
 	// (Optional) Dragonfly Pod Disruption Budget configuration
 	// +optional
 	// +kubebuilder:validation:Optional

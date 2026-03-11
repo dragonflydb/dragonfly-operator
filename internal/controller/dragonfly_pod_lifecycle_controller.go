@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	corev1 "k8s.io/api/core/v1"
@@ -36,6 +37,7 @@ type DfPodLifeCycleReconciler struct {
 }
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=pods/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -132,6 +134,25 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")
+	}
+
+	if dfi.df.Spec.EnableReplicationReadinessGate {
+		if isMaster(&pod) {
+			if err := dfi.patchReplicationReadyCondition(ctx, &pod, true); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to patch replication ready condition: %w", err)
+			}
+		} else if isReplica(&pod) {
+			stable, stableErr := dfi.isReplicaStable(ctx, &pod)
+			if stableErr != nil {
+				stable = false
+			}
+			if err := dfi.patchReplicationReadyCondition(ctx, &pod, stable); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to patch replication ready condition: %w", err)
+			}
+			if !stable {
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+		}
 	}
 
 	return ctrl.Result{}, nil

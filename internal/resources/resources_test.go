@@ -6,9 +6,11 @@ import (
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -71,6 +73,61 @@ func TestMergeNamedSlices_EmptyBase(t *testing.T) {
 
 	assert.Len(t, result, 1)
 	assert.Equal(t, "user", result[0].Name)
+}
+
+func newTestDragonfly(replicas int32) *resourcesv1.Dragonfly {
+	return &resourcesv1.Dragonfly{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "dragonflydb.io/v1alpha1",
+			Kind:       "Dragonfly",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-df",
+			Namespace: "default",
+			UID:       types.UID("test-uid"),
+		},
+		Spec: resourcesv1.DragonflySpec{
+			Replicas: replicas,
+		},
+	}
+}
+
+func TestGenerateDragonflyResources_ReadinessGateDisabled(t *testing.T) {
+	df := newTestDragonfly(2)
+	df.Spec.EnableReplicationReadinessGate = false
+
+	resources, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	for _, obj := range resources {
+		if sts, ok := obj.(*appsv1.StatefulSet); ok {
+			assert.Empty(t, sts.Spec.Template.Spec.ReadinessGates,
+				"readiness gates should be empty when feature is disabled")
+			return
+		}
+	}
+	t.Fatal("StatefulSet not found in generated resources")
+}
+
+func TestGenerateDragonflyResources_ReadinessGateEnabled(t *testing.T) {
+	df := newTestDragonfly(2)
+	df.Spec.EnableReplicationReadinessGate = true
+
+	resources, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	for _, obj := range resources {
+		if sts, ok := obj.(*appsv1.StatefulSet); ok {
+			require.Len(t, sts.Spec.Template.Spec.ReadinessGates, 1,
+				"should have exactly one readiness gate when feature is enabled")
+			assert.Equal(t,
+				corev1.PodConditionType(ReplicationReadyConditionType),
+				sts.Spec.Template.Spec.ReadinessGates[0].ConditionType,
+			)
+			return
+		}
+	}
+	t.Fatal("StatefulSet not found in generated resources")
 }
 
 func findNetworkPolicy(objs []client.Object) *networkingv1.NetworkPolicy {

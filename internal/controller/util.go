@@ -83,9 +83,13 @@ func isRunningAndReady(pod *corev1.Pod) bool {
 }
 
 // isReady returns true if the pod and the dragonfly container are ready.
+// Uses ContainersReady instead of PodReady so the operator can act on pods
+// whose custom readiness gates (e.g. dragonflydb.io/replication-ready) have
+// not been satisfied yet. ContainersReady is set by the kubelet based solely
+// on container readiness probes and is unaffected by readiness gates.
 func isReady(pod *corev1.Pod) bool {
 	for _, c := range pod.Status.Conditions {
-		if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue && pod.Status.PodIP != "" {
+		if c.Type == corev1.ContainersReady && c.Status == corev1.ConditionTrue && pod.Status.PodIP != "" {
 			return isDragonflyContainerReady(pod.Status.ContainerStatuses)
 		}
 	}
