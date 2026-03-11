@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IMG: ghcr.io/dragonflydb/operator:${{ github.sha }}
+      ACL_WATCHER_IMG: ghcr.io/dragonflydb/acl-watcher:${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v6
@@ -25,6 +26,7 @@ jobs:
       - name: Docker Build
         run: |
           make docker-build
+          make docker-build-acl-watcher
 
       - uses: helm/kind-action@v1.13.0
         with:
@@ -50,6 +52,7 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     env:
       IMG: ghcr.io/dragonflydb/operator:${{ github.ref_name }}
+      ACL_WATCHER_IMG: ghcr.io/dragonflydb/acl-watcher:${{ github.ref_name }}
       VERSION: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v6
@@ -93,6 +96,21 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: ghcr.io/dragonflydb/operator:${{ github.ref_name }}
+          platforms: |
+            linux/amd64
+            linux/arm64
+        env:
+          DOCKER_BUILDKIT: 1
+          DOCKER_USERNAME: ${{ github.actor }}
+          DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Publish ACL watcher image into GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: acl-watcher
+          file: acl-watcher/Dockerfile
+          push: true
+          tags: ghcr.io/dragonflydb/acl-watcher:${{ github.ref_name }}
           platforms: |
             linux/amd64
             linux/arm64
