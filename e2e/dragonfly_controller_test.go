@@ -669,6 +669,8 @@ user john on >peacepass -@all +@string +hset
 
 			err = k8sClient.Delete(ctx, &df)
 			Expect(err).To(BeNil())
+
+			_ = k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "df-acl", Namespace: namespace}})
 		})
 	})
 })
@@ -889,9 +891,9 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			// recreate Redis Client on the new pod
 			stopChan = make(chan struct{}, 1)
 			rc, err = checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6394)
+			Expect(err).To(BeNil())
 			defer close(stopChan)
 			defer rc.Close()
-			Expect(err).To(BeNil())
 
 			// check if the Data exists
 			data, err := rc.Get(ctx, "foo").Result()
@@ -1122,6 +1124,9 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 
 			err = k8sClient.Delete(ctx, &df)
 			Expect(err).To(BeNil())
+
+			_ = k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "df-tls", Namespace: namespace}})
+			_ = k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "df-password", Namespace: namespace}})
 		})
 	})
 })

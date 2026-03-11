@@ -206,7 +206,6 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			Expect(podRoles[resources.Master]).To(HaveLen(1))
 			Expect(podRoles[resources.Replica]).To(HaveLen(replicas - 1))
 		})
-
 		It("Cleanup", func() {
 			var df dfv1alpha1.Dragonfly
 			err := k8sClient.Get(ctx, types.NamespacedName{
