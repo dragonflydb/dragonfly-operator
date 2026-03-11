@@ -94,6 +94,9 @@ const (
 	Master = "master"
 
 	Replica = "replica"
+
+	OperatorControlPlaneLabelKey   = "control-plane"
+	OperatorControlPlaneLabelValue = "controller-manager"
 )
 
 var DefaultDragonflyArgs = []string{
