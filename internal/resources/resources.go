@@ -331,10 +331,8 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 	}
 
 	for key := range df.Spec.Labels {
-		// Make sure we do not overwrite any existing labels
-		if _, ok := statefulset.Spec.Template.ObjectMeta.Labels[key]; !ok {
-			statefulset.Spec.Template.ObjectMeta.Labels[key] = df.Spec.Labels[key]
-		}
+		// allow df.Spec.Labels to overwrite default labels (e.g. app.kubernetes.io/name)
+		statefulset.Spec.Template.ObjectMeta.Labels[key] = df.Spec.Labels[key]
 	}
 
 	if df.Spec.Affinity != nil {
@@ -629,9 +627,7 @@ func generateResourceLabels(df *resourcesv1.Dragonfly) map[string]string {
 
 	if df.Spec.OwnedObjectsMetadata != nil {
 		for key, value := range df.Spec.OwnedObjectsMetadata.Labels {
-			if _, ok := labels[key]; !ok {
-				labels[key] = value
-			}
+			labels[key] = value
 		}
 	}
 
