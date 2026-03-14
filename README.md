@@ -11,7 +11,9 @@ Main features include:
 - Automatic failover
 - Scaling horizontally and vertically with custom rollout strategy
 - Authentication and server TLS
-- Automatic snapshots to PVCs and S3
+- Automatic snapshots to PVCs and S3 with configurable master-only or replica-only snapshot modes
+- Multi-shard cluster mode via the DragonflyCluster CRD with automatic slot allocation and rebalancing
+- Per-pod ClusterIP services for cross-cluster routing
 - Monitoring with Prometheus and Grafana
 - Comprehensive configuration options
 
@@ -119,6 +121,88 @@ You need to add those `args` in the dragonfly instance declaration in order to b
     - "--admin_bind=::"
   ...
 ```
+
+### Snapshot modes: master-only and replica-only
+
+By default, all pods run the configured snapshot schedule. The operator supports two
+additional modes to control which pods perform snapshots:
+
+**Master-only snapshots** (`enableOnMasterOnly: true`): Only the master pod runs
+`snapshot_cron`; replicas have their cron cleared. Useful when replicas serve
+latency-sensitive reads and you don't want snapshot I/O competing with read traffic.
+
+```yaml
+spec:
+  replicas: 3
+  snapshot:
+    dir: "s3://my-bucket/snapshots"
+    cron: "0 * * * *"
+    enableOnMasterOnly: true
+```
+
+**Replica-only snapshots** (`enableOnReplicaOnly: true`): Only replicas run
+`snapshot_cron`; the master never saves. This prevents snapshot serialization from
+blocking write-path latency on the master (large data structures can hold internal
+shard threads during serialization). On master restart, the pod loads the latest
+replica snapshot from S3, then re-syncs any delta via Dragonfly replication.
+
+You can optionally set `staggerInterval` to distribute snapshot I/O across replicas.
+Each replica's schedule is offset by `(rank × staggerInterval)` from the base cron.
+
+```yaml
+spec:
+  replicas: 3
+  snapshot:
+    dir: "s3://my-bucket/snapshots"
+    cron: "0 * * * *"
+    enableOnReplicaOnly: true
+    staggerInterval: "20m"  # replica-0 at :00, replica-1 at :20
+```
+
+> `enableOnMasterOnly` and `enableOnReplicaOnly` are mutually exclusive.
+> `enableOnReplicaOnly` requires at least 2 replicas.
+
+### DragonflyCluster (multi-shard cluster mode)
+
+The `DragonflyCluster` CRD manages Dragonfly's cluster mode — multiple shards each
+with their own master and replicas. The operator handles slot allocation, configuration
+push via `DFLYCLUSTER CONFIG`, and automatic slot migration when scaling out.
+
+```yaml
+apiVersion: dragonflydb.io/v1alpha1
+kind: DragonflyCluster
+metadata:
+  name: my-cluster
+spec:
+  shards: 3
+  replicasPerShard: 1
+  template:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    snapshot:
+      dir: "s3://my-bucket/cluster"
+      cron: "0 * * * *"
+  rebalance:
+    enabled: true
+    maxSlotsPerMigration: 1024
+```
+
+The operator creates one `Dragonfly` CR per shard (e.g. `my-cluster-shard-0`,
+`my-cluster-shard-1`, etc.), each running with `--cluster_mode=yes`. It automatically:
+- Assigns stable cluster node IDs (UUIDs) per pod
+- Builds and pushes `DFLYCLUSTER CONFIG` to all shard masters
+- Migrates slots when the shard count increases (scale-out rebalancing)
+- Creates per-shard snapshot directories (e.g. `s3://my-bucket/cluster/shard-0`)
+
+For cross-cluster routing, set the `DRAGONFLY_CLUSTER_SERVICE_SUFFIX` environment
+variable on the operator deployment. By default it uses `svc` (in-cluster DNS).
+
+### Per-pod ClusterIP services
+
+The operator creates a dedicated ClusterIP service for each pod (named after the pod,
+e.g. `my-df-0`, `my-df-1`). These services are useful when pod IPs are not routable
+across clusters but ClusterIPs are. The `DragonflyCluster` controller advertises these
+service DNS names in `CLUSTER SLOTS` responses so that cross-cluster clients can
+connect to individual masters and replicas.
 
 ## License
 

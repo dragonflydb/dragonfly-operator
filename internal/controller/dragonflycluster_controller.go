@@ -533,7 +533,7 @@ func (r *DragonflyClusterReconciler) reconcileShardDragonflies(ctx context.Conte
 		desired.Spec = *cluster.Spec.Template.DeepCopy()
 
 		// Make snapshot dir per-shard to avoid filename collisions when using S3.
-		// Each shard gets its own prefix: e.g. s3://bucket/falcon/shard-0, s3://bucket/falcon/shard-1, etc.
+		// Each shard gets its own prefix: e.g. s3://bucket/data/shard-0, s3://bucket/data/shard-1, etc.
 		if desired.Spec.Snapshot != nil && desired.Spec.Snapshot.Dir != "" {
 			desired.Spec.Snapshot.Dir = fmt.Sprintf("%s/shard-%d", strings.TrimRight(desired.Spec.Snapshot.Dir, "/"), i)
 		}
