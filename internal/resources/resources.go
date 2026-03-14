@@ -483,6 +483,42 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 
 	resources = append(resources, &service)
 
+	// Per-pod ClusterIP services: each pod gets its own ClusterIP service so that
+	// cross-cluster clients can reach individual pods via DNS. Pod IPs are typically
+	// not routable cross-cluster, but ClusterIPs are. These services use the standard
+	// `statefulset.kubernetes.io/pod-name` label selector to target a specific pod.
+	for i := int32(0); i < df.Spec.Replicas; i++ {
+		podName := fmt.Sprintf("%s-%d", df.Name, i)
+		podSvc := corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      podName,
+				Namespace: df.Namespace,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: df.APIVersion,
+						Kind:       df.Kind,
+						Name:       df.Name,
+						UID:        df.UID,
+					},
+				},
+				Labels:      generateResourceLabels(df),
+				Annotations: generateResourceAnnotations(df),
+			},
+			Spec: corev1.ServiceSpec{
+				Selector: map[string]string{
+					"statefulset.kubernetes.io/pod-name": podName,
+				},
+				Ports: []corev1.ServicePort{
+					{
+						Name: DragonflyPortName,
+						Port: DragonflyPort,
+					},
+				},
+			},
+		}
+		resources = append(resources, &podSvc)
+	}
+
 	pdb := policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      df.Name,

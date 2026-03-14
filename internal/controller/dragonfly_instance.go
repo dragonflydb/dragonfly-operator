@@ -799,6 +799,25 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		// Special handling for Services to preserve immutable fields
 		if svcDesired, ok := desired.(*corev1.Service); ok {
 			if svcExisting, ok := existing.(*corev1.Service); ok {
+				// Handle ClusterIP type transitions: spec.clusterIP is immutable,
+				// so if the desired and existing ClusterIP types differ (e.g. headless <-> ClusterIP),
+				// we must delete and recreate the service.
+				desiredIsHeadless := svcDesired.Spec.ClusterIP == "None"
+				existingIsHeadless := svcExisting.Spec.ClusterIP == "None"
+				if desiredIsHeadless != existingIsHeadless {
+					dfi.log.Info("transitioning service ClusterIP type (immutable field, deleting and recreating)",
+						"service", existing.GetName(),
+						"from", svcExisting.Spec.ClusterIP,
+						"to", svcDesired.Spec.ClusterIP)
+					if err := dfi.client.Delete(ctx, existing); err != nil {
+						return fmt.Errorf("failed to delete service for ClusterIP transition: %w", err)
+					}
+					if err := dfi.client.Create(ctx, desired); err != nil {
+						return fmt.Errorf("failed to recreate service after ClusterIP transition: %w", err)
+					}
+					dfi.log.Info("recreated service with new ClusterIP type", "service", desired.GetName())
+					continue
+				}
 				svcDesired.Spec.ClusterIP = svcExisting.Spec.ClusterIP
 				svcDesired.Spec.IPFamilies = svcExisting.Spec.IPFamilies
 				svcDesired.Spec.IPFamilyPolicy = svcExisting.Spec.IPFamilyPolicy
