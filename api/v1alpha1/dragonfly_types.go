@@ -268,10 +268,34 @@ type Snapshot struct {
 	// +kubebuilder:validation:Optional
 	Cron string `json:"cron,omitempty"`
 
-	// (Optional) Enable snapshot on master only
+	// (Optional) Enable snapshot on master only.
+	// Mutually exclusive with EnableOnReplicaOnly.
 	// +optional
 	// +kubebuilder:validation:Optional
 	EnableOnMasterOnly bool `json:"enableOnMasterOnly,omitempty"`
+
+	// (Optional) Enable snapshot on replicas only (disable on master).
+	// Replicas snapshot at the configured Cron schedule (staggered by StaggerInterval);
+	// the master never saves. This prevents snapshot I/O from blocking write-path latency
+	// on the master (large data structures hold internal shard threads during serialization).
+	// On master restart the pod loads the latest replica snapshot from S3, then
+	// re-syncs any delta via Dragonfly replication — no data loss.
+	// Mutually exclusive with EnableOnMasterOnly.
+	// +optional
+	// +kubebuilder:validation:Optional
+	EnableOnReplicaOnly bool `json:"enableOnReplicaOnly,omitempty"`
+
+	// (Optional) Interval to stagger snapshot schedules across replicas.
+	// Used with EnableOnReplicaOnly to distribute snapshot I/O.
+	// Each replica's schedule is offset by (rank * staggerInterval) from the base Cron.
+	// Example: cron="0 * * * *" with staggerInterval="30m" and 2 replicas:
+	//   - replica rank 0: snapshots at minute 0
+	//   - replica rank 1: snapshots at minute 30
+	// Supports Go duration format: "30m", "1h", "15m", etc.
+	// If not set, all replicas use the same Cron schedule.
+	// +optional
+	// +kubebuilder:validation:Optional
+	StaggerInterval *metav1.Duration `json:"staggerInterval,omitempty"`
 
 	// (Optional) Dragonfly PVC spec
 	// +optional
