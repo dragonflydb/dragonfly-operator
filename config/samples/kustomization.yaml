@@ -1,4 +1,5 @@
 ## Append samples of your project ##
 resources:
 - v1alpha1_dragonfly.yaml
+- v1alpha1_dragonflycluster.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples

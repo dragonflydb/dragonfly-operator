@@ -48,6 +48,7 @@ rules:
   - dragonflydb.io
   resources:
   - dragonflies
+  - dragonflyclusters
   verbs:
   - create
   - delete
@@ -60,12 +61,14 @@ rules:
   - dragonflydb.io
   resources:
   - dragonflies/finalizers
+  - dragonflyclusters/finalizers
   verbs:
   - update
 - apiGroups:
   - dragonflydb.io
   resources:
   - dragonflies/status
+  - dragonflyclusters/status
   verbs:
   - get
   - patch

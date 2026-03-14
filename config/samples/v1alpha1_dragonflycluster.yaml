@@ -1,0 +1,23 @@
+apiVersion: dragonflydb.io/v1alpha1
+kind: DragonflyCluster
+metadata:
+  name: dragonflycluster-sample
+spec:
+  shards: 3
+  replicasPerShard: 1
+  template:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.35.0
+    # args:
+    #   - "--maxmemory=4GiB"
+    # resources:
+    #   requests:
+    #     cpu: "1"
+    #     memory: "4Gi"
+    #   limits:
+    #     cpu: "2"
+    #     memory: "8Gi"
+  rebalance:
+    enabled: true
+    maxSlotsPerMigration: 1024
+    maxConcurrentMigrations: 1
+

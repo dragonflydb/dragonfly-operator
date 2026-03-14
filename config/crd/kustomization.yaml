@@ -3,6 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/dragonflydb.io_dragonflies.yaml
+- bases/dragonflydb.io_dragonflyclusters.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:
