@@ -4542,6 +4542,13 @@ spec:
                             type: string
                         type: object
                     type: object
+                  enableReplicationReadinessGate:
+                    description: |-
+                      (Optional) When enabled, adds a custom readiness gate to pods that prevents
+                      them from being considered Ready until replication is fully synced.
+                      Protects against data loss during external node drains.
+                      WARNING: Enabling this on an existing cluster will trigger a rolling update.
+                    type: boolean
                   env:
                     description: (Optional) Env variables to add to the Dragonfly
                       pods.
@@ -6131,6 +6138,13 @@ spec:
                     description: (Optional) Dragonfly memcached port
                     format: int32
                     type: integer
+                  networkPolicyEnabled:
+                    default: true
+                    description: |-
+                      (Optional) Whether to create a NetworkPolicy for this Dragonfly instance.
+                      The NetworkPolicy restricts admin port access to operator and peer pods only.
+                      Defaults to true.
+                    type: boolean
                   nodeSelector:
                     additionalProperties:
                       type: string
@@ -6149,6 +6163,31 @@ spec:
                           type: string
                         type: object
                     type: object
+                  pdb:
+                    description: (Optional) Dragonfly Pod Disruption Budget configuration
+                    properties:
+                      maxUnavailable:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          (Optional) Maximum number of Dragonfly pods that can be unavailable during voluntary disruptions.
+                          Accepts an absolute number (e.g. "1") or a percentage of total pods (e.g. "25%").
+                          Cannot be used together with MinAvailable; only one of maxUnavailable or minAvailable should be set.
+                        x-kubernetes-int-or-string: true
+                      minAvailable:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: |-
+                          (Optional) Minimum number of Dragonfly pods that must be available during voluntary disruptions.
+                          Accepts an absolute number (e.g. "1") or a percentage of total pods (e.g. "25%").
+                          Cannot be used together with MaxUnavailable; only one of minAvailable or maxUnavailable should be set.
+                        x-kubernetes-int-or-string: true
+                    type: object
+                    x-kubernetes-validations:
+                    - message: minAvailable and maxUnavailable cannot be both set
+                      rule: '!(has(self.minAvailable) && has(self.maxUnavailable))'
                   podSecurityContext:
                     description: (Optional) Dragonfly pod security context
                     properties:
@@ -6504,7 +6543,7 @@ spec:
                           (Optional) Enable snapshot on replicas only (disable on master).
                           Replicas snapshot at the configured Cron schedule (staggered by StaggerInterval);
                           the master never saves. This prevents snapshot I/O from blocking write-path latency
-                          on the master (large bloom filters hold internal shard threads during serialization).
+                          on the master (large data structures hold internal shard threads during serialization).
                           On master restart the pod loads the latest replica snapshot from S3, then
                           re-syncs any delta via Dragonfly replication — no data loss.
                           Mutually exclusive with EnableOnMasterOnly.
