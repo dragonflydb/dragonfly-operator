@@ -85,28 +85,33 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			Expect(err).To(BeNil())
 
 			// Check if there are relevant pods with expected roles
-			var pods corev1.PodList
-			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				resources.DragonflyNameLabelKey:    name,
-				resources.KubernetesPartOfLabelKey: "dragonfly",
-			})
-			Expect(err).To(BeNil())
+			Eventually(func() bool {
+				podRoles = make(map[string][]string)
+				var pods corev1.PodList
+				err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+					resources.DragonflyNameLabelKey:    name,
+					resources.KubernetesPartOfLabelKey: "dragonfly",
+				})
+				if err != nil {
+					return false
+				}
 
-			// 4 pod replicas = 1 master + 3 replicas
-			Expect(pods.Items).To(HaveLen(replicas))
+				if len(pods.Items) != replicas {
+					return false
+				}
 
-			// Get the pods along with their roles
-			for _, pod := range pods.Items {
-				role, ok := pod.Labels[resources.RoleLabelKey]
-				// error if there is no label
-				Expect(ok).To(BeTrue())
+				// Get the pods along with their roles
+				for _, pod := range pods.Items {
+					role, ok := pod.Labels[resources.RoleLabelKey]
+					if !ok {
+						return false
+					}
 
-				podRoles[role] = append(podRoles[role], pod.Name)
-			}
+					podRoles[role] = append(podRoles[role], pod.Name)
+				}
 
-			// One Master & Three Replicas
-			Expect(podRoles[resources.Master]).To(HaveLen(1))
-			Expect(podRoles[resources.Replica]).To(HaveLen(replicas - 1))
+				return len(podRoles[resources.Master]) == 1 && len(podRoles[resources.Replica]) == replicas-1
+			}, 1*time.Minute, 5*time.Second).Should(BeTrue())
 		})
 
 		It("Delete old master", func() {

@@ -636,7 +636,7 @@ user john on >peacepass -@all +@string +hset
 		})
 		It("Resource should exist", func() {
 			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for statefulset
@@ -650,8 +650,12 @@ user john on >peacepass -@all +@string +hset
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--aclfile=%s/dragonfly.acl", resources.AclDir)))
 			stopChan := make(chan struct{}, 1)
 			defer close(stopChan)
-			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6392)
-			Expect(err).To(BeNil())
+			var rc *redis.Client
+			Eventually(func() error {
+				var err error
+				rc, err = checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6392)
+				return err
+			}, 1*time.Minute, 5*time.Second).Should(Succeed())
 			defer rc.Close()
 			result, err := rc.Do(ctx, "acl", "list").StringSlice()
 			Expect(err).To(BeNil())
