@@ -1096,17 +1096,7 @@ func (dfi *DragonflyInstance) getRedisRole(ctx context.Context, pod *corev1.Pod)
 	if pod.Status.PodIP == "" {
 		return "", fmt.Errorf("pod IP not available for %s", pod.Name)
 	}
-	redisClient := redis.NewClient(&redis.Options{
-		ClientName:   resources.DragonflyOperatorName,
-		Addr:         net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(resources.DragonflyAdminPort)),
-		DialTimeout:  10 * time.Second,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		MaintNotificationsConfig: &maintnotifications.Config{
-			Mode: maintnotifications.ModeDisabled,
-		},
-	})
-	defer redisClient.Close()
+	redisClient := dfi.getRedisClient(pod.Status.PodIP)
 
 	resp, err := redisClient.Info(ctx, "replication").Result()
 	if err != nil {

@@ -614,14 +614,16 @@ user john on >peacepass -@all +@string +hset
 				},
 			})
 			Expect(err).To(BeNil())
+			disabled := false
 			err = k8sClient.Create(ctx, &resourcesv1.Dragonfly{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
 					Namespace: namespace,
 				},
 				Spec: resourcesv1.DragonflySpec{
-					Replicas: 1,
-					Args:     args,
+					Replicas:             1,
+					Args:                 args,
+					NetworkPolicyEnabled: &disabled,
 					AclFromSecret: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: "df-acl",
