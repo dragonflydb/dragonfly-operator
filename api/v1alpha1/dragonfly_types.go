@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -174,6 +175,45 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	OwnedObjectsMetadata *OwnedObjectsMetadata `json:"ownedObjectsMetadata,omitempty"`
+
+	// (Optional) When enabled, adds a custom readiness gate to pods that prevents
+	// them from being considered Ready until replication is fully synced.
+	// Protects against data loss during external node drains.
+	// WARNING: Enabling this on an existing cluster will trigger a rolling update.
+	// +optional
+	// +kubebuilder:validation:Optional
+	EnableReplicationReadinessGate bool `json:"enableReplicationReadinessGate,omitempty"`
+
+	// (Optional) Whether to create a NetworkPolicy for this Dragonfly instance.
+	// The NetworkPolicy restricts admin port access to operator and peer pods only.
+	// Defaults to true.
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default:=true
+	NetworkPolicyEnabled *bool `json:"networkPolicyEnabled,omitempty"`
+
+	// (Optional) Dragonfly Pod Disruption Budget configuration
+	// +optional
+	// +kubebuilder:validation:Optional
+	Pdb *PdbSpec `json:"pdb,omitempty"`
+}
+
+// PdbSpec defines the desired state of the PodDisruptionBudget
+// +kubebuilder:validation:XValidation:rule="!(has(self.minAvailable) && has(self.maxUnavailable))",message="minAvailable and maxUnavailable cannot be both set"
+type PdbSpec struct {
+	// (Optional) Minimum number of Dragonfly pods that must be available during voluntary disruptions.
+	// Accepts an absolute number (e.g. "1") or a percentage of total pods (e.g. "25%").
+	// Cannot be used together with MaxUnavailable; only one of minAvailable or maxUnavailable should be set.
+	// +optional
+	// +kubebuilder:validation:Optional
+	MinAvailable *intstr.IntOrString `json:"minAvailable,omitempty"`
+
+	// (Optional) Maximum number of Dragonfly pods that can be unavailable during voluntary disruptions.
+	// Accepts an absolute number (e.g. "1") or a percentage of total pods (e.g. "25%").
+	// Cannot be used together with MinAvailable; only one of maxUnavailable or minAvailable should be set.
+	// +optional
+	// +kubebuilder:validation:Optional
+	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 }
 
 type OwnedObjectsMetadata struct {
