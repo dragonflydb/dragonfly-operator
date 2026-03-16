@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/controller"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
