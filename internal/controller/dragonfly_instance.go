@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -263,20 +264,21 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 		return err
 	}
 
+	// Pass 1: handle masters and unassigned pods; collect replica pods.
+	var replicaPods []corev1.Pod
 	for _, pod := range pods.Items {
-		if isReplica(&pod) {
-			dfi.log.Info("checking if replica is configured correctly", "pod", pod.Name)
-			ok, err := dfi.checkReplicaRole(ctx, &pod, masterIp)
-			if err != nil {
+		if isMaster(&pod) {
+			// Ensure the master has the correct snapshot_cron.
+			// This is a defensive check — replTakeover and configureReplication
+			// should set it, but if they didn't (e.g. due to a transient failure
+			// or a previous operator version that lacked the logic), we fix it here.
+			if err := dfi.ensureMasterSnapshotCron(ctx, &pod); err != nil {
 				return err
 			}
-			// Configure to the right master if not correct
-			if !ok {
-				dfi.log.Info("configuring pod as replica to the right master", "pod", pod.Name)
-				if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
-					return err
-				}
-			}
+		}
+
+		if isReplica(&pod) {
+			replicaPods = append(replicaPods, pod)
 		}
 
 		if !roleExists(&pod) {
@@ -294,7 +296,148 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 		}
 	}
 
+	// Pass 2: process replicas in sorted order so each gets a stable rank for
+	// snapshot_cron staggering (rank 0 = base cron, rank 1 = base + interval, etc).
+	sort.Slice(replicaPods, func(i, j int) bool {
+		return replicaPods[i].Name < replicaPods[j].Name
+	})
+	numReplicas := len(replicaPods)
+
+	for rank := range replicaPods {
+		pod := &replicaPods[rank]
+		dfi.log.Info("checking if replica is configured correctly", "pod", pod.Name)
+		ok, err := dfi.checkReplicaRole(ctx, pod, masterIp)
+		if err != nil {
+			return err
+		}
+		// Configure to the right master if not correct.
+		if !ok {
+			dfi.log.Info("configuring pod as replica to the right master", "pod", pod.Name)
+			if err := dfi.configureReplica(ctx, pod, masterIp); err != nil {
+				return err
+			}
+		}
+		// Defensive check: ensure replica has the correct (staggered) snapshot_cron.
+		// Guards against transient failures or operator restarts.
+		if err := dfi.ensureReplicaSnapshotCron(ctx, pod, rank, numReplicas); err != nil {
+			return err
+		}
+	}
+
 	dfi.log.Info("All pods are configured correctly", "dfi", dfi.df.Name)
+	return nil
+}
+
+// ensureMasterSnapshotCron verifies the master pod has the correct snapshot_cron
+// setting based on the snapshot configuration. Handles edge cases where the cron
+// was lost (e.g. operator restart, transient CONFIG SET failure).
+//
+//   - enableOnMasterOnly=true  -> master must have cron set
+//   - enableOnReplicaOnly=true -> master must have cron CLEARED (no snapshots on master)
+func (dfi *DragonflyInstance) ensureMasterSnapshotCron(ctx context.Context, pod *corev1.Pod) error {
+	if dfi.df.Spec.Snapshot == nil {
+		return nil
+	}
+	if !dfi.df.Spec.Snapshot.EnableOnMasterOnly && !dfi.df.Spec.Snapshot.EnableOnReplicaOnly {
+		return nil
+	}
+
+	redisClient := dfi.getRedisClient(pod.Status.PodIP)
+
+	result, err := redisClient.ConfigGet(ctx, "snapshot_cron").Result()
+	if err != nil {
+		return fmt.Errorf("failed to get snapshot_cron on master %s: %w", pod.Name, err)
+	}
+
+	// enableOnMasterOnly: master should have cron; enableOnReplicaOnly: master should have no cron.
+	var expectedCron string
+	if dfi.df.Spec.Snapshot.EnableOnMasterOnly {
+		expectedCron = dfi.df.Spec.Snapshot.Cron
+	} // enableOnReplicaOnly: expectedCron stays ""
+
+	currentCron := ""
+	if val, ok := result["snapshot_cron"]; ok {
+		currentCron = val
+	}
+
+	if currentCron != expectedCron {
+		dfi.log.Info("master snapshot_cron mismatch, correcting",
+			"pod", pod.Name, "current", currentCron, "expected", expectedCron)
+		if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", expectedCron).Result(); err != nil {
+			return fmt.Errorf("failed to set snapshot_cron on master %s: %w", pod.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// replicaCronForRank returns the snapshot cron for the replica at the given rank.
+// If StaggerInterval is set, each replica's cron is offset by (rank * interval) minutes.
+// Otherwise all replicas use the base Cron schedule.
+func replicaCronForRank(snap *dfv1alpha1.Snapshot, rank int) string {
+	if snap.StaggerInterval == nil || snap.StaggerInterval.Duration == 0 {
+		return snap.Cron
+	}
+	return staggerCron(snap.Cron, rank, snap.StaggerInterval.Duration)
+}
+
+// staggerCron offsets a cron schedule by (rank * interval).
+// Only modifies the minute field; assumes standard 5-field cron format.
+// Example: staggerCron("0 * * * *", 1, 30*time.Minute) -> "30 * * * *"
+func staggerCron(baseCron string, rank int, interval time.Duration) string {
+	parts := strings.Fields(baseCron)
+	if len(parts) < 5 {
+		return baseCron // Invalid format, return as-is
+	}
+
+	// Parse base minute
+	baseMinute := 0
+	if _, err := fmt.Sscanf(parts[0], "%d", &baseMinute); err != nil {
+		return baseCron // Non-numeric minute (e.g., "*/5"), can't stagger
+	}
+
+	// Calculate staggered minute
+	offsetMinutes := int(interval.Minutes()) * rank
+	staggeredMinute := (baseMinute + offsetMinutes) % 60
+
+	parts[0] = strconv.Itoa(staggeredMinute)
+	return strings.Join(parts, " ")
+}
+
+// ensureReplicaSnapshotCron verifies the replica pod has the correct snapshot_cron
+// when enableOnReplicaOnly is configured. This is a defensive check that handles
+// edge cases (operator restart, transient CONFIG SET failure after replicaOf()).
+//
+// replicaRank is the 0-based position of this pod in the sorted replica list.
+// numReplicas is the total number of replicas in the set (unused directly but
+// logged for observability).
+func (dfi *DragonflyInstance) ensureReplicaSnapshotCron(ctx context.Context, pod *corev1.Pod, replicaRank, numReplicas int) error {
+	if dfi.df.Spec.Snapshot == nil || !dfi.df.Spec.Snapshot.EnableOnReplicaOnly {
+		return nil
+	}
+
+	redisClient := dfi.getRedisClient(pod.Status.PodIP)
+
+	result, err := redisClient.ConfigGet(ctx, "snapshot_cron").Result()
+	if err != nil {
+		return fmt.Errorf("failed to get snapshot_cron on replica %s: %w", pod.Name, err)
+	}
+
+	expectedCron := replicaCronForRank(dfi.df.Spec.Snapshot, replicaRank)
+	currentCron := ""
+	if val, ok := result["snapshot_cron"]; ok {
+		currentCron = val
+	}
+
+	if currentCron != expectedCron {
+		dfi.log.Info("replica snapshot_cron mismatch, correcting",
+			"pod", pod.Name, "current", currentCron, "expected", expectedCron,
+			"rank", replicaRank, "numReplicas", numReplicas)
+		if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", expectedCron).Result(); err != nil {
+			return fmt.Errorf("failed to set snapshot_cron on replica %s: %w", pod.Name, err)
+		}
+	}
+
 	return nil
 }
 
@@ -486,11 +629,17 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		return fmt.Errorf("response of `SLAVE OF` on replica is not OK: %s", resp)
 	}
 
-	if dfi.df.Spec.Snapshot != nil && dfi.df.Spec.Snapshot.EnableOnMasterOnly {
-		dfi.log.Info("clearing snapshot cron schedule on replica", "pod", pod.Name)
-		if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", "").Result(); err != nil {
-			return fmt.Errorf("failed to clear snapshot_cron on replica %s: %w", pod.Name, err)
+	if dfi.df.Spec.Snapshot != nil {
+		if dfi.df.Spec.Snapshot.EnableOnMasterOnly {
+			dfi.log.Info("clearing snapshot cron schedule on replica", "pod", pod.Name)
+			if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", "").Result(); err != nil {
+				return fmt.Errorf("failed to clear snapshot_cron on replica %s: %w", pod.Name, err)
+			}
 		}
+		// Note: When EnableOnReplicaOnly is true, we do NOT set snapshot_cron here.
+		// The cron schedule depends on the replica's rank (sorted pod name order),
+		// which is determined by ensureReplicaSnapshotCron() during reconciliation.
+		// This avoids setting the wrong cron schedule before the rank is known.
 	}
 
 	dfi.log.Info("Marking pod role as replica", "pod", pod.Name, "masterIp", masterIp)
@@ -532,11 +681,17 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 		return fmt.Errorf("response of `SLAVE OF NO ONE` on master is not OK: %s", resp)
 	}
 
-	if dfi.df.Spec.Snapshot != nil && dfi.df.Spec.Snapshot.EnableOnMasterOnly {
-		dfi.log.Info("setting snapshot cron schedule on master", "pod", pod.Name)
-		cron := dfi.df.Spec.Snapshot.Cron
-		if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", cron).Result(); err != nil {
-			return fmt.Errorf("failed to set snapshot_cron on master %s: %w", pod.Name, err)
+	if dfi.df.Spec.Snapshot != nil {
+		if dfi.df.Spec.Snapshot.EnableOnMasterOnly {
+			dfi.log.Info("setting snapshot cron schedule on master", "pod", pod.Name)
+			if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", dfi.df.Spec.Snapshot.Cron).Result(); err != nil {
+				return fmt.Errorf("failed to set snapshot_cron on master %s: %w", pod.Name, err)
+			}
+		} else if dfi.df.Spec.Snapshot.EnableOnReplicaOnly {
+			dfi.log.Info("clearing snapshot cron schedule on master (replica-only mode)", "pod", pod.Name)
+			if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", "").Result(); err != nil {
+				return fmt.Errorf("failed to clear snapshot_cron on master %s: %w", pod.Name, err)
+			}
 		}
 	}
 
@@ -644,6 +799,25 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		// Special handling for Services to preserve immutable fields
 		if svcDesired, ok := desired.(*corev1.Service); ok {
 			if svcExisting, ok := existing.(*corev1.Service); ok {
+				// Handle ClusterIP type transitions: spec.clusterIP is immutable,
+				// so if the desired and existing ClusterIP types differ (e.g. headless <-> ClusterIP),
+				// we must delete and recreate the service.
+				desiredIsHeadless := svcDesired.Spec.ClusterIP == "None"
+				existingIsHeadless := svcExisting.Spec.ClusterIP == "None"
+				if desiredIsHeadless != existingIsHeadless {
+					dfi.log.Info("transitioning service ClusterIP type (immutable field, deleting and recreating)",
+						"service", existing.GetName(),
+						"from", svcExisting.Spec.ClusterIP,
+						"to", svcDesired.Spec.ClusterIP)
+					if err := dfi.client.Delete(ctx, existing); err != nil {
+						return fmt.Errorf("failed to delete service for ClusterIP transition: %w", err)
+					}
+					if err := dfi.client.Create(ctx, desired); err != nil {
+						return fmt.Errorf("failed to recreate service after ClusterIP transition: %w", err)
+					}
+					dfi.log.Info("recreated service with new ClusterIP type", "service", desired.GetName())
+					continue
+				}
 				svcDesired.Spec.ClusterIP = svcExisting.Spec.ClusterIP
 				svcDesired.Spec.IPFamilies = svcExisting.Spec.IPFamilies
 				svcDesired.Spec.IPFamilyPolicy = svcExisting.Spec.IPFamilyPolicy
@@ -1029,6 +1203,23 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 
 	if resp != "OK" {
 		return fmt.Errorf("response of `REPLTAKEOVER` on replica is not OK: %s", resp)
+	}
+
+	// Update snapshot_cron on the newly promoted master.
+	if dfi.df.Spec.Snapshot != nil {
+		if dfi.df.Spec.Snapshot.EnableOnMasterOnly {
+			// New master was previously a replica whose cron was cleared; re-enable it.
+			dfi.log.Info("setting snapshot cron schedule on new master after takeover", "pod", newMaster.Name)
+			if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", dfi.df.Spec.Snapshot.Cron).Result(); err != nil {
+				return fmt.Errorf("failed to set snapshot_cron on new master %s: %w", newMaster.Name, err)
+			}
+		} else if dfi.df.Spec.Snapshot.EnableOnReplicaOnly {
+			// New master was previously a replica with cron set; clear it now that it is master.
+			dfi.log.Info("clearing snapshot cron schedule on new master after takeover (replica-only mode)", "pod", newMaster.Name)
+			if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", "").Result(); err != nil {
+				return fmt.Errorf("failed to clear snapshot_cron on new master %s: %w", newMaster.Name, err)
+			}
+		}
 	}
 
 	masterIp := newMaster.Status.PodIP

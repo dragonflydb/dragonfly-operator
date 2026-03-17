@@ -91,8 +91,8 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				master = &pod
 			} else {
 				if master, err = dfi.getHealthyPod(ctx); err != nil {
-					log.Info("no healthy pod available to set up a master")
-					return ctrl.Result{}, nil
+					log.Info("no healthy pod available to set up a master, requeuing")
+					return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 				}
 			}
 
@@ -110,7 +110,13 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if !podReady {
-		return ctrl.Result{}, nil
+		// Requeue so we revisit the pod once it becomes ready and can assign
+		// its role. Without this requeue the controller silently drops the
+		// event and never configures the pod, which causes a deadlock during
+		// rolling updates: the DragonflyReconciler waits forever for a role
+		// label that never gets set.
+		log.Info("pod not ready yet, requeuing", "pod", pod.Name)
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	if roleExists(&pod) {

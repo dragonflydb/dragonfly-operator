@@ -247,6 +247,22 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 			return nil, fmt.Errorf("persistentVolumeClaimSpec and existingPersistentVolumeClaimName are mutually exclusive")
 		}
 
+		// validate mutual exclusivity of EnableOnMasterOnly and EnableOnReplicaOnly
+		if df.Spec.Snapshot.EnableOnMasterOnly && df.Spec.Snapshot.EnableOnReplicaOnly {
+			return nil, fmt.Errorf("enableOnMasterOnly and enableOnReplicaOnly are mutually exclusive")
+		}
+
+		// validate staggerInterval only makes sense with enableOnReplicaOnly
+		if df.Spec.Snapshot.StaggerInterval != nil && !df.Spec.Snapshot.EnableOnReplicaOnly {
+			return nil, fmt.Errorf("staggerInterval can only be used with enableOnReplicaOnly")
+		}
+
+		// validate enableOnReplicaOnly requires at least 2 replicas (1 master + 1 replica)
+		// otherwise no pod would snapshot
+		if df.Spec.Snapshot.EnableOnReplicaOnly && df.Spec.Replicas < 2 {
+			return nil, fmt.Errorf("enableOnReplicaOnly requires at least 2 replicas")
+		}
+
 		// err if pvc is not specified & s3 sir is not present while cron is specified
 		if df.Spec.Snapshot.Cron != "" && df.Spec.Snapshot.PersistentVolumeClaimSpec == nil && df.Spec.Snapshot.ExistingPersistentVolumeClaimName == "" && df.Spec.Snapshot.Dir == "" {
 			return nil, fmt.Errorf("cron specified without a persistent volume claim")
@@ -297,7 +313,13 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s", SnapshotsDirArg, snapshotDir))
 
 		if df.Spec.Snapshot.Cron != "" {
-			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s", SnapshotsCronArg, df.Spec.Snapshot.Cron))
+			// When enableOnMasterOnly or enableOnReplicaOnly is set, don't include --snapshot_cron
+			// in the container args. The operator will set the cron dynamically via CONFIG SET
+			// on the appropriate pods (master or replicas). This eliminates the startup window
+			// where pods could snapshot before the operator configures them correctly.
+			if !df.Spec.Snapshot.EnableOnMasterOnly && !df.Spec.Snapshot.EnableOnReplicaOnly {
+				statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s", SnapshotsCronArg, df.Spec.Snapshot.Cron))
+			}
 		}
 	}
 
@@ -460,6 +482,42 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 	}
 
 	resources = append(resources, &service)
+
+	// Per-pod ClusterIP services: each pod gets its own ClusterIP service so that
+	// cross-cluster clients can reach individual pods via DNS. Pod IPs are typically
+	// not routable cross-cluster, but ClusterIPs are. These services use the standard
+	// `statefulset.kubernetes.io/pod-name` label selector to target a specific pod.
+	for i := int32(0); i < df.Spec.Replicas; i++ {
+		podName := fmt.Sprintf("%s-%d", df.Name, i)
+		podSvc := corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      podName,
+				Namespace: df.Namespace,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: df.APIVersion,
+						Kind:       df.Kind,
+						Name:       df.Name,
+						UID:        df.UID,
+					},
+				},
+				Labels:      generateResourceLabels(df),
+				Annotations: generateResourceAnnotations(df),
+			},
+			Spec: corev1.ServiceSpec{
+				Selector: map[string]string{
+					"statefulset.kubernetes.io/pod-name": podName,
+				},
+				Ports: []corev1.ServicePort{
+					{
+						Name: DragonflyPortName,
+						Port: DragonflyPort,
+					},
+				},
+			},
+		}
+		resources = append(resources, &podSvc)
+	}
 
 	pdb := policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{

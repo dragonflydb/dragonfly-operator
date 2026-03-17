@@ -914,6 +914,187 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 	})
 })
 
+var _ = Describe("Dragonfly snapshot configuration validation", Ordered, FlakeAttempts(3), func() {
+	ctx := context.Background()
+	namespace := "default"
+
+	Context("Mutual exclusivity of enableOnMasterOnly and enableOnReplicaOnly", func() {
+		It("Should fail to create when both enableOnMasterOnly and enableOnReplicaOnly are true", func() {
+			name := "df-snapshot-mutual-exclusive"
+			err := k8sClient.Create(ctx, &resourcesv1.Dragonfly{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: namespace,
+				},
+				Spec: resourcesv1.DragonflySpec{
+					Replicas: 2,
+					Snapshot: &resourcesv1.Snapshot{
+						Dir:                 "s3://test-bucket/test",
+						Cron:                "0 * * * *",
+						EnableOnMasterOnly:  true,
+						EnableOnReplicaOnly: true,
+					},
+				},
+			})
+			Expect(err).To(BeNil())
+
+			// Wait for the operator to attempt reconciliation and fail
+			// The error manifests as the StatefulSet not being created
+			var ss appsv1.StatefulSet
+			Consistently(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      name,
+					Namespace: namespace,
+				}, &ss)
+				return err != nil // StatefulSet should NOT be created
+			}, 10*time.Second, 1*time.Second).Should(BeTrue(), "StatefulSet should not be created when both flags are true")
+
+			// Cleanup
+			var df resourcesv1.Dragonfly
+			_ = k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, &df)
+			_ = k8sClient.Delete(ctx, &df)
+		})
+	})
+
+	Context("enableOnReplicaOnly snapshot configuration", func() {
+		name := "df-snapshot-replica-only"
+		schedule := "0 * * * *"
+
+		It("Should create Dragonfly with enableOnReplicaOnly", func() {
+			err := k8sClient.Create(ctx, &resourcesv1.Dragonfly{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: namespace,
+				},
+				Spec: resourcesv1.DragonflySpec{
+					Replicas: 2,
+					Snapshot: &resourcesv1.Snapshot{
+						Dir:                 "s3://test-bucket/replica-only-test",
+						Cron:                schedule,
+						EnableOnReplicaOnly: true,
+					},
+				},
+			})
+			Expect(err).To(BeNil())
+		})
+
+		It("StatefulSet should NOT have --snapshot_cron in container args", func() {
+			// Wait until Dragonfly object is marked initialized
+			err := waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			Expect(err).To(BeNil())
+			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(err).To(BeNil())
+
+			// Check StatefulSet args
+			var ss appsv1.StatefulSet
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &ss)
+			Expect(err).To(BeNil())
+
+			// Verify --snapshot_cron is NOT in the container args
+			// (operator sets it dynamically via CONFIG SET on replicas only)
+			for _, arg := range ss.Spec.Template.Spec.Containers[0].Args {
+				Expect(arg).NotTo(ContainSubstring("--snapshot_cron"), "snapshot_cron should not be in args when enableOnReplicaOnly is true")
+			}
+
+			// Verify --dir is still present
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--dir=s3://test-bucket/replica-only-test"))
+		})
+
+		It("Cleanup", func() {
+			var df resourcesv1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil())
+
+			// Wait for cleanup
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      name,
+					Namespace: namespace,
+				}, &df)
+				return err != nil
+			}, 1*time.Minute, 2*time.Second).Should(BeTrue(), "Dragonfly should be deleted")
+		})
+	})
+
+	Context("enableOnMasterOnly snapshot configuration", func() {
+		name := "df-snapshot-master-only"
+		schedule := "0 * * * *"
+
+		It("Should create Dragonfly with enableOnMasterOnly", func() {
+			err := k8sClient.Create(ctx, &resourcesv1.Dragonfly{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: namespace,
+				},
+				Spec: resourcesv1.DragonflySpec{
+					Replicas: 2,
+					Snapshot: &resourcesv1.Snapshot{
+						Dir:                "s3://test-bucket/master-only-test",
+						Cron:               schedule,
+						EnableOnMasterOnly: true,
+					},
+				},
+			})
+			Expect(err).To(BeNil())
+		})
+
+		It("StatefulSet should NOT have --snapshot_cron in container args", func() {
+			// Wait until Dragonfly object is marked initialized
+			err := waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			Expect(err).To(BeNil())
+			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(err).To(BeNil())
+
+			// Check StatefulSet args
+			var ss appsv1.StatefulSet
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &ss)
+			Expect(err).To(BeNil())
+
+			// Verify --snapshot_cron is NOT in the container args
+			// (operator sets it dynamically via CONFIG SET on master only)
+			for _, arg := range ss.Spec.Template.Spec.Containers[0].Args {
+				Expect(arg).NotTo(ContainSubstring("--snapshot_cron"), "snapshot_cron should not be in args when enableOnMasterOnly is true")
+			}
+
+			// Verify --dir is still present
+			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--dir=s3://test-bucket/master-only-test"))
+		})
+
+		It("Cleanup", func() {
+			var df resourcesv1.Dragonfly
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      name,
+				Namespace: namespace,
+			}, &df)
+			Expect(err).To(BeNil())
+
+			err = k8sClient.Delete(ctx, &df)
+			Expect(err).To(BeNil())
+
+			// Wait for cleanup
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      name,
+					Namespace: namespace,
+				}, &df)
+				return err != nil
+			}, 1*time.Minute, 2*time.Second).Should(BeTrue(), "Dragonfly should be deleted")
+		})
+	})
+})
+
 var _ = Describe("Dragonfly with additional container and volume", Ordered, FlakeAttempts(3), func() {
 	ctx := context.Background()
 	const (
