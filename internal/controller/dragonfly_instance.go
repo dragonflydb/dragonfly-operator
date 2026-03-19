@@ -66,8 +66,11 @@ func (dfi *DragonflyInstance) getRedisClient(podIP string) *redis.Client {
 		return c
 	}
 	c := redis.NewClient(&redis.Options{
-		ClientName: resources.DragonflyOperatorName,
-		Addr:       net.JoinHostPort(podIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		ClientName:   resources.DragonflyOperatorName,
+		Addr:         net.JoinHostPort(podIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		DialTimeout:  10 * time.Second,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 		MaintNotificationsConfig: &maintnotifications.Config{
 			Mode: maintnotifications.ModeDisabled,
 		},
@@ -494,6 +497,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	}
 
 	dfi.log.Info("Marking pod role as replica", "pod", pod.Name, "masterIp", masterIp)
+	patch := client.MergeFrom(pod.DeepCopy())
 	pod.Labels[resources.RoleLabelKey] = resources.Replica
 	if pod.Annotations == nil {
 		pod.Annotations = make(map[string]string)
@@ -506,7 +510,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		pod.Labels[resources.MasterIpLabelKey] = masterIp
 	}
 
-	if err := dfi.client.Update(ctx, pod); err != nil {
+	if err := dfi.client.Patch(ctx, pod, patch); err != nil {
 		return fmt.Errorf("could not update replica metadata: %w", err)
 	}
 
@@ -543,6 +547,7 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 	masterIp := pod.Status.PodIP
 
 	dfi.log.Info("Marking pod role as master", "pod", pod.Name, "masterIp", masterIp)
+	patch := client.MergeFrom(pod.DeepCopy())
 	pod.Labels[resources.RoleLabelKey] = resources.Master
 	delete(pod.Labels, resources.MasterIpLabelKey)
 
@@ -551,7 +556,7 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 	}
 	pod.Annotations[resources.MasterIpAnnotationKey] = masterIp
 
-	if err := dfi.client.Update(ctx, pod); err != nil {
+	if err := dfi.client.Patch(ctx, pod, patch); err != nil {
 		return err
 	}
 
@@ -670,11 +675,37 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 			continue
 		}
 		// Update if specs differ
-		desired.SetResourceVersion(existing.GetResourceVersion())
-		if err = dfi.client.Update(ctx, desired); err != nil {
-			return fmt.Errorf("failed to update resource: %w", err)
+		patch := client.MergeFrom(existing.DeepCopyObject().(client.Object))
+		existingAnnotations := existing.GetAnnotations()
+		if existingAnnotations == nil {
+			existingAnnotations = make(map[string]string)
 		}
-		dfi.log.Info("updated resource", "resource", desired.GetName())
+		for k, v := range desired.GetAnnotations() {
+			existingAnnotations[k] = v
+		}
+		existing.SetAnnotations(existingAnnotations)
+
+		existingLabels := existing.GetLabels()
+		if existingLabels == nil {
+			existingLabels = make(map[string]string)
+		}
+		for k, v := range desired.GetLabels() {
+			existingLabels[k] = v
+		}
+		existing.SetLabels(existingLabels)
+
+		desiredV := reflect.ValueOf(desired).Elem()
+		existingV := reflect.ValueOf(existing).Elem()
+		desiredSpec := desiredV.FieldByName("Spec")
+		existingSpec := existingV.FieldByName("Spec")
+		if desiredSpec.IsValid() && existingSpec.IsValid() {
+			existingSpec.Set(desiredSpec)
+		}
+
+		if err = dfi.client.Patch(ctx, existing, patch); err != nil {
+			return fmt.Errorf("failed to patch resource: %w", err)
+		}
+		dfi.log.Info("patched resource", "resource", desired.GetName())
 	}
 	if dfi.df.Spec.Replicas < 2 {
 		if err = dfi.client.Delete(ctx, &policyv1.PodDisruptionBudget{
@@ -899,7 +930,12 @@ func (dfi *DragonflyInstance) allPodsHealthyAndHaveRole(ctx context.Context, upd
 	}
 
 	for _, pod := range pods.Items {
-		if !isPodOnLatestVersion(&pod, updateRevision) && !isTerminating(&pod) && !isRunningAndReady(&pod) {
+		// Ignore pods that are already terminating
+		if isTerminating(&pod) {
+			continue
+		}
+
+		if !isPodOnLatestVersion(&pod, updateRevision) && !isRunningAndReady(&pod) {
 			dfi.log.Info("deleting failed to start pod", "pod", pod.Name)
 			if err := dfi.client.Delete(ctx, &pod); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to delete pod: %w", err)
@@ -1033,6 +1069,7 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 
 	masterIp := newMaster.Status.PodIP
 
+	patch := client.MergeFrom(newMaster.DeepCopy())
 	newMaster.Labels[resources.RoleLabelKey] = resources.Master
 	delete(newMaster.Labels, resources.MasterIpLabelKey)
 
@@ -1042,7 +1079,7 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 	newMaster.Annotations[resources.MasterIpAnnotationKey] = masterIp
 
 	// update the label on the pod
-	if err := dfi.client.Update(ctx, newMaster); err != nil {
+	if err := dfi.client.Patch(ctx, newMaster, patch); err != nil {
 		return fmt.Errorf("failed to update the role label on the pod: %w", err)
 	}
 
@@ -1053,4 +1090,24 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 	}
 
 	return nil
+}
+
+func (dfi *DragonflyInstance) getRedisRole(ctx context.Context, pod *corev1.Pod) (string, error) {
+	if pod.Status.PodIP == "" {
+		return "", fmt.Errorf("pod IP not available for %s", pod.Name)
+	}
+	redisClient := dfi.getRedisClient(pod.Status.PodIP)
+
+	resp, err := redisClient.Info(ctx, "replication").Result()
+	if err != nil {
+		return "", err
+	}
+
+	for _, line := range strings.Split(resp, "\n") {
+		if strings.HasPrefix(line, "role:") {
+			role := strings.Trim(strings.Split(line, ":")[1], "\r")
+			return strings.TrimSpace(role), nil
+		}
+	}
+	return "", fmt.Errorf("role not found in replication info for pod %s", pod.Name)
 }
