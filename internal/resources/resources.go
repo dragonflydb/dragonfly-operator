@@ -22,6 +22,7 @@ import (
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -141,6 +142,12 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 				},
 			},
 		},
+	}
+
+	if df.Spec.EnableReplicationReadinessGate {
+		statefulset.Spec.Template.Spec.ReadinessGates = []corev1.PodReadinessGate{
+			{ConditionType: corev1.PodConditionType(ReplicationReadyConditionType)},
+		}
 	}
 
 	if len(df.Spec.InitContainers) > 0 {
@@ -355,10 +362,8 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 	}
 
 	for key := range df.Spec.Labels {
-		// Make sure we do not overwrite any existing labels
-		if _, ok := statefulset.Spec.Template.ObjectMeta.Labels[key]; !ok {
-			statefulset.Spec.Template.ObjectMeta.Labels[key] = df.Spec.Labels[key]
-		}
+		// allow df.Spec.Labels to overwrite default labels (e.g. app.kubernetes.io/name)
+		statefulset.Spec.Template.ObjectMeta.Labels[key] = df.Spec.Labels[key]
 	}
 
 	if df.Spec.Affinity != nil {
@@ -528,7 +533,97 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		resources = append(resources, &pdb)
 	}
 
+	if isNetworkPolicyEnabled(df) {
+		np := generateNetworkPolicy(df)
+		resources = append(resources, &np)
+	}
+
 	return resources, nil
+}
+
+func isNetworkPolicyEnabled(df *resourcesv1.Dragonfly) bool {
+	return df.Spec.NetworkPolicyEnabled == nil || *df.Spec.NetworkPolicyEnabled
+}
+
+func generateNetworkPolicy(df *resourcesv1.Dragonfly) networkingv1.NetworkPolicy {
+	protocolTCP := corev1.ProtocolTCP
+
+	instanceSelector := map[string]string{
+		DragonflyNameLabelKey:     df.Name,
+		KubernetesPartOfLabelKey:  KubernetesPartOf,
+		KubernetesAppNameLabelKey: KubernetesAppName,
+	}
+
+	clientPortRule := networkingv1.NetworkPolicyIngressRule{
+		Ports: []networkingv1.NetworkPolicyPort{
+			{
+				Protocol: &protocolTCP,
+				Port:     &intstr.IntOrString{Type: intstr.Int, IntVal: DragonflyPort},
+			},
+		},
+	}
+
+	adminPortRule := networkingv1.NetworkPolicyIngressRule{
+		Ports: []networkingv1.NetworkPolicyPort{
+			{
+				Protocol: &protocolTCP,
+				Port:     &intstr.IntOrString{Type: intstr.Int, IntVal: DragonflyAdminPort},
+			},
+		},
+		From: []networkingv1.NetworkPolicyPeer{
+			{
+				PodSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						OperatorControlPlaneLabelKey: OperatorControlPlaneLabelValue,
+					},
+				},
+				NamespaceSelector: &metav1.LabelSelector{},
+			},
+			{
+				PodSelector: &metav1.LabelSelector{
+					MatchLabels: instanceSelector,
+				},
+			},
+		},
+	}
+
+	ingressRules := []networkingv1.NetworkPolicyIngressRule{clientPortRule, adminPortRule}
+
+	if df.Spec.MemcachedPort != 0 {
+		memcachedPortRule := networkingv1.NetworkPolicyIngressRule{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Protocol: &protocolTCP,
+					Port:     &intstr.IntOrString{Type: intstr.Int, IntVal: df.Spec.MemcachedPort},
+				},
+			},
+		}
+		ingressRules = append(ingressRules, memcachedPortRule)
+	}
+
+	return networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      df.Name,
+			Namespace: df.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: df.APIVersion,
+					Kind:       df.Kind,
+					Name:       df.Name,
+					UID:        df.UID,
+				},
+			},
+			Labels:      generateResourceLabels(df),
+			Annotations: generateResourceAnnotations(df),
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: instanceSelector,
+			},
+			Ingress:     ingressRules,
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+		},
+	}
 }
 
 // mergeNamedSlices will merge base into override, override takes precendence
@@ -563,9 +658,7 @@ func generateResourceLabels(df *resourcesv1.Dragonfly) map[string]string {
 
 	if df.Spec.OwnedObjectsMetadata != nil {
 		for key, value := range df.Spec.OwnedObjectsMetadata.Labels {
-			if _, ok := labels[key]; !ok {
-				labels[key] = value
-			}
+			labels[key] = value
 		}
 	}
 

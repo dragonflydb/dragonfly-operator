@@ -4461,6 +4461,13 @@ spec:
                         type: string
                     type: object
                 type: object
+              enableReplicationReadinessGate:
+                description: |-
+                  (Optional) When enabled, adds a custom readiness gate to pods that prevents
+                  them from being considered Ready until replication is fully synced.
+                  Protects against data loss during external node drains.
+                  WARNING: Enabling this on an existing cluster will trigger a rolling update.
+                type: boolean
               env:
                 description: (Optional) Env variables to add to the Dragonfly pods.
                 items:
@@ -6038,6 +6045,13 @@ spec:
                 description: (Optional) Dragonfly memcached port
                 format: int32
                 type: integer
+              networkPolicyEnabled:
+                default: true
+                description: |-
+                  (Optional) Whether to create a NetworkPolicy for this Dragonfly instance.
+                  The NetworkPolicy restricts admin port access to operator and peer pods only.
+                  Defaults to true.
+                type: boolean
               nodeSelector:
                 additionalProperties:
                   type: string

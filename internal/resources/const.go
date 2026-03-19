@@ -96,9 +96,12 @@ const (
 
 	Master = "master"
 
-	Replica = "replica"
+	Replica                       = "replica"
+	AclWatcherContainerName       = "acl-watcher"
+	ReplicationReadyConditionType = "dragonflydb.io/replication-ready"
 
-	AclWatcherContainerName = "acl-watcher"
+	OperatorControlPlaneLabelKey   = "control-plane"
+	OperatorControlPlaneLabelValue = "controller-manager"
 )
 
 var DefaultDragonflyArgs = []string{

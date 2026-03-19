@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/controller"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
@@ -614,14 +615,16 @@ user john on >peacepass -@all +@string +hset
 				},
 			})
 			Expect(err).To(BeNil())
+			disabled := false
 			err = k8sClient.Create(ctx, &resourcesv1.Dragonfly{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
 					Namespace: namespace,
 				},
 				Spec: resourcesv1.DragonflySpec{
-					Replicas: 1,
-					Args:     args,
+					Replicas:             1,
+					Args:                 args,
+					NetworkPolicyEnabled: &disabled,
 					AclFromSecret: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: "df-acl",
@@ -634,7 +637,7 @@ user john on >peacepass -@all +@string +hset
 		})
 		It("Resource should exist", func() {
 			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for statefulset
@@ -648,8 +651,12 @@ user john on >peacepass -@all +@string +hset
 			Expect(ss.Spec.Template.Spec.Containers[0].Args).To(ContainElement(fmt.Sprintf("--aclfile=%s/dragonfly.acl", resources.AclDir)))
 			stopChan := make(chan struct{}, 1)
 			defer close(stopChan)
-			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6392)
-			Expect(err).To(BeNil())
+			var rc *redis.Client
+			Eventually(func() error {
+				var err error
+				rc, err = checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6392)
+				return err
+			}, 1*time.Minute, 5*time.Second).Should(Succeed())
 			defer rc.Close()
 			result, err := rc.Do(ctx, "acl", "list").StringSlice()
 			Expect(err).To(BeNil())
@@ -669,6 +676,8 @@ user john on >peacepass -@all +@string +hset
 
 			err = k8sClient.Delete(ctx, &df)
 			Expect(err).To(BeNil())
+
+			_ = k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "df-acl", Namespace: namespace}})
 		})
 	})
 })
@@ -889,9 +898,9 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			// recreate Redis Client on the new pod
 			stopChan = make(chan struct{}, 1)
 			rc, err = checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6394)
+			Expect(err).To(BeNil())
 			defer close(stopChan)
 			defer rc.Close()
-			Expect(err).To(BeNil())
 
 			// check if the Data exists
 			data, err := rc.Get(ctx, "foo").Result()
@@ -1122,6 +1131,9 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 
 			err = k8sClient.Delete(ctx, &df)
 			Expect(err).To(BeNil())
+
+			_ = k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "df-tls", Namespace: namespace}})
+			_ = k8sClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "df-password", Namespace: namespace}})
 		})
 	})
 })

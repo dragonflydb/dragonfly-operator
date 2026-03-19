@@ -19,6 +19,8 @@ package controller
 import (
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
@@ -83,9 +85,13 @@ func isRunningAndReady(pod *corev1.Pod) bool {
 }
 
 // isReady returns true if the pod and the dragonfly container are ready.
+// Uses ContainersReady instead of PodReady so the operator can act on pods
+// whose custom readiness gates (e.g. dragonflydb.io/replication-ready) have
+// not been satisfied yet. ContainersReady is set by the kubelet based solely
+// on container readiness probes and is unaffected by readiness gates.
 func isReady(pod *corev1.Pod) bool {
 	for _, c := range pod.Status.Conditions {
-		if c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue && pod.Status.PodIP != "" {
+		if c.Type == corev1.ContainersReady && c.Status == corev1.ConditionTrue && pod.Status.PodIP != "" {
 			return isDragonflyContainerReady(pod.Status.ContainerStatuses)
 		}
 	}
@@ -175,7 +181,47 @@ func isMasterError(err error) bool {
 		errors.Is(err, ErrIncorrectMasters)
 }
 
+// isReplicationCancelledError checks if the error is a transient "replication cancelled" error from DragonflyDB.
+// This typically happens when multiple SLAVE OF commands are sent concurrently to the same pod.
+func isReplicationCancelledError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "replication cancelled")
+}
+
 // sanitizeIp removes surrounding brackets from IPv6 addresses.
 func sanitizeIp(masterIp string) string {
 	return strings.Trim(masterIp, "[]")
+}
+
+// getOrdinal returns the ordinal of the pod.
+func getOrdinal(podName string) int {
+	parts := strings.Split(podName, "-")
+	if len(parts) < 2 {
+		return math.MaxInt
+	}
+	ordinal, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		return math.MaxInt
+	}
+	return ordinal
+}
+
+// selectMasterCandidate deterministically selects a master candidate from the given list of pods.
+func selectMasterCandidate(pods []corev1.Pod, isReady func(*corev1.Pod) bool) *corev1.Pod {
+	var bestCandidate *corev1.Pod
+
+	for i := range pods {
+		p := &pods[i]
+		if !isReady(p) {
+			continue
+		}
+
+		// Prefer Pod-0, then Pod-1, etc.
+		if bestCandidate == nil || getOrdinal(p.Name) < getOrdinal(bestCandidate.Name) {
+			bestCandidate = p
+		}
+	}
+	return bestCandidate
 }
