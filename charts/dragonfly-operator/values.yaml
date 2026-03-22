@@ -196,5 +196,4 @@ grafanaDashboard:
     enabled: false
     allowCrossNamespaceImport: true
     # -- Selected labels for Grafana instance
-    matchLabels:
-      dashboards: grafana
+    matchLabels: {}
