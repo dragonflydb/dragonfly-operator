@@ -51,6 +51,8 @@ podSecurityContext:
   runAsNonRoot: true
 
 service:
+  # Annotations to add to the operator Service
+  annotations: {}
   type: ClusterIP
   port: 8443
   metricsPort: 8080
