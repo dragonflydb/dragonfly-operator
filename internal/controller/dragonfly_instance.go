@@ -1111,3 +1111,23 @@ func (dfi *DragonflyInstance) getRedisRole(ctx context.Context, pod *corev1.Pod)
 	}
 	return "", fmt.Errorf("role not found in replication info for pod %s", pod.Name)
 }
+
+// getMasterCandidate returns election metadata for the given pod by checking
+// its role label and querying slave_repl_offset from INFO replication.
+func (dfi *DragonflyInstance) getMasterCandidate(ctx context.Context, pod *corev1.Pod) MasterCandidate {
+	c := MasterCandidate{Pod: pod, IsReplica: isReplica(pod)}
+	if pod.Status.PodIP == "" {
+		return c
+	}
+	info, err := dfi.getRedisClient(pod.Status.PodIP).Info(ctx, "replication").Result()
+	if err != nil {
+		return c
+	}
+	data := parseInfoToMap(info)
+	if offsetStr, ok := data["slave_repl_offset"]; ok && offsetStr != "" {
+		if offset, err := strconv.ParseInt(offsetStr, 10, 64); err == nil {
+			c.Offset = offset
+		}
+	}
+	return c
+}
