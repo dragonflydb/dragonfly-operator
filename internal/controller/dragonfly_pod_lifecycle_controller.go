@@ -99,6 +99,8 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 					return false
 				}
 				return ready
+			}, func(p *corev1.Pod) MasterCandidate {
+				return dfi.getMasterCandidate(ctx, p)
 			})
 			if masterCandidate == nil {
 				log.Info("no healthy pod available to set up a master")

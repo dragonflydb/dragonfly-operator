@@ -208,9 +208,24 @@ func getOrdinal(podName string) int {
 	return ordinal
 }
 
-// selectMasterCandidate deterministically selects a master candidate from the given list of pods.
-func selectMasterCandidate(pods []corev1.Pod, isReady func(*corev1.Pod) bool) *corev1.Pod {
-	var bestCandidate *corev1.Pod
+// MasterCandidate holds replication metadata needed for master election.
+type MasterCandidate struct {
+	Pod       *corev1.Pod
+	IsReplica bool  // true if pod has role=replica label (was actively replicating, has data)
+	Offset    int64 // slave_repl_offset from INFO replication (0 if unavailable)
+}
+
+// selectMasterCandidate deterministically selects the best master candidate.
+//
+// Selection priority (highest to lowest):
+//  1. Pods with role=replica label (they were actively replicating and have data)
+//  2. Among replicas, highest slave_repl_offset (most up-to-date data)
+//  3. Tie-break by lowest pod ordinal
+//
+// Pods without a replica role (e.g. a restarted master with no data) are only
+// chosen when no ready replica exists.
+func selectMasterCandidate(pods []corev1.Pod, isReady func(*corev1.Pod) bool, getCandidate func(*corev1.Pod) MasterCandidate) *corev1.Pod {
+	var best *MasterCandidate
 
 	for i := range pods {
 		p := &pods[i]
@@ -218,10 +233,27 @@ func selectMasterCandidate(pods []corev1.Pod, isReady func(*corev1.Pod) bool) *c
 			continue
 		}
 
-		// Prefer Pod-0, then Pod-1, etc.
-		if bestCandidate == nil || getOrdinal(p.Name) < getOrdinal(bestCandidate.Name) {
-			bestCandidate = p
+		c := getCandidate(p)
+		if best == nil || isBetterCandidate(&c, best) {
+			best = &c
 		}
 	}
-	return bestCandidate
+	if best == nil {
+		return nil
+	}
+	return best.Pod
+}
+
+// isBetterCandidate returns true if candidate a is a better master choice than b.
+func isBetterCandidate(a, b *MasterCandidate) bool {
+	// Prefer replicas over non-replicas (replicas have data).
+	if a.IsReplica != b.IsReplica {
+		return a.IsReplica
+	}
+	// Among same role, prefer higher replication offset.
+	if a.Offset != b.Offset {
+		return a.Offset > b.Offset
+	}
+	// Tie-break by lowest ordinal.
+	return getOrdinal(a.Pod.Name) < getOrdinal(b.Pod.Name)
 }
