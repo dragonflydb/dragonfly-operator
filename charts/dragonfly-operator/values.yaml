@@ -85,7 +85,7 @@ rbacProxy:
 
 manager:
   image:
-    repository: docker.dragonflydb.io/dragonflydb/operator
+    repository: ghcr.io/mvasilenko/dragonfly-operator
     pullPolicy: IfNotPresent
     # Overrides the image tag whose default is the chart appVersion.
     tag: ""

@@ -4473,6 +4473,54 @@ spec:
                         type: string
                     type: object
                 type: object
+              customLivenessProbeConfigMap:
+                description: |-
+                  (Optional) Custom ConfigMap for the liveness probe script.
+                  Must contain key "liveness-check.sh". Overrides the operator-embedded default.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              customReadinessProbeConfigMap:
+                description: |-
+                  (Optional) Custom ConfigMap for the readiness probe script.
+                  Must contain key "readiness-check.sh". Overrides the operator-embedded default.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              customStartupProbeConfigMap:
+                description: |-
+                  (Optional) Custom ConfigMap for the startup probe script.
+                  Must contain key "startup-check.sh". Overrides the operator-embedded default.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               enableReplicationReadinessGate:
                 description: |-
                   (Optional) When enabled, adds a custom readiness gate to pods that prevents
@@ -7178,13 +7226,7 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - events
-  verbs:
-  - create
-  - patch
-- apiGroups:
-  - ""
-  resources:
+  - configmaps
   - pods
   - services
   verbs:
@@ -7195,6 +7237,13 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
 - apiGroups:
   - ""
   resources:
@@ -7462,7 +7511,7 @@ spec:
         - --leader-elect
         command:
         - /manager
-        image: docker.dragonflydb.io/dragonflydb/operator:v1.5.0
+        image: ghcr.io/mvasilenko/dragonfly-operator:v1.5.1
         livenessProbe:
           httpGet:
             path: /healthz
