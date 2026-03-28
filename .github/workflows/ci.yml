@@ -15,7 +15,7 @@ jobs:
   build-operator:
     runs-on: ubuntu-latest
     env:
-      IMG: ghcr.io/dragonflydb/operator:${{ github.sha }}
+      IMG: ghcr.io/mvasilenko/operator:${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v6
@@ -49,7 +49,7 @@ jobs:
     needs: build-operator
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     env:
-      IMG: ghcr.io/dragonflydb/operator:${{ github.ref_name }}
+      IMG: ghcr.io/mvasilenko/operator:${{ github.ref_name }}
       VERSION: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v6
@@ -84,7 +84,7 @@ jobs:
 
           helm package charts/dragonfly-operator
 
-          helm push dragonfly-operator-${{ env.VERSION }}.tgz oci://ghcr.io/dragonflydb/dragonfly-operator/helm
+          helm push dragonfly-operator-${{ env.VERSION }}.tgz oci://ghcr.io/mvasilenko/dragonfly-operator/helm
 
       - name: Build and Publish image into GHCR
         uses: docker/build-push-action@v7
@@ -92,7 +92,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ghcr.io/dragonflydb/operator:${{ github.ref_name }}
+          tags: ghcr.io/mvasilenko/operator:${{ github.ref_name }}
           platforms: |
             linux/amd64
             linux/arm64
@@ -112,6 +112,6 @@ jobs:
           body: |
             Release ${{ github.ref_name }}
 
-            Docker image: ghcr.io/dragonflydb/operator:${{ github.ref_name }}
-            Helm chart: oci://ghcr.io/dragonflydb/dragonfly-operator/helm
+            Docker image: ghcr.io/mvasilenko/operator:${{ github.ref_name }}
+            Helm chart: oci://ghcr.io/mvasilenko/dragonfly-operator/helm
           draft: true
