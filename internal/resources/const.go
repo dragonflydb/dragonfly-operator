@@ -99,6 +99,24 @@ const (
 
 	OperatorControlPlaneLabelKey   = "control-plane"
 	OperatorControlPlaneLabelValue = "controller-manager"
+
+	// Probe ConfigMap suffixes — appended to df.Name
+	LivenessProbeConfigMapSuffix  = "liveness-probe"
+	ReadinessProbeConfigMapSuffix = "readiness-probe"
+	StartupProbeConfigMapSuffix   = "startup-probe"
+
+	// Script keys — must match the filename in the ConfigMap data
+	LivenessScriptKey  = "liveness-check.sh"
+	ReadinessScriptKey = "readiness-check.sh"
+	StartupScriptKey   = "startup-check.sh"
+
+	// ProbeMountPath is the directory where all probe scripts are mounted
+	ProbeMountPath = "/etc/dragonfly/probes"
+
+	// Volume names for the three probe ConfigMaps
+	LivenessProbeVolumeName  = "liveness-probe"
+	ReadinessProbeVolumeName = "readiness-probe"
+	StartupProbeVolumeName   = "startup-probe"
 )
 
 var DefaultDragonflyArgs = []string{

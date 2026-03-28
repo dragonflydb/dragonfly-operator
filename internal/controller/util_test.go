@@ -43,9 +43,9 @@ func TestSelectMasterCandidate(t *testing.T) {
 	tests := []struct {
 		name      string
 		pods      []corev1.Pod
-		readyPods map[string]bool
+		readyPods map[string]bool  // pod names that are considered ready
 		offsets   map[string]int64 // per-pod offsets
-		wantName  string
+		wantName  string           // expected winner; "" means nil result
 	}{
 		{
 			name:     "no pods",
