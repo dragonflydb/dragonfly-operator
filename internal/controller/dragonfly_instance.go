@@ -997,6 +997,16 @@ func (dfi *DragonflyInstance) updateReplicas(ctx context.Context, replicas *core
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get master before deleting replica: %w", err)
 	}
+
+	// Check if any replica is already terminating.
+	// We want to delete only 1 replica at a time to ensure we have enough replicas for master failover.
+	for _, replica := range replicas.Items {
+		if isTerminating(&replica) {
+			dfi.log.Info("waiting for replica to terminate", "pod", replica.Name)
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+	}
+
 	for _, replica := range replicas.Items {
 		if !isPodOnLatestVersion(&replica, updateRevision) {
 			dfi.log.Info("deleting replica", "pod", replica.Name)
