@@ -134,41 +134,37 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 	}
 
-	if !podReady {
-		return ctrl.Result{}, nil
-	}
+	if podReady {
+		if roleExists(&pod) {
+			if dfi.getStatus().Phase == PhaseReady || dfi.getStatus().Phase == PhaseReadyOld {
+				// is something wrong? check if all replicas have a matching role and revamp accordingly
+				log.Info("non-deletion event for a pod with an existing role. checking if something is wrong", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
 
-	if roleExists(&pod) {
-		if dfi.getStatus().Phase != PhaseReady && dfi.getStatus().Phase != PhaseReadyOld {
-			return ctrl.Result{}, nil
-		}
+				if err = dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
+					// Check for transient replication errors
+					if isReplicationCancelledError(err) {
+						log.Info("replication cancelled (transient), will retry", "error", err)
+						return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+					}
+					return ctrl.Result{}, fmt.Errorf("failed to check and configure replicas: %w", err)
+				}
 
-		// is something wrong? check if all replicas have a matching role and revamp accordingly
-		log.Info("non-deletion event for a pod with an existing role. checking if something is wrong", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
-
-		if err = dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
-			// Check for transient replication errors
-			if isReplicationCancelledError(err) {
-				log.Info("replication cancelled (transient), will retry", "error", err)
-				return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+				r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Checked and configured replication")
 			}
-			return ctrl.Result{}, fmt.Errorf("failed to check and configure replicas: %w", err)
-		}
+		} else {
+			log.Info("pod does not have a role label", "pod", pod.Name)
 
-		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Checked and configured replication")
-	} else {
-		log.Info("pod does not have a role label", "pod", pod.Name)
-
-		if err = dfi.configureReplica(ctx, &pod, master.Status.PodIP); err != nil {
-			// Check for transient replication errors
-			if isReplicationCancelledError(err) {
-				log.Info("replication cancelled (transient), will retry", "error", err)
-				return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+			if err = dfi.configureReplica(ctx, &pod, master.Status.PodIP); err != nil {
+				// Check for transient replication errors
+				if isReplicationCancelledError(err) {
+					log.Info("replication cancelled (transient), will retry", "error", err)
+					return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+				}
+				return ctrl.Result{}, fmt.Errorf("failed to configure pod as replica: %w", err)
 			}
-			return ctrl.Result{}, fmt.Errorf("failed to configure pod as replica: %w", err)
-		}
 
-		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")
+			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")
+		}
 	}
 
 	if dfi.df.Spec.EnableReplicationReadinessGate {
