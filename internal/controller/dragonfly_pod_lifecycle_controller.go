@@ -102,6 +102,9 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			})
 			if masterCandidate == nil {
 				log.Info("no healthy pod available to set up a master")
+				if !podReady {
+					return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+				}
 				return ctrl.Result{}, nil
 			}
 			master = masterCandidate
@@ -117,6 +120,13 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			// Replication was just configured. Return and let the next reconciliation
 			// work with fresh pod data (the pod now has updated labels).
 			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Initial replication configured")
+
+			// Ensure we still poll the current pod if it triggered this event and isn't ready
+			if !podReady {
+				log.Info("pod not ready yet, will retry after initial replication config", "pod", pod.Name)
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+
 			return ctrl.Result{}, nil
 		} else {
 			return ctrl.Result{}, fmt.Errorf("failed to get master pod: %w", err)
@@ -135,7 +145,8 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if !podReady {
-		return ctrl.Result{}, nil
+		log.Info("pod not ready yet, will retry", "pod", pod.Name)
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	if roleExists(&pod) {
