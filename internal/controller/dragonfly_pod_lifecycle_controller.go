@@ -102,7 +102,9 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			})
 			if masterCandidate == nil {
 				log.Info("no healthy pod available to set up a master")
-				return ctrl.Result{}, nil
+				// Always requeue when no master candidate is available to avoid
+				// stalling master election on transient readiness errors.
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 			}
 			master = masterCandidate
 
@@ -117,6 +119,13 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			// Replication was just configured. Return and let the next reconciliation
 			// work with fresh pod data (the pod now has updated labels).
 			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Initial replication configured")
+
+			// Ensure we still poll the current pod if it triggered this event and isn't ready
+			if !podReady {
+				log.Info("pod not ready yet, will retry after initial replication config", "pod", pod.Name)
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+
 			return ctrl.Result{}, nil
 		} else {
 			return ctrl.Result{}, fmt.Errorf("failed to get master pod: %w", err)
@@ -135,27 +144,26 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if !podReady {
-		return ctrl.Result{}, nil
+		log.Info("pod not ready yet, will retry", "pod", pod.Name)
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	if roleExists(&pod) {
-		if dfi.getStatus().Phase != PhaseReady && dfi.getStatus().Phase != PhaseReadyOld {
-			return ctrl.Result{}, nil
-		}
+		if dfi.getStatus().Phase == PhaseReady || dfi.getStatus().Phase == PhaseReadyOld {
+			// is something wrong? check if all replicas have a matching role and revamp accordingly
+			log.Info("non-deletion event for a pod with an existing role. checking if something is wrong", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
 
-		// is something wrong? check if all replicas have a matching role and revamp accordingly
-		log.Info("non-deletion event for a pod with an existing role. checking if something is wrong", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
-
-		if err = dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
-			// Check for transient replication errors
-			if isReplicationCancelledError(err) {
-				log.Info("replication cancelled (transient), will retry", "error", err)
-				return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+			if err = dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
+				// Check for transient replication errors
+				if isReplicationCancelledError(err) {
+					log.Info("replication cancelled (transient), will retry", "error", err)
+					return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+				}
+				return ctrl.Result{}, fmt.Errorf("failed to check and configure replicas: %w", err)
 			}
-			return ctrl.Result{}, fmt.Errorf("failed to check and configure replicas: %w", err)
-		}
 
-		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Checked and configured replication")
+			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Checked and configured replication")
+		}
 	} else {
 		log.Info("pod does not have a role label", "pod", pod.Name)
 
