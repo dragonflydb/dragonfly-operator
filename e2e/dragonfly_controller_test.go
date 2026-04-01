@@ -137,8 +137,8 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Expect(err).To(BeNil())
 
 			// Wait for master election, then for all replicas to be Ready
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)
-			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)
+			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 3*time.Minute)).To(BeNil())
+			Expect(waitForStatefulSetReady(ctx, k8sClient, name, namespace, 3*time.Minute)).To(BeNil())
 		})
 
 		var ss appsv1.StatefulSet
@@ -227,8 +227,8 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked resources-created
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
-			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)).To(BeNil())
+			Expect(waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)).To(BeNil())
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
@@ -270,8 +270,8 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Expect(err).To(BeNil())
 
 			// Wait until Dragonfly object is marked ready
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
-			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)).To(BeNil())
+			Expect(waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)).To(BeNil())
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
@@ -636,8 +636,8 @@ user john on >peacepass -@all +@string +hset
 		})
 		It("Resource should exist", func() {
 			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
-			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)).To(BeNil())
+			Expect(waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)).To(BeNil())
 
 			// Check for statefulset
 			var ss appsv1.StatefulSet
@@ -714,8 +714,8 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 
 		It("Resources should exist", func() {
 			// Wait until Dragonfly object is marked initialized and master is elected
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
-			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)).To(BeNil())
+			Expect(waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)).To(BeNil())
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
@@ -833,8 +833,8 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 
 		It("Resources should exist", func() {
 			// Wait until Dragonfly object is marked initialized and master is elected
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
-			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)).To(BeNil())
+			Expect(waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)).To(BeNil())
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet
@@ -885,8 +885,8 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			time.Sleep(10 * time.Second)
 
 			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
-			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)).To(BeNil())
+			Expect(waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)).To(BeNil())
 			// Phase may already be Ready from before deletion; wait explicitly for the
 			// lifecycle controller to finish master election on the recreated pod.
 			err = waitForMasterPod(ctx, k8sClient, name, namespace, 2*time.Minute)
@@ -972,8 +972,8 @@ var _ = Describe("Dragonfly with additional container and volume", Ordered, Flak
 
 		It("Resources should include the additional container and volume", func() {
 			// Wait for reconciliation to create SS and mark DF resources created
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
-			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)).To(BeNil())
+			Expect(waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)).To(BeNil())
 
 			// Fetch StatefulSet
 			var ss appsv1.StatefulSet
@@ -1100,8 +1100,8 @@ var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func()
 		})
 		It("Resources should exist", func() {
 			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
-			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)).To(BeNil())
+			Expect(waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)).To(BeNil())
 
 			// Check for service and statefulset
 			var ss appsv1.StatefulSet

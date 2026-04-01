@@ -18,8 +18,6 @@ package resources
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -35,17 +33,6 @@ var (
 	dflyUserGroup int64 = 999
 )
 
-// resolveRedisPort returns the Redis port from spec.args --port=XXXX, defaulting to DragonflyPort.
-func resolveRedisPort(args []string) int32 {
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "--port=") {
-			if p, err := strconv.Atoi(strings.TrimPrefix(arg, "--port=")); err == nil && p > 0 && p <= 65535 {
-				return int32(p)
-			}
-		}
-	}
-	return DragonflyPort
-}
 
 func generateProbeConfigMap(df *resourcesv1.Dragonfly, suffix, key, script string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
@@ -138,11 +125,16 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 								},
 							},
 							Args: DefaultDragonflyArgs,
-							Env: append(df.Spec.Env, corev1.EnvVar{
-								Name:  "HEALTHCHECK_PORT",
-								Value: fmt.Sprintf("%d", resolveRedisPort(df.Spec.Args)),
-							}),
-							ReadinessProbe: &corev1.Probe{
+							Env: df.Spec.Env,
+							// Probe semantics during dataset LOADING (large snapshot restore):
+						//   StartupProbe  — succeeds on any PING response (PONG or LOADING); prevents
+						//                   liveness from firing before the process is up.
+						//   LivenessProbe — succeeds on any PING response (PONG or LOADING); must NOT
+						//                   restart a pod that is mid-restore, as that aborts the load
+						//                   and creates a crash loop (see issues #426, #508).
+						//   ReadinessProbe — fails on LOADING; gates traffic until the dataset is fully
+						//                   loaded and Dragonfly can serve requests.
+						ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
 										Command: []string{"/bin/sh", ProbeMountPath + "/" + ReadinessScriptKey},
@@ -442,15 +434,15 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 
 	// Probe script volumes — the corresponding ConfigMaps are generated and appended to resources below.
 	livenessConfigMapName := fmt.Sprintf("%s-%s", df.Name, LivenessProbeConfigMapSuffix)
-	if df.Spec.CustomLivenessProbeConfigMap != nil {
+	if df.Spec.CustomLivenessProbeConfigMap != nil && df.Spec.CustomLivenessProbeConfigMap.Name != "" {
 		livenessConfigMapName = df.Spec.CustomLivenessProbeConfigMap.Name
 	}
 	readinessConfigMapName := fmt.Sprintf("%s-%s", df.Name, ReadinessProbeConfigMapSuffix)
-	if df.Spec.CustomReadinessProbeConfigMap != nil {
+	if df.Spec.CustomReadinessProbeConfigMap != nil && df.Spec.CustomReadinessProbeConfigMap.Name != "" {
 		readinessConfigMapName = df.Spec.CustomReadinessProbeConfigMap.Name
 	}
 	startupConfigMapName := fmt.Sprintf("%s-%s", df.Name, StartupProbeConfigMapSuffix)
-	if df.Spec.CustomStartupProbeConfigMap != nil {
+	if df.Spec.CustomStartupProbeConfigMap != nil && df.Spec.CustomStartupProbeConfigMap.Name != "" {
 		startupConfigMapName = df.Spec.CustomStartupProbeConfigMap.Name
 	}
 

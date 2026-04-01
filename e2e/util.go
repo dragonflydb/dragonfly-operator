@@ -41,6 +41,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -70,22 +71,16 @@ func parseTieredEntriesFromInfo(info string) (int64, error) {
 // after waitForStatefulSetReady to guarantee the lifecycle controller has finished
 // master election before the test tries to connect.
 func waitForMasterPod(ctx context.Context, c client.Client, name, namespace string, maxDuration time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, maxDuration)
-	defer cancel()
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for master pod for %s", name)
-		default:
-			var pods corev1.PodList
-			if err := c.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				resources.DragonflyNameLabelKey: name,
-				resources.RoleLabelKey:          resources.Master,
-			}); err == nil && len(pods.Items) > 0 {
-				return nil
-			}
+	return wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, maxDuration, true, func(ctx context.Context) (bool, error) {
+		var pods corev1.PodList
+		if err := c.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+			resources.DragonflyNameLabelKey: name,
+			resources.RoleLabelKey:          resources.Master,
+		}); err != nil {
+			return false, nil
 		}
-	}
+		return len(pods.Items) > 0, nil
+	})
 }
 
 func waitForStatefulSetReady(ctx context.Context, c client.Client, name, namespace string, maxDuration time.Duration) error {
