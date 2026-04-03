@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"fmt"
 	"testing"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -244,7 +245,6 @@ func TestGenerateDragonflyResources_NetworkPolicyWithMemcached(t *testing.T) {
 	assert.Equal(t, intstr.FromInt32(11211), *memcachedRule.Ports[0].Port)
 }
 
-
 func findStatefulSet(objs []client.Object) *appsv1.StatefulSet {
 	for _, obj := range objs {
 		if sts, ok := obj.(*appsv1.StatefulSet); ok {
@@ -284,6 +284,48 @@ func TestProbeConfigMaps_Generated(t *testing.T) {
 	assert.Contains(t, startup.Data["startup-check.sh"], "redis-cli")
 }
 
+func TestHealthcheckPortEnvVar_IsAdminPort(t *testing.T) {
+	// HEALTHCHECK_PORT always points to the admin port (never requires TLS).
+	df := newTestDragonfly(1)
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+
+	var hcPort *corev1.EnvVar
+	for i := range sts.Spec.Template.Spec.Containers[0].Env {
+		env := &sts.Spec.Template.Spec.Containers[0].Env[i]
+		if env.Name == "HEALTHCHECK_PORT" {
+			hcPort = env
+			break
+		}
+	}
+	require.NotNil(t, hcPort, "HEALTHCHECK_PORT env var must be set")
+	assert.Equal(t, fmt.Sprintf("%d", DragonflyAdminPort), hcPort.Value)
+}
+
+func TestHealthcheckPortEnvVar_UnchangedByCustomRedisPort(t *testing.T) {
+	// HEALTHCHECK_PORT stays at the admin port even when the Redis port is customised.
+	df := newTestDragonfly(1)
+	df.Spec.Args = []string{"--port=6380"}
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+
+	var hcPort *corev1.EnvVar
+	for i := range sts.Spec.Template.Spec.Containers[0].Env {
+		env := &sts.Spec.Template.Spec.Containers[0].Env[i]
+		if env.Name == "HEALTHCHECK_PORT" {
+			hcPort = env
+			break
+		}
+	}
+	require.NotNil(t, hcPort)
+	assert.Equal(t, fmt.Sprintf("%d", DragonflyAdminPort), hcPort.Value)
+}
 
 func TestProbeVolumesAndMounts_Default(t *testing.T) {
 	df := newTestDragonfly(1)

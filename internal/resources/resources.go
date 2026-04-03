@@ -33,7 +33,6 @@ var (
 	dflyUserGroup int64 = 999
 )
 
-
 func generateProbeConfigMap(df *resourcesv1.Dragonfly, suffix, key, script string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -125,16 +124,13 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 								},
 							},
 							Args: DefaultDragonflyArgs,
-							Env: df.Spec.Env,
-							// Probe semantics during dataset LOADING (large snapshot restore):
-						//   StartupProbe  — succeeds on any PING response (PONG or LOADING); prevents
-						//                   liveness from firing before the process is up.
-						//   LivenessProbe — succeeds on any PING response (PONG or LOADING); must NOT
-						//                   restart a pod that is mid-restore, as that aborts the load
-						//                   and creates a crash loop (see issues #426, #508).
-						//   ReadinessProbe — fails on LOADING; gates traffic until the dataset is fully
-						//                   loaded and Dragonfly can serve requests.
-						ReadinessProbe: &corev1.Probe{
+							Env: append(df.Spec.Env, corev1.EnvVar{
+								// Use the admin port for health checks — it never requires TLS,
+								// making probes work correctly on TLS-enabled clusters.
+								Name:  "HEALTHCHECK_PORT",
+								Value: fmt.Sprintf("%d", DragonflyAdminPort),
+							}),
+							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
 										Command: []string{"/bin/sh", ProbeMountPath + "/" + ReadinessScriptKey},
@@ -434,15 +430,15 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 
 	// Probe script volumes — the corresponding ConfigMaps are generated and appended to resources below.
 	livenessConfigMapName := fmt.Sprintf("%s-%s", df.Name, LivenessProbeConfigMapSuffix)
-	if df.Spec.CustomLivenessProbeConfigMap != nil && df.Spec.CustomLivenessProbeConfigMap.Name != "" {
+	if df.Spec.CustomLivenessProbeConfigMap != nil {
 		livenessConfigMapName = df.Spec.CustomLivenessProbeConfigMap.Name
 	}
 	readinessConfigMapName := fmt.Sprintf("%s-%s", df.Name, ReadinessProbeConfigMapSuffix)
-	if df.Spec.CustomReadinessProbeConfigMap != nil && df.Spec.CustomReadinessProbeConfigMap.Name != "" {
+	if df.Spec.CustomReadinessProbeConfigMap != nil {
 		readinessConfigMapName = df.Spec.CustomReadinessProbeConfigMap.Name
 	}
 	startupConfigMapName := fmt.Sprintf("%s-%s", df.Name, StartupProbeConfigMapSuffix)
-	if df.Spec.CustomStartupProbeConfigMap != nil && df.Spec.CustomStartupProbeConfigMap.Name != "" {
+	if df.Spec.CustomStartupProbeConfigMap != nil {
 		startupConfigMapName = df.Spec.CustomStartupProbeConfigMap.Name
 	}
 
@@ -496,20 +492,29 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		statefulset.Spec.Template.Spec.Containers, df.Spec.AdditionalContainers,
 		func(c corev1.Container) string { return c.Name })
 
-	// Note: AdditionalVolumes takes precedence — a volume named "liveness-probe",
-	// "readiness-probe", or "startup-probe" in spec.additionalVolumes will override
-	// the operator-generated probe volume for that slot.
+	// There are two ways to override probe scripts:
+	//   1. spec.customLivenessProbeConfigMap / customReadinessProbeConfigMap / customStartupProbeConfigMap
+	//      — replaces the generated default ConfigMap for a specific probe.
+	//   2. spec.additionalVolumes with a matching volume name ("liveness-probe", "readiness-probe",
+	//      "startup-probe") — wins over both the default and custom ConfigMap volumes because
+	//      mergeNamedSlices appends additionalVolumes last, and Kubernetes uses the last definition.
+	// Do not use both mechanisms for the same probe simultaneously.
 	statefulset.Spec.Template.Spec.Volumes = mergeNamedSlices(
 		statefulset.Spec.Template.Spec.Volumes, df.Spec.AdditionalVolumes,
 		func(v corev1.Volume) string { return v.Name })
 
 	// ConfigMaps are appended before the StatefulSet so they exist when pods start
 	// and can mount the probe script volumes without getting stuck in Pending.
-	resources = append(resources,
-		generateProbeConfigMap(df, LivenessProbeConfigMapSuffix, LivenessScriptKey, defaultLivenessScript),
-		generateProbeConfigMap(df, ReadinessProbeConfigMapSuffix, ReadinessScriptKey, defaultReadinessScript),
-		generateProbeConfigMap(df, StartupProbeConfigMapSuffix, StartupScriptKey, defaultStartupScript),
-	)
+	// Skip generating a default when the user has pointed to their own ConfigMap.
+	if df.Spec.CustomLivenessProbeConfigMap == nil || df.Spec.CustomLivenessProbeConfigMap.Name == "" {
+		resources = append(resources, generateProbeConfigMap(df, LivenessProbeConfigMapSuffix, LivenessScriptKey, defaultLivenessScript))
+	}
+	if df.Spec.CustomReadinessProbeConfigMap == nil || df.Spec.CustomReadinessProbeConfigMap.Name == "" {
+		resources = append(resources, generateProbeConfigMap(df, ReadinessProbeConfigMapSuffix, ReadinessScriptKey, defaultReadinessScript))
+	}
+	if df.Spec.CustomStartupProbeConfigMap == nil || df.Spec.CustomStartupProbeConfigMap.Name == "" {
+		resources = append(resources, generateProbeConfigMap(df, StartupProbeConfigMapSuffix, StartupScriptKey, defaultStartupScript))
+	}
 
 	resources = append(resources, &statefulset)
 
