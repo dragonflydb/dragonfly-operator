@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -479,6 +480,13 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	// Sanitize masterIp in case ipv6
 	masterIp = sanitizeIp(masterIp)
 
+	if dfi.df.Spec.Snapshot != nil && dfi.df.Spec.Snapshot.EnableOnMasterOnly {
+		dfi.log.Info("clearing snapshot cron schedule on replica", "pod", pod.Name)
+		if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", "").Result(); err != nil {
+			return fmt.Errorf("failed to clear snapshot_cron on replica %s: %w", pod.Name, err)
+		}
+	}
+
 	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp, "addr", redisClient.Options().Addr)
 	resp, err := redisClient.SlaveOf(ctx, masterIp, strconv.Itoa(resources.DragonflyAdminPort)).Result()
 	if err != nil {
@@ -487,13 +495,6 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 
 	if resp != "OK" {
 		return fmt.Errorf("response of `SLAVE OF` on replica is not OK: %s", resp)
-	}
-
-	if dfi.df.Spec.Snapshot != nil && dfi.df.Spec.Snapshot.EnableOnMasterOnly {
-		dfi.log.Info("clearing snapshot cron schedule on replica", "pod", pod.Name)
-		if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", "").Result(); err != nil {
-			return fmt.Errorf("failed to clear snapshot_cron on replica %s: %w", pod.Name, err)
-		}
 	}
 
 	dfi.log.Info("Marking pod role as replica", "pod", pod.Name, "masterIp", masterIp)
@@ -929,6 +930,11 @@ func (dfi *DragonflyInstance) allPodsHealthyAndHaveRole(ctx context.Context, upd
 		return ctrl.Result{}, fmt.Errorf("failed to get dragonfly pods: %w", err)
 	}
 
+	// Sort pods by name to ensure deterministic deletion order across concurrent reconciles.
+	sort.Slice(pods.Items, func(i, j int) bool {
+		return pods.Items[i].Name < pods.Items[j].Name
+	})
+
 	for _, pod := range pods.Items {
 		// Ignore pods that are already terminating
 		if isTerminating(&pod) {
@@ -997,6 +1003,22 @@ func (dfi *DragonflyInstance) updateReplicas(ctx context.Context, replicas *core
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get master before deleting replica: %w", err)
 	}
+
+	// Sort replicas by name to ensure deterministic deletion order across concurrent reconciles.
+	// This prevents a race condition where multiple reconciles could delete different pods simultaneously.
+	sort.Slice(replicas.Items, func(i, j int) bool {
+		return replicas.Items[i].Name < replicas.Items[j].Name
+	})
+
+	// Check if any replica is already terminating.
+	// We want to delete only 1 replica at a time to ensure we have enough replicas for master failover.
+	for _, replica := range replicas.Items {
+		if isTerminating(&replica) {
+			dfi.log.Info("waiting for replica to terminate", "pod", replica.Name)
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+	}
+
 	for _, replica := range replicas.Items {
 		if !isPodOnLatestVersion(&replica, updateRevision) {
 			dfi.log.Info("deleting replica", "pod", replica.Name)
