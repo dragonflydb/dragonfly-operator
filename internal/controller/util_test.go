@@ -32,10 +32,10 @@ func makePod(name string) corev1.Pod {
 
 func TestSelectMasterCandidate(t *testing.T) {
 	tests := []struct {
-		name         string
-		pods         []corev1.Pod
-		readyPods    map[string]bool // pod names that are considered ready
-		wantName     string          // expected winner; "" means nil result
+		name      string
+		pods      []corev1.Pod
+		readyPods map[string]bool // pod names that are considered ready
+		wantName  string          // expected winner; "" means nil result
 	}{
 		{
 			name:      "no pods",
