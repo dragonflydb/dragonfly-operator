@@ -480,6 +480,13 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	// Sanitize masterIp in case ipv6
 	masterIp = sanitizeIp(masterIp)
 
+	if dfi.df.Spec.Snapshot != nil && dfi.df.Spec.Snapshot.EnableOnMasterOnly {
+		dfi.log.Info("clearing snapshot cron schedule on replica", "pod", pod.Name)
+		if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", "").Result(); err != nil {
+			return fmt.Errorf("failed to clear snapshot_cron on replica %s: %w", pod.Name, err)
+		}
+	}
+
 	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp, "addr", redisClient.Options().Addr)
 	resp, err := redisClient.SlaveOf(ctx, masterIp, strconv.Itoa(resources.DragonflyAdminPort)).Result()
 	if err != nil {
@@ -488,13 +495,6 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 
 	if resp != "OK" {
 		return fmt.Errorf("response of `SLAVE OF` on replica is not OK: %s", resp)
-	}
-
-	if dfi.df.Spec.Snapshot != nil && dfi.df.Spec.Snapshot.EnableOnMasterOnly {
-		dfi.log.Info("clearing snapshot cron schedule on replica", "pod", pod.Name)
-		if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", "").Result(); err != nil {
-			return fmt.Errorf("failed to clear snapshot_cron on replica %s: %w", pod.Name, err)
-		}
 	}
 
 	dfi.log.Info("Marking pod role as replica", "pod", pod.Name, "masterIp", masterIp)
