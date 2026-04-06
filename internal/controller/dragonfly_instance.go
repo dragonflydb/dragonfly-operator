@@ -1067,6 +1067,14 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 		return fmt.Errorf("response of `REPLTAKEOVER` on replica is not OK: %s", resp)
 	}
 
+	if dfi.df.Spec.Snapshot != nil && dfi.df.Spec.Snapshot.EnableOnMasterOnly {
+		dfi.log.Info("setting snapshot cron schedule on new master", "pod", newMaster.Name)
+		cron := dfi.df.Spec.Snapshot.Cron
+		if _, err := redisClient.ConfigSet(ctx, "snapshot_cron", cron).Result(); err != nil {
+			return fmt.Errorf("failed to set snapshot_cron on master %s: %w", newMaster.Name, err)
+		}
+	}
+
 	masterIp := newMaster.Status.PodIP
 
 	patch := client.MergeFrom(newMaster.DeepCopy())
