@@ -714,8 +714,8 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 		})
 
 		It("Resources should exist", func() {
-			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			// Wait until Dragonfly object is marked initialized and master is elected
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
@@ -833,8 +833,8 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 		})
 
 		It("Resources should exist", func() {
-			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			// Wait until Dragonfly object is marked initialized and master is elected
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
@@ -888,6 +888,10 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			// Wait until Dragonfly object is marked initialized
 			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			// Phase may already be Ready from before deletion; wait explicitly for the
+			// lifecycle controller to finish master election on the recreated pod.
+			err = waitForMasterPod(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(err).To(BeNil())
 			// check if the pod is created
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      fmt.Sprintf("%s-0", name),
