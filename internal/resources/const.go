@@ -99,6 +99,10 @@ const (
 
 	OperatorControlPlaneLabelKey   = "control-plane"
 	OperatorControlPlaneLabelValue = "controller-manager"
+
+	// KubernetesNamespaceLabelKey is the well-known label automatically set on
+	// namespaces by Kubernetes >= 1.21, used to pin NetworkPolicy selectors.
+	KubernetesNamespaceLabelKey = "kubernetes.io/metadata.name"
 )
 
 var DefaultDragonflyArgs = []string{
