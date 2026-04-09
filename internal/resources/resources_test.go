@@ -96,7 +96,7 @@ func TestGenerateDragonflyResources_ReadinessGateDisabled(t *testing.T) {
 	df := newTestDragonfly(2)
 	df.Spec.EnableReplicationReadinessGate = false
 
-	resources, err := GenerateDragonflyResources(df, "")
+	resources, err := GenerateDragonflyResources(df, "", "")
 	require.NoError(t, err)
 
 	for _, obj := range resources {
@@ -113,7 +113,7 @@ func TestGenerateDragonflyResources_ReadinessGateEnabled(t *testing.T) {
 	df := newTestDragonfly(2)
 	df.Spec.EnableReplicationReadinessGate = true
 
-	resources, err := GenerateDragonflyResources(df, "")
+	resources, err := GenerateDragonflyResources(df, "", "")
 	require.NoError(t, err)
 
 	for _, obj := range resources {
@@ -150,7 +150,7 @@ func TestGenerateDragonflyResources_NetworkPolicyDefault(t *testing.T) {
 		},
 	}
 
-	objs, err := GenerateDragonflyResources(df, "")
+	objs, err := GenerateDragonflyResources(df, "", "dragonfly-system")
 	require.NoError(t, err)
 
 	np := findNetworkPolicy(objs)
@@ -171,7 +171,9 @@ func TestGenerateDragonflyResources_NetworkPolicyDefault(t *testing.T) {
 	protocolTCP := corev1.ProtocolTCP
 
 	clientRule := np.Spec.Ingress[0]
-	assert.Len(t, clientRule.From, 0, "client port should be open to all")
+	require.Len(t, clientRule.From, 1, "client port should be restricted to same namespace")
+	assert.Equal(t, &metav1.LabelSelector{}, clientRule.From[0].PodSelector)
+	assert.Nil(t, clientRule.From[0].NamespaceSelector, "client port should not allow cross-namespace")
 	require.Len(t, clientRule.Ports, 1)
 	assert.Equal(t, &protocolTCP, clientRule.Ports[0].Protocol)
 	assert.Equal(t, intstr.FromInt32(DragonflyPort), *clientRule.Ports[0].Port)
@@ -185,7 +187,10 @@ func TestGenerateDragonflyResources_NetworkPolicyDefault(t *testing.T) {
 	assert.Equal(t, map[string]string{
 		OperatorControlPlaneLabelKey: OperatorControlPlaneLabelValue,
 	}, operatorPeer.PodSelector.MatchLabels)
-	assert.NotNil(t, operatorPeer.NamespaceSelector, "operator peer should allow cross-namespace")
+	require.NotNil(t, operatorPeer.NamespaceSelector, "operator peer should allow cross-namespace")
+	assert.Equal(t, map[string]string{
+		KubernetesNamespaceLabelKey: "dragonfly-system",
+	}, operatorPeer.NamespaceSelector.MatchLabels, "operator peer namespace should be pinned")
 
 	peerPod := adminRule.From[1]
 	assert.Equal(t, map[string]string{
@@ -209,7 +214,7 @@ func TestGenerateDragonflyResources_NetworkPolicyDisabled(t *testing.T) {
 		},
 	}
 
-	objs, err := GenerateDragonflyResources(df, "")
+	objs, err := GenerateDragonflyResources(df, "", "dragonfly-system")
 	require.NoError(t, err)
 
 	np := findNetworkPolicy(objs)
@@ -228,7 +233,7 @@ func TestGenerateDragonflyResources_NetworkPolicyWithMemcached(t *testing.T) {
 		},
 	}
 
-	objs, err := GenerateDragonflyResources(df, "")
+	objs, err := GenerateDragonflyResources(df, "", "dragonfly-system")
 	require.NoError(t, err)
 
 	np := findNetworkPolicy(objs)
@@ -238,8 +243,38 @@ func TestGenerateDragonflyResources_NetworkPolicyWithMemcached(t *testing.T) {
 
 	protocolTCP := corev1.ProtocolTCP
 	memcachedRule := np.Spec.Ingress[2]
-	assert.Len(t, memcachedRule.From, 0, "memcached port should be open to all")
+	require.Len(t, memcachedRule.From, 1, "memcached port should be restricted to same namespace")
+	assert.Equal(t, &metav1.LabelSelector{}, memcachedRule.From[0].PodSelector)
+	assert.Nil(t, memcachedRule.From[0].NamespaceSelector, "memcached port should not allow cross-namespace")
 	require.Len(t, memcachedRule.Ports, 1)
 	assert.Equal(t, &protocolTCP, memcachedRule.Ports[0].Protocol)
 	assert.Equal(t, intstr.FromInt32(11211), *memcachedRule.Ports[0].Port)
+}
+
+func TestGenerateDragonflyResources_NetworkPolicyEmptyOperatorNamespace(t *testing.T) {
+	df := &resourcesv1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-df",
+			Namespace: "default",
+		},
+		Spec: resourcesv1.DragonflySpec{
+			Replicas: 1,
+		},
+	}
+
+	objs, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	np := findNetworkPolicy(objs)
+	require.NotNil(t, np)
+
+	adminRule := np.Spec.Ingress[1]
+	require.Len(t, adminRule.From, 2)
+
+	operatorPeer := adminRule.From[0]
+	assert.Equal(t, map[string]string{
+		OperatorControlPlaneLabelKey: OperatorControlPlaneLabelValue,
+	}, operatorPeer.PodSelector.MatchLabels)
+	assert.Nil(t, operatorPeer.NamespaceSelector,
+		"when operator namespace is unknown, admin port should fall back to same-namespace only")
 }
