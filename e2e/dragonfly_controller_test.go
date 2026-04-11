@@ -75,7 +75,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Namespace: namespace,
 		},
 		Spec: resourcesv1.DragonflySpec{
-			OwnedObjectsMetadata: &resourcesv1.OwnedObjectsMetadata{
+			OwnedObjectsMetadata: &resourcesv1.MetadataSpec{
 				Labels: labels,
 			},
 			Replicas:  3,

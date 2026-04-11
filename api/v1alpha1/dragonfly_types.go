@@ -58,15 +58,20 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	AclFromSecret *corev1.SecretKeySelector `json:"aclFromSecret,omitempty"`
 
-	// (Optional) Annotations to add to the Dragonfly pods.
+	// Deprecated: use spec.podMetadata.annotations instead.
 	// +optional
 	// +kubebuilder:validation:Optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 
-	// (Optional) Labels to add to the Dragonfly pods.
+	// Deprecated: use spec.podMetadata.labels instead.
 	// +optional
 	// +kubebuilder:validation:Optional
 	Labels map[string]string `json:"labels,omitempty"`
+
+	// (Optional) Labels and annotations to add to the Dragonfly pods.
+	// +optional
+	// +kubebuilder:validation:Optional
+	PodMetadata *MetadataSpec `json:"podMetadata,omitempty"`
 
 	// (Optional) Env variables to add to the Dragonfly pods.
 	// +optional
@@ -171,10 +176,10 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	InitContainers []corev1.Container `json:"initContainers,omitempty"`
 
-	// (Optional) Dragonfly direct child resources additional annotations and labels
+	// (Optional) Labels and annotations to add to all owned resources (StatefulSet, Service, PDB, etc).
 	// +optional
 	// +kubebuilder:validation:Optional
-	OwnedObjectsMetadata *OwnedObjectsMetadata `json:"ownedObjectsMetadata,omitempty"`
+	OwnedObjectsMetadata *MetadataSpec `json:"ownedObjectsMetadata,omitempty"`
 
 	// (Optional) When enabled, adds a custom readiness gate to pods that prevents
 	// them from being considered Ready until replication is fully synced.
@@ -216,7 +221,7 @@ type PdbSpec struct {
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 }
 
-type OwnedObjectsMetadata struct {
+type MetadataSpec struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 	Labels      map[string]string `json:"labels,omitempty"`
 }
