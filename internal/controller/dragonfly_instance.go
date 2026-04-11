@@ -647,6 +647,25 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		if err := controllerutil.SetControllerReference(dfi.df, desired, dfi.scheme); err != nil {
 			return fmt.Errorf("failed to set controller reference: %w", err)
 		}
+		// Special handling for StatefulSets to preserve immutable fields.
+		// VolumeClaimTemplates, Selector, ServiceName, and PodManagementPolicy
+		// cannot be changed after creation. Copy them from existing so they
+		// never appear as a diff. If the user changes e.g. persistentVolumeClaimSpec,
+		// the change is silently dropped here — a delete+recreate is required.
+		if stsDesired, ok := desired.(*appsv1.StatefulSet); ok {
+			if stsExisting, ok := existing.(*appsv1.StatefulSet); ok {
+				if !reflect.DeepEqual(stsDesired.Spec.VolumeClaimTemplates, stsExisting.Spec.VolumeClaimTemplates) {
+					dfi.log.Info("VolumeClaimTemplates change detected but cannot be applied to an existing StatefulSet; delete and recreate the Dragonfly instance to change PVC configuration",
+						"resource", stsDesired.Name)
+					dfi.eventRecorder.Event(dfi.df, corev1.EventTypeWarning, "ImmutableField",
+						"VolumeClaimTemplates change ignored: delete and recreate the Dragonfly instance to apply PVC configuration changes")
+				}
+				stsDesired.Spec.VolumeClaimTemplates = stsExisting.Spec.VolumeClaimTemplates
+				stsDesired.Spec.Selector = stsExisting.Spec.Selector
+				stsDesired.Spec.ServiceName = stsExisting.Spec.ServiceName
+				stsDesired.Spec.PodManagementPolicy = stsExisting.Spec.PodManagementPolicy
+			}
+		}
 		// Special handling for Services to preserve immutable fields
 		if svcDesired, ok := desired.(*corev1.Service); ok {
 			if svcExisting, ok := existing.(*corev1.Service); ok {
