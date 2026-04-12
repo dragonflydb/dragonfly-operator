@@ -45,6 +45,7 @@ type DragonflyReconciler struct {
 //+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -158,6 +159,7 @@ func (r *DragonflyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&dfv1alpha1.Dragonfly{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&appsv1.StatefulSet{}, builder.MatchEveryOwner).
 		Owns(&corev1.Service{}, builder.MatchEveryOwner).
+		Owns(&corev1.ConfigMap{}, builder.MatchEveryOwner).
 		Owns(&networkingv1.NetworkPolicy{}, builder.MatchEveryOwner).
 		Named("Dragonfly").
 		Complete(r)

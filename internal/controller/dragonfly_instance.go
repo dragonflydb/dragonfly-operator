@@ -745,6 +745,12 @@ func resourceSpecsEqual(desired, existing client.Object) bool {
 	if !reflect.DeepEqual(desired.GetLabels(), existing.GetLabels()) || !reflect.DeepEqual(desired.GetAnnotations(), existing.GetAnnotations()) {
 		return false
 	}
+	// ConfigMaps store content in .Data, not .Spec — compare Data directly.
+	if cmDesired, ok := desired.(*corev1.ConfigMap); ok {
+		if cmExisting, ok := existing.(*corev1.ConfigMap); ok {
+			return reflect.DeepEqual(cmDesired.Data, cmExisting.Data)
+		}
+	}
 	// Compare only the .Spec field using reflection
 	desiredV := reflect.ValueOf(desired).Elem()
 	existingV := reflect.ValueOf(existing).Elem()
