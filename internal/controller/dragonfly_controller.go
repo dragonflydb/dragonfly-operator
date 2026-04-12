@@ -159,6 +159,7 @@ func (r *DragonflyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&dfv1alpha1.Dragonfly{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&appsv1.StatefulSet{}, builder.MatchEveryOwner).
 		Owns(&corev1.Service{}, builder.MatchEveryOwner).
+		Owns(&corev1.ConfigMap{}, builder.MatchEveryOwner).
 		Owns(&networkingv1.NetworkPolicy{}, builder.MatchEveryOwner).
 		Named("Dragonfly").
 		Complete(r)

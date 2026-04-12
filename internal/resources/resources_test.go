@@ -380,63 +380,62 @@ func TestProbes_PointToMountedScripts(t *testing.T) {
 }
 
 func TestProbeVolumes_CustomConfigMapOverride(t *testing.T) {
-	df := newTestDragonfly(1)
-	df.Spec.CustomReadinessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-readiness-check"}
-
-	objs, err := GenerateDragonflyResources(df, "")
-	require.NoError(t, err)
-
-	sts := findStatefulSet(objs)
-	require.NotNil(t, sts)
-
-	volumes := sts.Spec.Template.Spec.Volumes
-	for _, v := range volumes {
-		if v.Name == ReadinessProbeVolumeName {
-			require.NotNil(t, v.ConfigMap)
-			assert.Equal(t, "my-readiness-check", v.ConfigMap.Name,
-				"custom ConfigMap should be mounted for readiness probe")
-			return
-		}
+	tests := []struct {
+		name             string
+		setup            func(df *resourcesv1.Dragonfly)
+		volumeName       string
+		wantCM           string
+		defaultCMName    string // should NOT appear in generated resources
+	}{
+		{
+			name:          "custom liveness",
+			setup:         func(df *resourcesv1.Dragonfly) { df.Spec.CustomLivenessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-liveness"} },
+			volumeName:    LivenessProbeVolumeName,
+			wantCM:        "my-liveness",
+			defaultCMName: "test-df-" + LivenessProbeConfigMapSuffix,
+		},
+		{
+			name:          "custom readiness",
+			setup:         func(df *resourcesv1.Dragonfly) { df.Spec.CustomReadinessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-readiness"} },
+			volumeName:    ReadinessProbeVolumeName,
+			wantCM:        "my-readiness",
+			defaultCMName: "test-df-" + ReadinessProbeConfigMapSuffix,
+		},
+		{
+			name:          "custom startup",
+			setup:         func(df *resourcesv1.Dragonfly) { df.Spec.CustomStartupProbeConfigMap = &corev1.LocalObjectReference{Name: "my-startup"} },
+			volumeName:    StartupProbeVolumeName,
+			wantCM:        "my-startup",
+			defaultCMName: "test-df-" + StartupProbeConfigMapSuffix,
+		},
 	}
-	t.Fatal("readiness-probe volume not found")
-}
 
-func TestProbeVolumes_CustomLivenessConfigMapOverride(t *testing.T) {
-	df := newTestDragonfly(1)
-	df.Spec.CustomLivenessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-liveness-check"}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			df := newTestDragonfly(1)
+			tc.setup(df)
 
-	objs, err := GenerateDragonflyResources(df, "")
-	require.NoError(t, err)
+			objs, err := GenerateDragonflyResources(df, "")
+			require.NoError(t, err)
 
-	sts := findStatefulSet(objs)
-	require.NotNil(t, sts)
+			// volume should reference the custom ConfigMap
+			sts := findStatefulSet(objs)
+			require.NotNil(t, sts)
 
-	for _, v := range sts.Spec.Template.Spec.Volumes {
-		if v.Name == LivenessProbeVolumeName {
-			require.NotNil(t, v.ConfigMap)
-			assert.Equal(t, "my-liveness-check", v.ConfigMap.Name)
-			return
-		}
+			var found bool
+			for _, v := range sts.Spec.Template.Spec.Volumes {
+				if v.Name == tc.volumeName {
+					require.NotNil(t, v.ConfigMap)
+					assert.Equal(t, tc.wantCM, v.ConfigMap.Name)
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "volume %q not found", tc.volumeName)
+
+			// default ConfigMap should NOT be generated
+			assert.Nil(t, findConfigMap(objs, tc.defaultCMName),
+				"default ConfigMap %q should not be generated when custom is set", tc.defaultCMName)
+		})
 	}
-	t.Fatal("liveness-probe volume not found")
-}
-
-func TestProbeVolumes_CustomStartupConfigMapOverride(t *testing.T) {
-	df := newTestDragonfly(1)
-	df.Spec.CustomStartupProbeConfigMap = &corev1.LocalObjectReference{Name: "my-startup-check"}
-
-	objs, err := GenerateDragonflyResources(df, "")
-	require.NoError(t, err)
-
-	sts := findStatefulSet(objs)
-	require.NotNil(t, sts)
-
-	for _, v := range sts.Spec.Template.Spec.Volumes {
-		if v.Name == StartupProbeVolumeName {
-			require.NotNil(t, v.ConfigMap)
-			assert.Equal(t, "my-startup-check", v.ConfigMap.Name)
-			return
-		}
-	}
-	t.Fatal("startup-probe volume not found")
 }
