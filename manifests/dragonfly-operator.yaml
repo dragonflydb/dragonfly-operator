@@ -4474,11 +4474,8 @@ spec:
                     type: object
                 type: object
               customLivenessProbeConfigMap:
-                description: |-
-                  (Optional) Custom ConfigMap for the liveness probe script.
-                  Must contain key "liveness-check.sh". Overrides the operator-embedded default.
-                  Note: if spec.additionalVolumes also contains a volume named "liveness-probe",
-                  it takes precedence over this field. Do not use both for the same probe.
+                description: (Optional) Custom ConfigMap with key "liveness-check.sh"
+                  to override the default liveness probe.
                 properties:
                   name:
                     default: ""
@@ -4492,11 +4489,8 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               customReadinessProbeConfigMap:
-                description: |-
-                  (Optional) Custom ConfigMap for the readiness probe script.
-                  Must contain key "readiness-check.sh". Overrides the operator-embedded default.
-                  Note: if spec.additionalVolumes also contains a volume named "readiness-probe",
-                  it takes precedence over this field. Do not use both for the same probe.
+                description: (Optional) Custom ConfigMap with key "readiness-check.sh"
+                  to override the default readiness probe.
                 properties:
                   name:
                     default: ""
@@ -4510,11 +4504,8 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               customStartupProbeConfigMap:
-                description: |-
-                  (Optional) Custom ConfigMap for the startup probe script.
-                  Must contain key "startup-check.sh". Overrides the operator-embedded default.
-                  Note: if spec.additionalVolumes also contains a volume named "startup-probe",
-                  it takes precedence over this field. Do not use both for the same probe.
+                description: (Optional) Custom ConfigMap with key "startup-check.sh"
+                  to override the default startup probe.
                 properties:
                   name:
                     default: ""
