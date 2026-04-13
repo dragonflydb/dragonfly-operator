@@ -279,7 +279,7 @@ func TestProbeConfigMaps_GeneratedWhenCustomProbeSet(t *testing.T) {
 	objs, err := GenerateDragonflyResources(df, "")
 	require.NoError(t, err)
 
-	// custom liveness → no default liveness ConfigMap
+	// custom liveness overrides the default, so no default ConfigMap generated
 	assert.Nil(t, findConfigMap(objs, "test-df-liveness-probe"))
 
 	// defaults generated for probes not overridden
@@ -290,6 +290,35 @@ func TestProbeConfigMaps_GeneratedWhenCustomProbeSet(t *testing.T) {
 	startup := findConfigMap(objs, "test-df-startup-probe")
 	require.NotNil(t, startup)
 	assert.Contains(t, startup.Data, "startup-check.sh")
+}
+
+func TestProbeConfigMaps_AllCustomNoneGenerated(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.CustomLivenessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-liveness"}
+	df.Spec.CustomReadinessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-readiness"}
+	df.Spec.CustomStartupProbeConfigMap = &corev1.LocalObjectReference{Name: "my-startup"}
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	assert.Nil(t, findConfigMap(objs, "test-df-liveness-probe"), "no default when all custom")
+	assert.Nil(t, findConfigMap(objs, "test-df-readiness-probe"))
+	assert.Nil(t, findConfigMap(objs, "test-df-startup-probe"))
+}
+
+func TestProbeConfigMaps_EmptyNameTreatedAsNoCustom(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.CustomLivenessProbeConfigMap = &corev1.LocalObjectReference{Name: ""}
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	// empty name is treated as no custom probe, keeps default path
+	assert.Nil(t, findConfigMap(objs, "test-df-liveness-probe"), "empty name should not trigger custom probes")
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	c := sts.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, []string{"/bin/sh", "/usr/local/bin/healthcheck.sh"}, c.LivenessProbe.Exec.Command)
+	assert.Nil(t, c.StartupProbe, "no startup probe with empty custom name")
 }
 
 func TestHealthcheckPortEnvVar_IsAdminPort(t *testing.T) {

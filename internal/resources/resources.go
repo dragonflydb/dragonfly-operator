@@ -183,7 +183,10 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
-										Command: []string{"/bin/sh", "/usr/local/bin/healthcheck.sh"},
+										Command: []string{
+											"/bin/sh",
+											"/usr/local/bin/healthcheck.sh",
+										},
 									},
 								},
 								FailureThreshold:    3,
@@ -195,7 +198,10 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
-										Command: []string{"/bin/sh", "/usr/local/bin/healthcheck.sh"},
+										Command: []string{
+											"/bin/sh",
+											"/usr/local/bin/healthcheck.sh",
+										},
 									},
 								},
 								FailureThreshold:    3,
