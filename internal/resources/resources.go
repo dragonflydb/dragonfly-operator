@@ -33,6 +33,12 @@ var (
 	dflyUserGroup int64 = 999
 )
 
+func hasCustomProbes(df *resourcesv1.Dragonfly) bool {
+	return (df.Spec.CustomLivenessProbeConfigMap != nil && df.Spec.CustomLivenessProbeConfigMap.Name != "") ||
+		(df.Spec.CustomReadinessProbeConfigMap != nil && df.Spec.CustomReadinessProbeConfigMap.Name != "") ||
+		(df.Spec.CustomStartupProbeConfigMap != nil && df.Spec.CustomStartupProbeConfigMap.Name != "")
+}
+
 // returns the custom ConfigMap name if set, or "<dfName>-<suffix>" otherwise
 func probeConfigMapName(dfName, suffix string, custom *corev1.LocalObjectReference) string {
 	if custom != nil && custom.Name != "" {
@@ -172,10 +178,12 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 								Name:  "HEALTHCHECK_PORT",
 								Value: fmt.Sprintf("%d", DragonflyAdminPort),
 							}),
+							// Default probes use the image-embedded healthcheck script.
+							// When custom probe ConfigMaps are set, these are replaced below.
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
-										Command: []string{"/bin/sh", ProbeMountPath + "/" + ReadinessScriptKey},
+										Command: []string{"/bin/sh", "/usr/local/bin/healthcheck.sh"},
 									},
 								},
 								FailureThreshold:    3,
@@ -187,24 +195,12 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
-										Command: []string{"/bin/sh", ProbeMountPath + "/" + LivenessScriptKey},
+										Command: []string{"/bin/sh", "/usr/local/bin/healthcheck.sh"},
 									},
 								},
 								FailureThreshold:    3,
 								InitialDelaySeconds: 10,
 								PeriodSeconds:       10,
-								SuccessThreshold:    1,
-								TimeoutSeconds:      5,
-							},
-							StartupProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									Exec: &corev1.ExecAction{
-										Command: []string{"/bin/sh", ProbeMountPath + "/" + StartupScriptKey},
-									},
-								},
-								FailureThreshold:    60,
-								InitialDelaySeconds: 0,
-								PeriodSeconds:       5,
 								SuccessThreshold:    1,
 								TimeoutSeconds:      5,
 							},
@@ -470,14 +466,45 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		}
 	}
 
-	// Wire probe ConfigMap volumes and mounts into the StatefulSet.
-	livenessConfigMapName := probeConfigMapName(df.Name, LivenessProbeConfigMapSuffix, df.Spec.CustomLivenessProbeConfigMap)
-	readinessConfigMapName := probeConfigMapName(df.Name, ReadinessProbeConfigMapSuffix, df.Spec.CustomReadinessProbeConfigMap)
-	startupConfigMapName := probeConfigMapName(df.Name, StartupProbeConfigMapSuffix, df.Spec.CustomStartupProbeConfigMap)
+	// When custom probe ConfigMaps are set, switch probes to use mounted scripts
+	// and wire volumes/mounts. Otherwise keep the default image-embedded healthcheck
+	// to avoid triggering a rolling update on operator upgrade.
+	if hasCustomProbes(df) {
+		c := &statefulset.Spec.Template.Spec.Containers[0]
+		c.ReadinessProbe.Exec.Command = []string{"/bin/sh", ProbeMountPath + "/" + ReadinessScriptKey}
+		c.LivenessProbe.Exec.Command = []string{"/bin/sh", ProbeMountPath + "/" + LivenessScriptKey}
+		c.StartupProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				Exec: &corev1.ExecAction{
+					Command: []string{"/bin/sh", ProbeMountPath + "/" + StartupScriptKey},
+				},
+			},
+			FailureThreshold:    60,
+			InitialDelaySeconds: 0,
+			PeriodSeconds:       5,
+			SuccessThreshold:    1,
+			TimeoutSeconds:      5,
+		}
 
-	appendProbeVolumesAndMounts(&statefulset,
-		livenessConfigMapName, readinessConfigMapName, startupConfigMapName,
-	)
+		livenessConfigMapName := probeConfigMapName(df.Name, LivenessProbeConfigMapSuffix, df.Spec.CustomLivenessProbeConfigMap)
+		readinessConfigMapName := probeConfigMapName(df.Name, ReadinessProbeConfigMapSuffix, df.Spec.CustomReadinessProbeConfigMap)
+		startupConfigMapName := probeConfigMapName(df.Name, StartupProbeConfigMapSuffix, df.Spec.CustomStartupProbeConfigMap)
+
+		appendProbeVolumesAndMounts(&statefulset,
+			livenessConfigMapName, readinessConfigMapName, startupConfigMapName,
+		)
+
+		// Generate default ConfigMaps for probes not overridden by the user.
+		if df.Spec.CustomLivenessProbeConfigMap == nil || df.Spec.CustomLivenessProbeConfigMap.Name == "" {
+			resources = append(resources, generateProbeConfigMap(df, livenessConfigMapName, LivenessScriptKey, defaultLivenessScript))
+		}
+		if df.Spec.CustomReadinessProbeConfigMap == nil || df.Spec.CustomReadinessProbeConfigMap.Name == "" {
+			resources = append(resources, generateProbeConfigMap(df, readinessConfigMapName, ReadinessScriptKey, defaultReadinessScript))
+		}
+		if df.Spec.CustomStartupProbeConfigMap == nil || df.Spec.CustomStartupProbeConfigMap.Name == "" {
+			resources = append(resources, generateProbeConfigMap(df, startupConfigMapName, StartupScriptKey, defaultStartupScript))
+		}
+	}
 
 	statefulset.Spec.Template.Spec.Containers = mergeNamedSlices(
 		statefulset.Spec.Template.Spec.Containers, df.Spec.AdditionalContainers,
@@ -486,19 +513,6 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 	statefulset.Spec.Template.Spec.Volumes = mergeNamedSlices(
 		statefulset.Spec.Template.Spec.Volumes, df.Spec.AdditionalVolumes,
 		func(v corev1.Volume) string { return v.Name })
-
-	// ConfigMaps are appended before the StatefulSet so they exist when pods start
-	// and can mount the probe script volumes without getting stuck in Pending.
-	// Skip generating a default when the user has pointed to their own ConfigMap.
-	if df.Spec.CustomLivenessProbeConfigMap == nil || df.Spec.CustomLivenessProbeConfigMap.Name == "" {
-		resources = append(resources, generateProbeConfigMap(df, livenessConfigMapName, LivenessScriptKey, defaultLivenessScript))
-	}
-	if df.Spec.CustomReadinessProbeConfigMap == nil || df.Spec.CustomReadinessProbeConfigMap.Name == "" {
-		resources = append(resources, generateProbeConfigMap(df, readinessConfigMapName, ReadinessScriptKey, defaultReadinessScript))
-	}
-	if df.Spec.CustomStartupProbeConfigMap == nil || df.Spec.CustomStartupProbeConfigMap.Name == "" {
-		resources = append(resources, generateProbeConfigMap(df, startupConfigMapName, StartupScriptKey, defaultStartupScript))
-	}
 
 	resources = append(resources, &statefulset)
 

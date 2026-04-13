@@ -263,25 +263,33 @@ func findConfigMap(objs []client.Object, name string) *corev1.ConfigMap {
 	return nil
 }
 
-func TestProbeConfigMaps_Generated(t *testing.T) {
+func TestProbeConfigMaps_NotGeneratedByDefault(t *testing.T) {
 	df := newTestDragonfly(1)
 	objs, err := GenerateDragonflyResources(df, "")
 	require.NoError(t, err)
 
-	liveness := findConfigMap(objs, "test-df-liveness-probe")
-	require.NotNil(t, liveness, "liveness-probe ConfigMap should be generated")
-	assert.Contains(t, liveness.Data, "liveness-check.sh")
-	assert.Contains(t, liveness.Data["liveness-check.sh"], "redis-cli")
+	assert.Nil(t, findConfigMap(objs, "test-df-liveness-probe"), "no ConfigMaps without custom probes")
+	assert.Nil(t, findConfigMap(objs, "test-df-readiness-probe"))
+	assert.Nil(t, findConfigMap(objs, "test-df-startup-probe"))
+}
 
+func TestProbeConfigMaps_GeneratedWhenCustomProbeSet(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.CustomLivenessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-liveness"}
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	// custom liveness → no default liveness ConfigMap
+	assert.Nil(t, findConfigMap(objs, "test-df-liveness-probe"))
+
+	// defaults generated for probes not overridden
 	readiness := findConfigMap(objs, "test-df-readiness-probe")
-	require.NotNil(t, readiness, "readiness-probe ConfigMap should be generated")
+	require.NotNil(t, readiness)
 	assert.Contains(t, readiness.Data, "readiness-check.sh")
-	assert.Contains(t, readiness.Data["readiness-check.sh"], "redis-cli")
 
 	startup := findConfigMap(objs, "test-df-startup-probe")
-	require.NotNil(t, startup, "startup-probe ConfigMap should be generated")
+	require.NotNil(t, startup)
 	assert.Contains(t, startup.Data, "startup-check.sh")
-	assert.Contains(t, startup.Data["startup-check.sh"], "redis-cli")
 }
 
 func TestHealthcheckPortEnvVar_IsAdminPort(t *testing.T) {
@@ -327,7 +335,7 @@ func TestHealthcheckPortEnvVar_UnchangedByCustomRedisPort(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("%d", DragonflyAdminPort), hcPort.Value)
 }
 
-func TestProbeVolumesAndMounts_Default(t *testing.T) {
+func TestProbeVolumesAndMounts_DefaultHasNoProbeVolumes(t *testing.T) {
 	df := newTestDragonfly(1)
 	objs, err := GenerateDragonflyResources(df, "")
 	require.NoError(t, err)
@@ -335,31 +343,42 @@ func TestProbeVolumesAndMounts_Default(t *testing.T) {
 	sts := findStatefulSet(objs)
 	require.NotNil(t, sts)
 
-	volumes := sts.Spec.Template.Spec.Volumes
-	volumeNames := make(map[string]string) // name -> configmap name
-	for _, v := range volumes {
+	for _, v := range sts.Spec.Template.Spec.Volumes {
+		assert.NotEqual(t, LivenessProbeVolumeName, v.Name, "no probe volumes without custom probes")
+		assert.NotEqual(t, ReadinessProbeVolumeName, v.Name)
+		assert.NotEqual(t, StartupProbeVolumeName, v.Name)
+	}
+}
+
+func TestProbeVolumesAndMounts_PresentWhenCustomProbeSet(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.CustomReadinessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-readiness"}
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+
+	volumeNames := make(map[string]string)
+	for _, v := range sts.Spec.Template.Spec.Volumes {
 		if v.ConfigMap != nil {
 			volumeNames[v.Name] = v.ConfigMap.Name
 		}
 	}
 	assert.Equal(t, "test-df-liveness-probe", volumeNames[LivenessProbeVolumeName])
-	assert.Equal(t, "test-df-readiness-probe", volumeNames[ReadinessProbeVolumeName])
+	assert.Equal(t, "my-readiness", volumeNames[ReadinessProbeVolumeName])
 	assert.Equal(t, "test-df-startup-probe", volumeNames[StartupProbeVolumeName])
 
-	mounts := sts.Spec.Template.Spec.Containers[0].VolumeMounts
 	mountPaths := make(map[string]corev1.VolumeMount)
-	for _, m := range mounts {
+	for _, m := range sts.Spec.Template.Spec.Containers[0].VolumeMounts {
 		mountPaths[m.Name] = m
 	}
 	assert.Equal(t, ProbeMountPath+"/"+LivenessScriptKey, mountPaths[LivenessProbeVolumeName].MountPath)
-	assert.Equal(t, LivenessScriptKey, mountPaths[LivenessProbeVolumeName].SubPath)
 	assert.Equal(t, ProbeMountPath+"/"+ReadinessScriptKey, mountPaths[ReadinessProbeVolumeName].MountPath)
-	assert.Equal(t, ReadinessScriptKey, mountPaths[ReadinessProbeVolumeName].SubPath)
 	assert.Equal(t, ProbeMountPath+"/"+StartupScriptKey, mountPaths[StartupProbeVolumeName].MountPath)
-	assert.Equal(t, StartupScriptKey, mountPaths[StartupProbeVolumeName].SubPath)
 }
 
-func TestProbes_PointToMountedScripts(t *testing.T) {
+func TestProbes_DefaultUseImageHealthcheck(t *testing.T) {
 	df := newTestDragonfly(1)
 	objs, err := GenerateDragonflyResources(df, "")
 	require.NoError(t, err)
@@ -369,9 +388,25 @@ func TestProbes_PointToMountedScripts(t *testing.T) {
 	c := sts.Spec.Template.Spec.Containers[0]
 
 	require.NotNil(t, c.LivenessProbe)
-	assert.Equal(t, []string{"/bin/sh", ProbeMountPath + "/" + LivenessScriptKey}, c.LivenessProbe.Exec.Command)
+	assert.Equal(t, []string{"/bin/sh", "/usr/local/bin/healthcheck.sh"}, c.LivenessProbe.Exec.Command)
 
 	require.NotNil(t, c.ReadinessProbe)
+	assert.Equal(t, []string{"/bin/sh", "/usr/local/bin/healthcheck.sh"}, c.ReadinessProbe.Exec.Command)
+
+	assert.Nil(t, c.StartupProbe, "no startup probe without custom probes")
+}
+
+func TestProbes_PointToMountedScriptsWhenCustomSet(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.CustomStartupProbeConfigMap = &corev1.LocalObjectReference{Name: "my-startup"}
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	c := sts.Spec.Template.Spec.Containers[0]
+
+	assert.Equal(t, []string{"/bin/sh", ProbeMountPath + "/" + LivenessScriptKey}, c.LivenessProbe.Exec.Command)
 	assert.Equal(t, []string{"/bin/sh", ProbeMountPath + "/" + ReadinessScriptKey}, c.ReadinessProbe.Exec.Command)
 
 	require.NotNil(t, c.StartupProbe)
