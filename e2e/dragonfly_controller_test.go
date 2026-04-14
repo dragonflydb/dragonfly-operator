@@ -750,28 +750,30 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 			defer close(stopChan)
 			defer rc.Close()
 
+			// Clean residual data from prior FlakeAttempts retries.
+			Expect(rc.FlushAll(ctx).Err()).To(BeNil())
+
+			// FlushAll deletes keys but tiered_entries updates asynchronously,
+			// so wait until it reaches zero before inserting our test key.
+			Eventually(func() int64 {
+				info, _ := rc.Info(ctx, "tiered").Result()
+				n, _ := parseTieredEntriesFromInfo(info)
+				return n
+			}, 10*time.Second, 200*time.Millisecond).Should(Equal(int64(0)))
+
 			// Insert BIG value (>64B so it is eligible for tiering)
 			const size = 1 << 20 // 1 MiB
 			payload := make([]byte, size)
 			_, _ = rand.Read(payload)
 
-			infoStr, err := rc.Info(ctx, "tiered").Result()
-			Expect(err).To(BeNil())
-
-			entries, err := parseTieredEntriesFromInfo(infoStr)
-			Expect(err).To(BeNil())
-			Expect(entries).To(Equal(int64(0))) // make sure this matches your expectation
-
 			Expect(rc.Set(ctx, "foo", payload, 0).Err()).To(BeNil())
 
-			// Inserted one big key, tiered entries should be 1
-			infoStr, err = rc.Info(ctx, "tiered").Result()
-			Expect(err).To(BeNil())
-
-			fmt.Println("Tiered entried Info: ", infoStr)
-			entries, err = parseTieredEntriesFromInfo(infoStr)
-			Expect(err).To(BeNil())
-			Expect(entries).To(Equal(int64(1))) // make sure this matches your expectation
+			// Stash is async, poll until the value is tiered.
+			Eventually(func() int64 {
+				info, _ := rc.Info(ctx, "tiered").Result()
+				n, _ := parseTieredEntriesFromInfo(info)
+				return n
+			}, 30*time.Second, 200*time.Millisecond).Should(Equal(int64(1)))
 
 			// Fetch and compare by size
 			data, err := rc.Get(ctx, "foo").Bytes()
