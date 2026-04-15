@@ -764,14 +764,15 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 
 			Expect(rc.Set(ctx, "foo", payload, 0).Err()).To(BeNil())
 
-			// Inserted one big key, tiered entries should be 1
-			infoStr, err = rc.Info(ctx, "tiered").Result()
-			Expect(err).To(BeNil())
-
-			fmt.Println("Tiered entried Info: ", infoStr)
-			entries, err = parseTieredEntriesFromInfo(infoStr)
-			Expect(err).To(BeNil())
-			Expect(entries).To(Equal(int64(1))) // make sure this matches your expectation
+			// Tiering is asynchronous — poll until the entry appears in tiered storage.
+			Eventually(func() (int64, error) {
+				infoStr, err = rc.Info(ctx, "tiered").Result()
+				if err != nil {
+					return 0, err
+				}
+				fmt.Println("Tiered entries Info: ", infoStr)
+				return parseTieredEntriesFromInfo(infoStr)
+			}, 30*time.Second, time.Second).Should(Equal(int64(1)))
 
 			// Fetch and compare by size
 			data, err := rc.Get(ctx, "foo").Bytes()
