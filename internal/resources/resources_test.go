@@ -216,6 +216,108 @@ func TestGenerateDragonflyResources_NetworkPolicyDisabled(t *testing.T) {
 	assert.Nil(t, np, "NetworkPolicy should not be generated when disabled")
 }
 
+func findStatefulSet(objs []client.Object) *appsv1.StatefulSet {
+	for _, obj := range objs {
+		if sts, ok := obj.(*appsv1.StatefulSet); ok {
+			return sts
+		}
+	}
+	return nil
+}
+
+func TestGenerateDragonflyResources_PodMetadataLabels(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.PodMetadata = &resourcesv1.MetadataSpec{
+		Labels:      map[string]string{"team": "infra"},
+		Annotations: map[string]string{"prometheus.io/scrape": "true"},
+	}
+
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	assert.Equal(t, "infra", sts.Spec.Template.Labels["team"])
+	assert.Equal(t, "true", sts.Spec.Template.Annotations["prometheus.io/scrape"])
+}
+
+func TestGenerateDragonflyResources_PodMetadataWinsOverDeprecated(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.Labels = map[string]string{"env": "staging"}
+	df.Spec.Annotations = map[string]string{"note": "old"}
+	df.Spec.PodMetadata = &resourcesv1.MetadataSpec{
+		Labels:      map[string]string{"env": "prod"},
+		Annotations: map[string]string{"note": "new"},
+	}
+
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	assert.Equal(t, "prod", sts.Spec.Template.Labels["env"], "podMetadata should win over deprecated labels")
+	assert.Equal(t, "new", sts.Spec.Template.Annotations["note"], "podMetadata should win over deprecated annotations")
+}
+
+func TestGenerateDragonflyResources_RejectProtectedPodLabel(t *testing.T) {
+	for _, field := range []struct {
+		name   string
+		spec   func(*resourcesv1.DragonflySpec)
+		errMsg string
+	}{
+		{
+			name:   "spec.labels",
+			spec:   func(s *resourcesv1.DragonflySpec) { s.Labels = map[string]string{KubernetesAppNameLabelKey: "x"} },
+			errMsg: "spec.labels",
+		},
+		{
+			name: "spec.podMetadata.labels",
+			spec: func(s *resourcesv1.DragonflySpec) {
+				s.PodMetadata = &resourcesv1.MetadataSpec{Labels: map[string]string{KubernetesPartOfLabelKey: "x"}}
+			},
+			errMsg: "spec.podMetadata.labels",
+		},
+		{
+			name: "spec.ownedObjectsMetadata.labels",
+			spec: func(s *resourcesv1.DragonflySpec) {
+				s.OwnedObjectsMetadata = &resourcesv1.MetadataSpec{Labels: map[string]string{DragonflyNameLabelKey: "x"}}
+			},
+			errMsg: "spec.ownedObjectsMetadata.labels",
+		},
+		{
+			name: "spec.serviceSpec.labels",
+			spec: func(s *resourcesv1.DragonflySpec) {
+				s.ServiceSpec = &resourcesv1.ServiceSpec{Labels: map[string]string{KubernetesManagedByLabelKey: "x"}}
+			},
+			errMsg: "spec.serviceSpec.labels",
+		},
+	} {
+		t.Run(field.name, func(t *testing.T) {
+			df := newTestDragonfly(1)
+			field.spec(&df.Spec)
+			_, err := GenerateDragonflyResources(df, "")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), field.errMsg)
+		})
+	}
+}
+
+func TestGenerateDragonflyResources_OwnedObjectsMetadataLabels(t *testing.T) {
+	df := newTestDragonfly(2)
+	df.Spec.OwnedObjectsMetadata = &resourcesv1.MetadataSpec{
+		Labels:      map[string]string{"team": "infra"},
+		Annotations: map[string]string{"owner": "platform"},
+	}
+
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	assert.Equal(t, "infra", sts.Labels["team"])
+	assert.Equal(t, "platform", sts.Annotations["owner"])
+}
+
 func TestGenerateDragonflyResources_NetworkPolicyWithMemcached(t *testing.T) {
 	df := &resourcesv1.Dragonfly{
 		ObjectMeta: metav1.ObjectMeta{

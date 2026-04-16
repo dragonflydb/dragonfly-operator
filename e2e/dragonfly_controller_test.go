@@ -75,7 +75,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Namespace: namespace,
 		},
 		Spec: resourcesv1.DragonflySpec{
-			OwnedObjectsMetadata: &resourcesv1.OwnedObjectsMetadata{
+			OwnedObjectsMetadata: &resourcesv1.MetadataSpec{
 				Labels: labels,
 			},
 			Replicas:  3,
@@ -559,8 +559,12 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			Expect(err).To(BeNil())
 
 			Expect(svc.Spec.Type).To(Equal(corev1.ServiceTypeLoadBalancer))
-			Expect(svc.Annotations).To(Equal(newAnnotations))
-			Expect(svc.Labels).To(Equal(newLabels))
+			for k, v := range newAnnotations {
+				Expect(svc.Annotations).To(HaveKeyWithValue(k, v))
+			}
+			for k, v := range newLabels {
+				Expect(svc.Labels).To(HaveKeyWithValue(k, v))
+			}
 		})
 
 		It("Should recreate missing statefulset", func() {
