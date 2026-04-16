@@ -4461,6 +4461,51 @@ spec:
                         type: string
                     type: object
                 type: object
+              customLivenessProbeConfigMap:
+                description: (Optional) Custom ConfigMap with key "liveness-check.sh"
+                  to override the default liveness probe.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              customReadinessProbeConfigMap:
+                description: (Optional) Custom ConfigMap with key "readiness-check.sh"
+                  to override the default readiness probe.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              customStartupProbeConfigMap:
+                description: (Optional) Custom ConfigMap with key "startup-check.sh"
+                  to override the default startup probe.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               enableReplicationReadinessGate:
                 description: |-
                   (Optional) When enabled, adds a custom readiness gate to pods that prevents
