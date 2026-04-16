@@ -145,12 +145,20 @@ func main() {
 
 	defer eventBroadcaster.Shutdown()
 
+	operatorNamespace := getOperatorNamespace()
+	if operatorNamespace != "" {
+		setupLog.Info(fmt.Sprintf("Operator namespace: %s", operatorNamespace))
+	} else {
+		setupLog.Info("Operator namespace could not be determined; admin port NetworkPolicy will be restricted to same-namespace only")
+	}
+
 	if err = (&controller.DragonflyReconciler{
 		Reconciler: controller.Reconciler{
 			Client:                mgr.GetClient(),
 			Scheme:                mgr.GetScheme(),
 			EventRecorder:         eventRecorder,
 			DefaultDragonflyImage: dragonflyImage,
+			OperatorNamespace:     operatorNamespace,
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Dragonfly")
@@ -163,6 +171,7 @@ func main() {
 			Scheme:                mgr.GetScheme(),
 			EventRecorder:         eventRecorder,
 			DefaultDragonflyImage: dragonflyImage,
+			OperatorNamespace:     operatorNamespace,
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Health")
@@ -226,4 +235,22 @@ func addNamespacesToOpts(namespaces string, ops *ctrl.Options) error {
 
 	}
 	return nil
+}
+
+const saNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+func getOperatorNamespace() string {
+	return resolveOperatorNamespace(saNamespaceFile)
+}
+
+func resolveOperatorNamespace(saFile string) string {
+	if ns, ok := os.LookupEnv("POD_NAMESPACE"); ok && ns != "" {
+		return ns
+	}
+	if data, err := os.ReadFile(saFile); err == nil {
+		if ns := strings.TrimSpace(string(data)); ns != "" {
+			return ns
+		}
+	}
+	return ""
 }
