@@ -1,6 +1,7 @@
 
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
+ACL_WATCHER_IMG ?= acl-watcher:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.30.0
 
@@ -78,9 +79,17 @@ run: manifests generate fmt vet ## Run a controller from your host.
 docker-build: ## Build docker image with the manager.
 	docker build -t ${IMG} .
 
+.PHONY: docker-build-acl-watcher
+docker-build-acl-watcher: ## Build docker image with the ACL watcher.
+	docker build -t ${ACL_WATCHER_IMG} -f acl-watcher/Dockerfile acl-watcher
+
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	docker push ${IMG}
+
+.PHONY: docker-push-acl-watcher
+docker-push-acl-watcher: ## Push docker image with the ACL watcher.
+	docker push ${ACL_WATCHER_IMG}
 
 .PHONY: docker-kind-load
 docker-kind-load: ## Load docker image with the manager into kind cluster.
@@ -102,6 +111,13 @@ docker-buildx: test ## Build and push docker image for the manager for cross-pla
 	- docker buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
 	- docker buildx rm project-v3-builder
 	rm Dockerfile.cross
+
+.PHONY: docker-buildx-acl-watcher
+docker-buildx-acl-watcher: ## Build and push docker image for the ACL watcher for cross-platform support
+	- docker buildx create --name project-v3-builder
+	docker buildx use project-v3-builder
+	- docker buildx build --push --platform=$(PLATFORMS) --tag ${ACL_WATCHER_IMG} -f acl-watcher/Dockerfile acl-watcher
+	- docker buildx rm project-v3-builder
 
 ##@ Deployment
 
