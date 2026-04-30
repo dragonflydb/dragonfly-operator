@@ -1467,15 +1467,15 @@
 			"type": "prometheus",
 			"uid": "${DS_PROMETHEUS}"
 		  },
-		  "definition": "label_values(dragonfly_uptime_in_seconds,app)",
+		  "definition": "label_values(dragonfly_uptime_in_seconds,namespace)",
 		  "hide": 0,
 		  "includeAll": false,
-		  "label": "dragonfly",
+		  "label": "namespace",
 		  "multi": false,
-		  "name": "Dragonfly",
+		  "name": "namespace",
 		  "options": [],
 		  "query": {
-			"query": "label_values(dragonfly_uptime_in_seconds,app)",
+			"query": "label_values(dragonfly_uptime_in_seconds,namespace)",
 			"refId": "PrometheusVariableQueryEditor-VariableQuery"
 		  },
 		  "refresh": 1,
@@ -1490,15 +1490,15 @@
 			"type": "prometheus",
 			"uid": "${DS_PROMETHEUS}"
 		  },
-		  "definition": "label_values(dragonfly_uptime_in_seconds{app=\"$Dragonfly\"},namespace)",
+		  "definition": "label_values(dragonfly_uptime_in_seconds{namespace=\"$namespace\"},app)",
 		  "hide": 0,
 		  "includeAll": false,
-		  "label": "namespace",
+		  "label": "dragonfly",
 		  "multi": false,
-		  "name": "namespace",
+		  "name": "Dragonfly",
 		  "options": [],
 		  "query": {
-			"query": "label_values(dragonfly_uptime_in_seconds{app=\"$Dragonfly\"},namespace)",
+			"query": "label_values(dragonfly_uptime_in_seconds{namespace=\"$namespace\"},app)",
 			"refId": "PrometheusVariableQueryEditor-VariableQuery"
 		  },
 		  "refresh": 1,
