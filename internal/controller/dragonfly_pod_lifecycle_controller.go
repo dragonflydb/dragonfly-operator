@@ -146,10 +146,8 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Recover the role label as soon as the admin socket is reachable, before
-	// the !podReady early return below. Otherwise pods loading a snapshot would
-	// never get labeled. reconcileReplicaLabel is idempotent — it only re-issues
-	// SLAVE OF when Redis state is actually wrong.
-	if !roleExists(&pod) && isPodReachable(&pod) {
+	// the !podReady early return below. Otherwise loading pods stay unlabeled.
+	if !roleExists(&pod) && isReachable(&pod) {
 		log.Info("pod has no role label; reconciling as replica (independent of dataset-load state)", "pod", pod.Name)
 
 		if err = dfi.reconcileReplicaLabel(ctx, &pod, master.Status.PodIP); err != nil {
@@ -188,8 +186,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Checked and configured replication")
 		}
 	} else {
-		// Pod has no role and isn't reachable yet (still booting, no PodIP).
-		// Requeue and the branch above will handle it next time.
+		// No role and not reachable yet; requeue.
 		log.Info("pod has no role label and is not reachable yet; will retry", "pod", pod.Name)
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}

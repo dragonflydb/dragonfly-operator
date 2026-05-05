@@ -91,11 +91,6 @@ func (dfi *DragonflyInstance) Close() {
 }
 
 // patchPodMetadata patches a pod's labels/annotations with retry-on-conflict.
-// Re-GETs the pod inside the retry loop to avoid stale-resourceVersion 409s
-// from concurrent kubelet status writes. NotFound is treated as success so
-// the caller stays idempotent when the pod was deleted between the Redis
-// command and the label update. The mutate callback runs on a fresh pod and
-// must not call the k8s client.
 func (dfi *DragonflyInstance) patchPodMetadata(ctx context.Context, podKey types.NamespacedName, mutate func(*corev1.Pod)) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		var pod corev1.Pod
@@ -164,15 +159,14 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context, master *
 		}
 	}
 
-	// Use isPodReachable rather than isPodReady: SLAVE OF only needs the
-	// admin socket and is itself what starts the dataset load. The
-	// readiness gate below still waits for stable sync before admitting traffic.
+	// SLAVE OF only needs the admin socket and is what starts the dataset load,
+	// so gate on isReachable rather than isPodReady.
 	for _, pod := range pods.Items {
 		if pod.Name == master.Name {
 			continue
 		}
 
-		if !isPodReachable(&pod) {
+		if !isReachable(&pod) {
 			dfi.log.Info("skipping replica configuration; pod not reachable yet", "pod", pod.Name)
 			continue
 		}
@@ -209,10 +203,7 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 }
 
 // reconcileReplicaLabel idempotently re-applies the role=replica label.
-// If Redis already shows the correct master (via INFO replication), we only
-// patch the label — re-issuing SLAVE OF on a healthy replica would provoke
-// a transient "replication cancelled" error. Otherwise falls back to the
-// full configureReplica path.
+// If Redis is already replicating from the right master, only the label is patched.
 func (dfi *DragonflyInstance) reconcileReplicaLabel(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	correct, err := dfi.checkReplicaRole(ctx, pod, masterIp)
 	if err == nil && correct {
@@ -346,9 +337,8 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 			}
 		}
 
-		// Recover unlabeled pods on isPodReachable rather than isPodReady so
-		// they get a role even while loading a snapshot.
-		if !roleExists(&pod) && isPodReachable(&pod) {
+		// Label unlabeled pods even while loading a snapshot.
+		if !roleExists(&pod) && isReachable(&pod) {
 			if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
 				return err
 			}
@@ -525,9 +515,7 @@ func (dfi *DragonflyInstance) detectOldMasters(ctx context.Context, updateRevisi
 }
 
 // replicaOf configures the pod as a replica to the given master instance.
-// SLAVE OF (idempotent on the Dragonfly side) runs first, then the role label
-// is persisted via patchPodMetadata so a transient k8s API conflict cannot
-// leave the pod replicating on Redis without a label on the k8s side.
+// Issues SLAVE OF first, then persists the role label via patchPodMetadata.
 func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	redisClient := dfi.getRedisClient(pod.Status.PodIP)
 
@@ -582,8 +570,8 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	return nil
 }
 
-// replicaOfNoOne promotes the given pod to master via SLAVE OF NO ONE, then
-// persists the role=master label with retry-on-conflict semantics.
+
+// replicaOfNoOne configures the pod as a master along while updating other pods to be replicas
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	redisClient := dfi.getRedisClient(pod.Status.PodIP)
 
@@ -957,8 +945,7 @@ func (dfi *DragonflyInstance) deleteMasterRoleLabel(ctx context.Context) error {
 	return nil
 }
 
-// deleteRoleLabel deletes the role label from the given pod. Used during
-// split-brain recovery (ErrIncorrectMasters / ErrNoHealthyMaster).
+// deleteRoleLabel deletes the role label from the given pod.
 func (dfi *DragonflyInstance) deleteRoleLabel(ctx context.Context, pod *corev1.Pod) error {
 	dfi.log.Info("deleting pod role label", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
 
