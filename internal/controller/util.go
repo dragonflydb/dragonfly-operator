@@ -79,6 +79,14 @@ func isHealthy(pod *corev1.Pod) bool {
 	return isRunningAndReady(pod) && !isTerminating(pod)
 }
 
+// isPodReachable returns true if the pod's Dragonfly admin socket is reachable
+// (Running, container Ready, has PodIP, not terminating). Weaker than isPodReady
+// which also requires the dataset to be fully loaded. Used to drive replication
+// commands (SLAVE OF, INFO replication) that only need the admin socket.
+func isPodReachable(pod *corev1.Pod) bool {
+	return isRunningAndReady(pod) && !isTerminating(pod) && pod.Status.PodIP != ""
+}
+
 // isRunningAndReady checks if the pod is running and ready
 func isRunningAndReady(pod *corev1.Pod) bool {
 	return pod.Status.Phase == corev1.PodRunning && isReady(pod)

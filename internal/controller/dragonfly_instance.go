@@ -38,7 +38,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -88,6 +90,42 @@ func (dfi *DragonflyInstance) Close() {
 	dfi.redisClients = nil
 }
 
+// patchPodMetadata patches a pod's labels/annotations with retry-on-conflict.
+// Re-GETs the pod inside the retry loop to avoid stale-resourceVersion 409s
+// from concurrent kubelet status writes. NotFound is treated as success so
+// the caller stays idempotent when the pod was deleted between the Redis
+// command and the label update. The mutate callback runs on a fresh pod and
+// must not call the k8s client.
+func (dfi *DragonflyInstance) patchPodMetadata(ctx context.Context, podKey types.NamespacedName, mutate func(*corev1.Pod)) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		var pod corev1.Pod
+		if err := dfi.client.Get(ctx, podKey, &pod); err != nil {
+			if apierrors.IsNotFound(err) {
+				dfi.log.Info("pod disappeared before metadata update; skipping", "pod", podKey.String())
+				return nil
+			}
+			return err
+		}
+
+		patch := client.MergeFrom(pod.DeepCopy())
+		if pod.Labels == nil {
+			pod.Labels = map[string]string{}
+		}
+		if pod.Annotations == nil {
+			pod.Annotations = map[string]string{}
+		}
+		mutate(&pod)
+
+		if err := dfi.client.Patch(ctx, &pod, patch); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		return nil
+	})
+}
+
 // configureReplication configures the given pod as a master and other pods as replicas
 func (dfi *DragonflyInstance) configureReplication(ctx context.Context, master *corev1.Pod) error {
 	dfi.log.Info("configuring replication")
@@ -126,32 +164,32 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context, master *
 		}
 	}
 
+	// Use isPodReachable rather than isPodReady: SLAVE OF only needs the
+	// admin socket and is itself what starts the dataset load. The
+	// readiness gate below still waits for stable sync before admitting traffic.
 	for _, pod := range pods.Items {
 		if pod.Name == master.Name {
 			continue
 		}
 
-		ready, readyErr := dfi.isPodReady(ctx, &pod)
-		if readyErr != nil {
-			dfi.log.Error(readyErr, "failed to check pod readiness", "pod", pod.Name)
-			return readyErr
+		if !isPodReachable(&pod) {
+			dfi.log.Info("skipping replica configuration; pod not reachable yet", "pod", pod.Name)
+			continue
 		}
 
-		if ready {
-			if err = dfi.configureReplica(ctx, &pod, master.Status.PodIP); err != nil {
-				dfi.log.Error(err, "failed to configure replica", "pod", pod.Name)
-				return err
-			}
+		if err = dfi.configureReplica(ctx, &pod, master.Status.PodIP); err != nil {
+			dfi.log.Error(err, "failed to configure replica", "pod", pod.Name)
+			return err
+		}
 
-			if dfi.df.Spec.EnableReplicationReadinessGate {
-				stable, stableErr := dfi.isReplicaStable(ctx, &pod)
-				if stableErr != nil {
-					stable = false
-				}
-				if patchErr := dfi.patchReplicationReadyCondition(ctx, &pod, stable); patchErr != nil {
-					dfi.log.Error(patchErr, "failed to patch replication ready condition on replica", "pod", pod.Name)
-					return patchErr
-				}
+		if dfi.df.Spec.EnableReplicationReadinessGate {
+			stable, stableErr := dfi.isReplicaStable(ctx, &pod)
+			if stableErr != nil {
+				stable = false
+			}
+			if patchErr := dfi.patchReplicationReadyCondition(ctx, &pod, stable); patchErr != nil {
+				dfi.log.Error(patchErr, "failed to patch replication ready condition on replica", "pod", pod.Name)
+				return patchErr
 			}
 		}
 	}
@@ -168,6 +206,31 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 	}
 
 	return nil
+}
+
+// reconcileReplicaLabel idempotently re-applies the role=replica label.
+// If Redis already shows the correct master (via INFO replication), we only
+// patch the label — re-issuing SLAVE OF on a healthy replica would provoke
+// a transient "replication cancelled" error. Otherwise falls back to the
+// full configureReplica path.
+func (dfi *DragonflyInstance) reconcileReplicaLabel(ctx context.Context, pod *corev1.Pod, masterIp string) error {
+	correct, err := dfi.checkReplicaRole(ctx, pod, masterIp)
+	if err == nil && correct {
+		dfi.log.Info("Redis already replicating from correct master; only patching missing label", "pod", pod.Name, "master", masterIp)
+		sanitized := sanitizeIp(masterIp)
+		podKey := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
+		return dfi.patchPodMetadata(ctx, podKey, func(p *corev1.Pod) {
+			p.Labels[resources.RoleLabelKey] = resources.Replica
+			p.Annotations[resources.MasterIpAnnotationKey] = sanitized
+			if ip := net.ParseIP(sanitized); ip != nil && ip.To4() != nil {
+				p.Labels[resources.MasterIpLabelKey] = sanitized
+			}
+		})
+	}
+	if err != nil {
+		dfi.log.Info("could not inspect Redis replication state; falling back to full configureReplica", "pod", pod.Name, "error", err.Error())
+	}
+	return dfi.configureReplica(ctx, pod, masterIp)
 }
 
 // checkReplicaRole returns true if the given pod is a replica and is connected to the correct master.
@@ -283,17 +346,11 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 			}
 		}
 
-		if !roleExists(&pod) {
-			ready, readyErr := dfi.isPodReady(ctx, &pod)
-			if readyErr != nil {
-				dfi.log.Error(readyErr, "failed to check pod readiness", "pod", pod.Name)
-				return readyErr
-			}
-
-			if ready {
-				if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
-					return err
-				}
+		// Recover unlabeled pods on isPodReachable rather than isPodReady so
+		// they get a role even while loading a snapshot.
+		if !roleExists(&pod) && isPodReachable(&pod) {
+			if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
+				return err
 			}
 		}
 	}
@@ -467,7 +524,10 @@ func (dfi *DragonflyInstance) detectOldMasters(ctx context.Context, updateRevisi
 	return nil
 }
 
-// replicaOf configures the pod as a replica to the given master instance
+// replicaOf configures the pod as a replica to the given master instance.
+// SLAVE OF (idempotent on the Dragonfly side) runs first, then the role label
+// is persisted via patchPodMetadata so a transient k8s API conflict cannot
+// leave the pod replicating on Redis without a label on the k8s side.
 func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	redisClient := dfi.getRedisClient(pod.Status.PodIP)
 
@@ -498,20 +558,19 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	}
 
 	dfi.log.Info("Marking pod role as replica", "pod", pod.Name, "masterIp", masterIp)
-	patch := client.MergeFrom(pod.DeepCopy())
-	pod.Labels[resources.RoleLabelKey] = resources.Replica
-	if pod.Annotations == nil {
-		pod.Annotations = make(map[string]string)
-	}
-	pod.Annotations[resources.MasterIpAnnotationKey] = masterIp
+	podKey := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
+	if err := dfi.patchPodMetadata(ctx, podKey, func(p *corev1.Pod) {
+		p.Labels[resources.RoleLabelKey] = resources.Replica
+		p.Annotations[resources.MasterIpAnnotationKey] = masterIp
 
-	// for compatibility, to be removed in future version
-	ip := net.ParseIP(masterIp)
-	if ip != nil && ip.To4() != nil {
-		pod.Labels[resources.MasterIpLabelKey] = masterIp
-	}
-
-	if err := dfi.client.Patch(ctx, pod, patch); err != nil {
+		// for compatibility, to be removed in future version
+		if ip := net.ParseIP(masterIp); ip != nil && ip.To4() != nil {
+			p.Labels[resources.MasterIpLabelKey] = masterIp
+		} else {
+			// Clean up any stale v4 label if we're now pointing at a v6 master.
+			delete(p.Labels, resources.MasterIpLabelKey)
+		}
+	}); err != nil {
 		return fmt.Errorf("could not update replica metadata: %w", err)
 	}
 
@@ -523,7 +582,8 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	return nil
 }
 
-// replicaOfNoOne configures the pod as a master along while updating other pods to be replicas
+// replicaOfNoOne promotes the given pod to master via SLAVE OF NO ONE, then
+// persists the role=master label with retry-on-conflict semantics.
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	redisClient := dfi.getRedisClient(pod.Status.PodIP)
 
@@ -548,17 +608,13 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 	masterIp := pod.Status.PodIP
 
 	dfi.log.Info("Marking pod role as master", "pod", pod.Name, "masterIp", masterIp)
-	patch := client.MergeFrom(pod.DeepCopy())
-	pod.Labels[resources.RoleLabelKey] = resources.Master
-	delete(pod.Labels, resources.MasterIpLabelKey)
-
-	if pod.Annotations == nil {
-		pod.Annotations = make(map[string]string)
-	}
-	pod.Annotations[resources.MasterIpAnnotationKey] = masterIp
-
-	if err := dfi.client.Patch(ctx, pod, patch); err != nil {
-		return err
+	podKey := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
+	if err := dfi.patchPodMetadata(ctx, podKey, func(p *corev1.Pod) {
+		p.Labels[resources.RoleLabelKey] = resources.Master
+		delete(p.Labels, resources.MasterIpLabelKey)
+		p.Annotations[resources.MasterIpAnnotationKey] = masterIp
+	}); err != nil {
+		return fmt.Errorf("could not update master metadata: %w", err)
 	}
 
 	return nil
@@ -901,14 +957,15 @@ func (dfi *DragonflyInstance) deleteMasterRoleLabel(ctx context.Context) error {
 	return nil
 }
 
-// deleteRoleLabel deletes the role label from the given pod
+// deleteRoleLabel deletes the role label from the given pod. Used during
+// split-brain recovery (ErrIncorrectMasters / ErrNoHealthyMaster).
 func (dfi *DragonflyInstance) deleteRoleLabel(ctx context.Context, pod *corev1.Pod) error {
 	dfi.log.Info("deleting pod role label", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
 
-	patchFrom := client.MergeFrom(pod.DeepCopy())
-	delete(pod.Labels, resources.RoleLabelKey)
-
-	if err := dfi.client.Patch(ctx, pod, patchFrom); err != nil {
+	podKey := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
+	if err := dfi.patchPodMetadata(ctx, podKey, func(p *corev1.Pod) {
+		delete(p.Labels, resources.RoleLabelKey)
+	}); err != nil {
 		dfi.log.Error(err, "failed to update the role label", "pod", pod.Name)
 		return err
 	}
@@ -1099,17 +1156,12 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 
 	masterIp := newMaster.Status.PodIP
 
-	patch := client.MergeFrom(newMaster.DeepCopy())
-	newMaster.Labels[resources.RoleLabelKey] = resources.Master
-	delete(newMaster.Labels, resources.MasterIpLabelKey)
-
-	if newMaster.Annotations == nil {
-		newMaster.Annotations = make(map[string]string)
-	}
-	newMaster.Annotations[resources.MasterIpAnnotationKey] = masterIp
-
-	// update the label on the pod
-	if err := dfi.client.Patch(ctx, newMaster, patch); err != nil {
+	podKey := types.NamespacedName{Namespace: newMaster.Namespace, Name: newMaster.Name}
+	if err := dfi.patchPodMetadata(ctx, podKey, func(p *corev1.Pod) {
+		p.Labels[resources.RoleLabelKey] = resources.Master
+		delete(p.Labels, resources.MasterIpLabelKey)
+		p.Annotations[resources.MasterIpAnnotationKey] = masterIp
+	}); err != nil {
 		return fmt.Errorf("failed to update the role label on the pod: %w", err)
 	}
 
