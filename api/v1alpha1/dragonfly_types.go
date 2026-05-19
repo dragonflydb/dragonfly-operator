@@ -198,16 +198,19 @@ type DragonflySpec struct {
 	Pdb *PdbSpec `json:"pdb,omitempty"`
 
 	// (Optional) Custom ConfigMap with key "liveness-check.sh" to override the default liveness probe.
+	// Note: an entry in additionalVolumes named "liveness-probe" takes precedence over this field.
 	// +optional
 	// +kubebuilder:validation:Optional
 	CustomLivenessProbeConfigMap *corev1.LocalObjectReference `json:"customLivenessProbeConfigMap,omitempty"`
 
 	// (Optional) Custom ConfigMap with key "readiness-check.sh" to override the default readiness probe.
+	// Note: an entry in additionalVolumes named "readiness-probe" takes precedence over this field.
 	// +optional
 	// +kubebuilder:validation:Optional
 	CustomReadinessProbeConfigMap *corev1.LocalObjectReference `json:"customReadinessProbeConfigMap,omitempty"`
 
 	// (Optional) Custom ConfigMap with key "startup-check.sh" to override the default startup probe.
+	// Note: an entry in additionalVolumes named "startup-probe" takes precedence over this field.
 	// +optional
 	// +kubebuilder:validation:Optional
 	CustomStartupProbeConfigMap *corev1.LocalObjectReference `json:"customStartupProbeConfigMap,omitempty"`
