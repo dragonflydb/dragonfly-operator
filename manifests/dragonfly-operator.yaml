@@ -4475,8 +4475,8 @@ spec:
                 type: object
               customLivenessProbeConfigMap:
                 description: |-
-                  (Optional) Custom ConfigMap with key "liveness-check.sh" to override the default liveness probe.
-                  Note: an entry in additionalVolumes named "liveness-probe" takes precedence over this field.
+                  Custom ConfigMap providing key "liveness-check.sh" to override the default liveness probe.
+                  An additionalVolumes entry named "liveness-probe" takes precedence.
                 properties:
                   name:
                     default: ""
@@ -4491,8 +4491,8 @@ spec:
                 x-kubernetes-map-type: atomic
               customReadinessProbeConfigMap:
                 description: |-
-                  (Optional) Custom ConfigMap with key "readiness-check.sh" to override the default readiness probe.
-                  Note: an entry in additionalVolumes named "readiness-probe" takes precedence over this field.
+                  Custom ConfigMap providing key "readiness-check.sh" to override the default readiness probe.
+                  An additionalVolumes entry named "readiness-probe" takes precedence.
                 properties:
                   name:
                     default: ""
@@ -4507,8 +4507,8 @@ spec:
                 x-kubernetes-map-type: atomic
               customStartupProbeConfigMap:
                 description: |-
-                  (Optional) Custom ConfigMap with key "startup-check.sh" to override the default startup probe.
-                  Note: an entry in additionalVolumes named "startup-probe" takes precedence over this field.
+                  Custom ConfigMap providing key "startup-check.sh" to override the default startup probe.
+                  An additionalVolumes entry named "startup-probe" takes precedence.
                 properties:
                   name:
                     default: ""
