@@ -695,13 +695,7 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		}
 		existing.SetLabels(existingLabels)
 
-		desiredV := reflect.ValueOf(desired).Elem()
-		existingV := reflect.ValueOf(existing).Elem()
-		desiredSpec := desiredV.FieldByName("Spec")
-		existingSpec := existingV.FieldByName("Spec")
-		if desiredSpec.IsValid() && existingSpec.IsValid() {
-			existingSpec.Set(desiredSpec)
-		}
+		copyDesiredPayload(desired, existing)
 
 		if err = dfi.client.Patch(ctx, existing, patch); err != nil {
 			return fmt.Errorf("failed to patch resource: %w", err)
@@ -739,11 +733,38 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 	return nil
 }
 
+// copyDesiredPayload copies the type-specific payload from desired into existing
+// so that client.Patch sends the intended change. ConfigMap has no .Spec — its
+// payload lives in .Data/.BinaryData — so the generic reflection path silently
+// no-ops on it; handle that case explicitly.
+func copyDesiredPayload(desired, existing client.Object) {
+	if cmDesired, ok := desired.(*corev1.ConfigMap); ok {
+		if cmExisting, ok := existing.(*corev1.ConfigMap); ok {
+			cmExisting.Data = cmDesired.Data
+			cmExisting.BinaryData = cmDesired.BinaryData
+			return
+		}
+	}
+	desiredV := reflect.ValueOf(desired).Elem()
+	existingV := reflect.ValueOf(existing).Elem()
+	desiredSpec := desiredV.FieldByName("Spec")
+	existingSpec := existingV.FieldByName("Spec")
+	if desiredSpec.IsValid() && existingSpec.IsValid() {
+		existingSpec.Set(desiredSpec)
+	}
+}
+
 // Helper function to compare resource specs (add to the file)
 func resourceSpecsEqual(desired, existing client.Object) bool {
 	// Compare metadata labels and annotations
 	if !reflect.DeepEqual(desired.GetLabels(), existing.GetLabels()) || !reflect.DeepEqual(desired.GetAnnotations(), existing.GetAnnotations()) {
 		return false
+	}
+	// ConfigMaps store content in .Data, not .Spec — compare Data directly.
+	if cmDesired, ok := desired.(*corev1.ConfigMap); ok {
+		if cmExisting, ok := existing.(*corev1.ConfigMap); ok {
+			return reflect.DeepEqual(cmDesired.Data, cmExisting.Data)
+		}
 	}
 	// Compare only the .Spec field using reflection
 	desiredV := reflect.ValueOf(desired).Elem()
