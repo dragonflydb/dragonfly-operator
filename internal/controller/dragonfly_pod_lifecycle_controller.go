@@ -145,6 +145,25 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 	}
 
+	// Recover the role label as soon as the admin socket is reachable, before
+	// the !podReady early return below. Otherwise loading pods stay unlabeled.
+	if !roleExists(&pod) && isReachable(&pod) {
+		log.Info("pod has no role label; reconciling as replica (independent of dataset-load state)", "pod", pod.Name)
+
+		if err = dfi.reconcileReplicaLabel(ctx, &pod, master.Status.PodIP); err != nil {
+			if isReplicationCancelledError(err) {
+				log.Info("replication cancelled (transient), will retry", "error", err)
+				return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
+			}
+			return ctrl.Result{}, fmt.Errorf("failed to configure pod as replica: %w", err)
+		}
+
+		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")
+
+		// Requeue so the next pass sees the freshly-applied label.
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
 	if !podReady {
 		log.Info("pod not ready yet, will retry", "pod", pod.Name)
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
@@ -167,18 +186,9 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Checked and configured replication")
 		}
 	} else {
-		log.Info("pod does not have a role label", "pod", pod.Name)
-
-		if err = dfi.configureReplica(ctx, &pod, master.Status.PodIP); err != nil {
-			// Check for transient replication errors
-			if isReplicationCancelledError(err) {
-				log.Info("replication cancelled (transient), will retry", "error", err)
-				return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
-			}
-			return ctrl.Result{}, fmt.Errorf("failed to configure pod as replica: %w", err)
-		}
-
-		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")
+		// No role and not reachable yet; requeue.
+		log.Info("pod has no role label and is not reachable yet; will retry", "pod", pod.Name)
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	if dfi.df.Spec.EnableReplicationReadinessGate {
