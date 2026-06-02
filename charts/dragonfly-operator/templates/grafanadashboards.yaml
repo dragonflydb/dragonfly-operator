@@ -39,7 +39,11 @@ spec:
   folder: {{ $.Values.grafanaDashboard.folder }}
   instanceSelector:
     matchLabels:
+      {{- if $.Values.grafanaDashboard.grafanaOperator.matchLabels }}
       {{- toYaml $.Values.grafanaDashboard.grafanaOperator.matchLabels | nindent 6 }}
+      {{- else }}
+      dashboards: grafana
+      {{- end }}
   configMapRef:
     name: {{ printf "dashboard-dragonfly-operator-%s" $dashboardName | trunc 63 | trimSuffix "-" }}
     key: {{ $dashboardName }}.json

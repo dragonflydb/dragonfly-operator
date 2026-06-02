@@ -5,6 +5,10 @@ metadata:
   labels:
     {{- include "dragonfly-operator.labels" . | nindent 4 }}
     app.kubernetes.io/component: kube-rbac-proxy
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   namespace: {{ include "dragonfly-operator.namespace" . }}
 spec:
   type: {{ .Values.service.type }}

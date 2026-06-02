@@ -28,12 +28,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/controller"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -714,8 +714,8 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 		})
 
 		It("Resources should exist", func() {
-			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			// Wait until Dragonfly object is marked initialized and master is elected
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
@@ -764,14 +764,15 @@ var _ = Describe("Dragonfly tiering test with single replica", Ordered, FlakeAtt
 
 			Expect(rc.Set(ctx, "foo", payload, 0).Err()).To(BeNil())
 
-			// Inserted one big key, tiered entries should be 1
-			infoStr, err = rc.Info(ctx, "tiered").Result()
-			Expect(err).To(BeNil())
-
-			fmt.Println("Tiered entried Info: ", infoStr)
-			entries, err = parseTieredEntriesFromInfo(infoStr)
-			Expect(err).To(BeNil())
-			Expect(entries).To(Equal(int64(1))) // make sure this matches your expectation
+			// Tiering is asynchronous — poll until the entry appears in tiered storage.
+			Eventually(func() (int64, error) {
+				infoStr, err = rc.Info(ctx, "tiered").Result()
+				if err != nil {
+					return 0, err
+				}
+				fmt.Println("Tiered entries Info: ", infoStr)
+				return parseTieredEntriesFromInfo(infoStr)
+			}, 30*time.Second, time.Second).Should(Equal(int64(1)))
 
 			// Fetch and compare by size
 			data, err := rc.Get(ctx, "foo").Bytes()
@@ -833,8 +834,8 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 		})
 
 		It("Resources should exist", func() {
-			// Wait until Dragonfly object is marked initialized
-			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)
+			// Wait until Dragonfly object is marked initialized and master is elected
+			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
 
 			// Check for service and statefulset
@@ -888,6 +889,10 @@ var _ = Describe("Dragonfly PVC Test with single replica", Ordered, FlakeAttempt
 			// Wait until Dragonfly object is marked initialized
 			waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)
 			waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)
+			// Phase may already be Ready from before deletion; wait explicitly for the
+			// lifecycle controller to finish master election on the recreated pod.
+			err = waitForMasterPod(ctx, k8sClient, name, namespace, 2*time.Minute)
+			Expect(err).To(BeNil())
 			// check if the pod is created
 			err = k8sClient.Get(ctx, types.NamespacedName{
 				Name:      fmt.Sprintf("%s-0", name),

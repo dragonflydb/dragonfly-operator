@@ -66,6 +66,28 @@ func parseTieredEntriesFromInfo(info string) (int64, error) {
 	return 0, fmt.Errorf("tiered_entries not found")
 }
 
+// waitForMasterPod polls until at least one pod with role=master exists. Use this
+// after waitForStatefulSetReady to guarantee the lifecycle controller has finished
+// master election before the test tries to connect.
+func waitForMasterPod(ctx context.Context, c client.Client, name, namespace string, maxDuration time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, maxDuration)
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timed out waiting for master pod for %s", name)
+		default:
+			var pods corev1.PodList
+			if err := c.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+				resources.DragonflyNameLabelKey: name,
+				resources.RoleLabelKey:          resources.Master,
+			}); err == nil && len(pods.Items) > 0 {
+				return nil
+			}
+		}
+	}
+}
+
 func waitForStatefulSetReady(ctx context.Context, c client.Client, name, namespace string, maxDuration time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, maxDuration)
 	defer cancel()
