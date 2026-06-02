@@ -480,29 +480,35 @@ func TestProbes_PointToMountedScriptsWhenCustomSet(t *testing.T) {
 
 func TestProbeVolumes_CustomConfigMapOverride(t *testing.T) {
 	tests := []struct {
-		name             string
-		setup            func(df *resourcesv1.Dragonfly)
-		volumeName       string
-		wantCM           string
-		defaultCMName    string // should NOT appear in generated resources
+		name          string
+		setup         func(df *resourcesv1.Dragonfly)
+		volumeName    string
+		wantCM        string
+		defaultCMName string // should NOT appear in generated resources
 	}{
 		{
-			name:          "custom liveness",
-			setup:         func(df *resourcesv1.Dragonfly) { df.Spec.CustomLivenessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-liveness"} },
+			name: "custom liveness",
+			setup: func(df *resourcesv1.Dragonfly) {
+				df.Spec.CustomLivenessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-liveness"}
+			},
 			volumeName:    LivenessProbeVolumeName,
 			wantCM:        "my-liveness",
 			defaultCMName: "test-df-" + LivenessProbeConfigMapSuffix,
 		},
 		{
-			name:          "custom readiness",
-			setup:         func(df *resourcesv1.Dragonfly) { df.Spec.CustomReadinessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-readiness"} },
+			name: "custom readiness",
+			setup: func(df *resourcesv1.Dragonfly) {
+				df.Spec.CustomReadinessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-readiness"}
+			},
 			volumeName:    ReadinessProbeVolumeName,
 			wantCM:        "my-readiness",
 			defaultCMName: "test-df-" + ReadinessProbeConfigMapSuffix,
 		},
 		{
-			name:          "custom startup",
-			setup:         func(df *resourcesv1.Dragonfly) { df.Spec.CustomStartupProbeConfigMap = &corev1.LocalObjectReference{Name: "my-startup"} },
+			name: "custom startup",
+			setup: func(df *resourcesv1.Dragonfly) {
+				df.Spec.CustomStartupProbeConfigMap = &corev1.LocalObjectReference{Name: "my-startup"}
+			},
 			volumeName:    StartupProbeVolumeName,
 			wantCM:        "my-startup",
 			defaultCMName: "test-df-" + StartupProbeConfigMapSuffix,
