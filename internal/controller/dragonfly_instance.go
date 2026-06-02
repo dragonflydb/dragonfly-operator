@@ -54,6 +54,7 @@ type DragonflyInstance struct {
 	scheme                *runtime.Scheme
 	eventRecorder         record.EventRecorder
 	defaultDragonflyImage string
+	operatorNamespace     string
 	redisClients          map[string]*redis.Client
 }
 
@@ -616,7 +617,7 @@ func (dfi *DragonflyInstance) hasMasterRole(ctx context.Context, redisClient *re
 
 // reconcileResources creates or updates the dragonfly resources
 func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
-	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage)
+	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage, dfi.operatorNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to generate dragonfly resources")
 	}
