@@ -565,6 +565,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			for k, v := range newLabels {
 				Expect(svc.Labels).To(HaveKeyWithValue(k, v))
 			}
+			Expect(svc.Labels).To(HaveKey("app.kubernetes.io/name"))
 		})
 
 		It("Should recreate missing statefulset", func() {
