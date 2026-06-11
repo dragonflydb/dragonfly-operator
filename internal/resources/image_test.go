@@ -44,7 +44,7 @@ func TestGenerateDragonflyResources_ImageResolution(t *testing.T) {
 				},
 			}
 
-			objs, err := GenerateDragonflyResources(df, tt.defaultImage)
+			objs, err := GenerateDragonflyResources(df, tt.defaultImage, "")
 			assert.NoError(t, err)
 
 			var sts *appsv1.StatefulSet

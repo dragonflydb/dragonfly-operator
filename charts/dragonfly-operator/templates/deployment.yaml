@@ -67,6 +67,8 @@ spec:
             {{- toYaml .Values.rbacProxy.resources | nindent 12 }}
           {{- end }}
         - name: manager
+          command:
+            - /manager
           args:
             - --leader-elect
             {{- if .Values.dragonflyImage }}
@@ -78,8 +80,11 @@ spec:
             {{- with .Values.manager.extraArgs}}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          command:
-            - /manager
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           securityContext:
             {{- toYaml .Values.manager.securityContext | nindent 12 }}
           image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag | default .Chart.AppVersion  }}"

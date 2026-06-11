@@ -54,6 +54,7 @@ type DragonflyInstance struct {
 	scheme                *runtime.Scheme
 	eventRecorder         record.EventRecorder
 	defaultDragonflyImage string
+	operatorNamespace     string
 	redisClients          map[string]*redis.Client
 }
 
@@ -616,7 +617,7 @@ func (dfi *DragonflyInstance) hasMasterRole(ctx context.Context, redisClient *re
 
 // reconcileResources creates or updates the dragonfly resources
 func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
-	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage)
+	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage, dfi.operatorNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to generate dragonfly resources")
 	}
@@ -646,6 +647,25 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		// Resource exists, prepare desired for potential update
 		if err := controllerutil.SetControllerReference(dfi.df, desired, dfi.scheme); err != nil {
 			return fmt.Errorf("failed to set controller reference: %w", err)
+		}
+		// Special handling for StatefulSets to preserve immutable fields.
+		// VolumeClaimTemplates, Selector, ServiceName, and PodManagementPolicy
+		// cannot be changed after creation. Copy them from existing so they
+		// never appear as a diff. If the user changes e.g. persistentVolumeClaimSpec,
+		// the change is silently dropped here — a delete+recreate is required.
+		if stsDesired, ok := desired.(*appsv1.StatefulSet); ok {
+			if stsExisting, ok := existing.(*appsv1.StatefulSet); ok {
+				if !reflect.DeepEqual(stsDesired.Spec.VolumeClaimTemplates, stsExisting.Spec.VolumeClaimTemplates) {
+					dfi.log.Info("VolumeClaimTemplates change detected but cannot be applied to an existing StatefulSet; delete and recreate the Dragonfly instance to change PVC configuration",
+						"resource", stsDesired.Name)
+					dfi.eventRecorder.Event(dfi.df, corev1.EventTypeWarning, "ImmutableField",
+						"VolumeClaimTemplates change ignored: delete and recreate the Dragonfly instance to apply PVC configuration changes")
+				}
+				stsDesired.Spec.VolumeClaimTemplates = stsExisting.Spec.VolumeClaimTemplates
+				stsDesired.Spec.Selector = stsExisting.Spec.Selector
+				stsDesired.Spec.ServiceName = stsExisting.Spec.ServiceName
+				stsDesired.Spec.PodManagementPolicy = stsExisting.Spec.PodManagementPolicy
+			}
 		}
 		// Special handling for Services to preserve immutable fields
 		if svcDesired, ok := desired.(*corev1.Service); ok {
@@ -695,13 +715,7 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		}
 		existing.SetLabels(existingLabels)
 
-		desiredV := reflect.ValueOf(desired).Elem()
-		existingV := reflect.ValueOf(existing).Elem()
-		desiredSpec := desiredV.FieldByName("Spec")
-		existingSpec := existingV.FieldByName("Spec")
-		if desiredSpec.IsValid() && existingSpec.IsValid() {
-			existingSpec.Set(desiredSpec)
-		}
+		copyDesiredPayload(desired, existing)
 
 		if err = dfi.client.Patch(ctx, existing, patch); err != nil {
 			return fmt.Errorf("failed to patch resource: %w", err)
@@ -739,11 +753,38 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 	return nil
 }
 
+// copyDesiredPayload copies the type-specific payload from desired into existing
+// so that client.Patch sends the intended change. ConfigMap has no .Spec — its
+// payload lives in .Data/.BinaryData — so the generic reflection path silently
+// no-ops on it; handle that case explicitly.
+func copyDesiredPayload(desired, existing client.Object) {
+	if cmDesired, ok := desired.(*corev1.ConfigMap); ok {
+		if cmExisting, ok := existing.(*corev1.ConfigMap); ok {
+			cmExisting.Data = cmDesired.Data
+			cmExisting.BinaryData = cmDesired.BinaryData
+			return
+		}
+	}
+	desiredV := reflect.ValueOf(desired).Elem()
+	existingV := reflect.ValueOf(existing).Elem()
+	desiredSpec := desiredV.FieldByName("Spec")
+	existingSpec := existingV.FieldByName("Spec")
+	if desiredSpec.IsValid() && existingSpec.IsValid() {
+		existingSpec.Set(desiredSpec)
+	}
+}
+
 // Helper function to compare resource specs (add to the file)
 func resourceSpecsEqual(desired, existing client.Object) bool {
 	// Compare metadata labels and annotations
 	if !reflect.DeepEqual(desired.GetLabels(), existing.GetLabels()) || !reflect.DeepEqual(desired.GetAnnotations(), existing.GetAnnotations()) {
 		return false
+	}
+	// ConfigMaps store content in .Data, not .Spec — compare Data directly.
+	if cmDesired, ok := desired.(*corev1.ConfigMap); ok {
+		if cmExisting, ok := existing.(*corev1.ConfigMap); ok {
+			return reflect.DeepEqual(cmDesired.Data, cmExisting.Data)
+		}
 	}
 	// Compare only the .Spec field using reflection
 	desiredV := reflect.ValueOf(desired).Elem()

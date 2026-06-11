@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"fmt"
 	"testing"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -96,7 +97,7 @@ func TestGenerateDragonflyResources_ReadinessGateDisabled(t *testing.T) {
 	df := newTestDragonfly(2)
 	df.Spec.EnableReplicationReadinessGate = false
 
-	resources, err := GenerateDragonflyResources(df, "")
+	resources, err := GenerateDragonflyResources(df, "", "")
 	require.NoError(t, err)
 
 	for _, obj := range resources {
@@ -113,7 +114,7 @@ func TestGenerateDragonflyResources_ReadinessGateEnabled(t *testing.T) {
 	df := newTestDragonfly(2)
 	df.Spec.EnableReplicationReadinessGate = true
 
-	resources, err := GenerateDragonflyResources(df, "")
+	resources, err := GenerateDragonflyResources(df, "", "")
 	require.NoError(t, err)
 
 	for _, obj := range resources {
@@ -150,7 +151,7 @@ func TestGenerateDragonflyResources_NetworkPolicyDefault(t *testing.T) {
 		},
 	}
 
-	objs, err := GenerateDragonflyResources(df, "")
+	objs, err := GenerateDragonflyResources(df, "", "dragonfly-system")
 	require.NoError(t, err)
 
 	np := findNetworkPolicy(objs)
@@ -171,7 +172,9 @@ func TestGenerateDragonflyResources_NetworkPolicyDefault(t *testing.T) {
 	protocolTCP := corev1.ProtocolTCP
 
 	clientRule := np.Spec.Ingress[0]
-	assert.Len(t, clientRule.From, 0, "client port should be open to all")
+	require.Len(t, clientRule.From, 1, "client port should be restricted to same namespace")
+	assert.Equal(t, &metav1.LabelSelector{}, clientRule.From[0].PodSelector)
+	assert.Nil(t, clientRule.From[0].NamespaceSelector, "client port should not allow cross-namespace")
 	require.Len(t, clientRule.Ports, 1)
 	assert.Equal(t, &protocolTCP, clientRule.Ports[0].Protocol)
 	assert.Equal(t, intstr.FromInt32(DragonflyPort), *clientRule.Ports[0].Port)
@@ -185,7 +188,10 @@ func TestGenerateDragonflyResources_NetworkPolicyDefault(t *testing.T) {
 	assert.Equal(t, map[string]string{
 		OperatorControlPlaneLabelKey: OperatorControlPlaneLabelValue,
 	}, operatorPeer.PodSelector.MatchLabels)
-	assert.NotNil(t, operatorPeer.NamespaceSelector, "operator peer should allow cross-namespace")
+	require.NotNil(t, operatorPeer.NamespaceSelector, "operator peer should allow cross-namespace")
+	assert.Equal(t, map[string]string{
+		KubernetesNamespaceLabelKey: "dragonfly-system",
+	}, operatorPeer.NamespaceSelector.MatchLabels, "operator peer namespace should be pinned")
 
 	peerPod := adminRule.From[1]
 	assert.Equal(t, map[string]string{
@@ -209,7 +215,7 @@ func TestGenerateDragonflyResources_NetworkPolicyDisabled(t *testing.T) {
 		},
 	}
 
-	objs, err := GenerateDragonflyResources(df, "")
+	objs, err := GenerateDragonflyResources(df, "", "dragonfly-system")
 	require.NoError(t, err)
 
 	np := findNetworkPolicy(objs)
@@ -330,7 +336,7 @@ func TestGenerateDragonflyResources_NetworkPolicyWithMemcached(t *testing.T) {
 		},
 	}
 
-	objs, err := GenerateDragonflyResources(df, "")
+	objs, err := GenerateDragonflyResources(df, "", "dragonfly-system")
 	require.NoError(t, err)
 
 	np := findNetworkPolicy(objs)
@@ -340,8 +346,303 @@ func TestGenerateDragonflyResources_NetworkPolicyWithMemcached(t *testing.T) {
 
 	protocolTCP := corev1.ProtocolTCP
 	memcachedRule := np.Spec.Ingress[2]
-	assert.Len(t, memcachedRule.From, 0, "memcached port should be open to all")
+	require.Len(t, memcachedRule.From, 1, "memcached port should be restricted to same namespace")
+	assert.Equal(t, &metav1.LabelSelector{}, memcachedRule.From[0].PodSelector)
+	assert.Nil(t, memcachedRule.From[0].NamespaceSelector, "memcached port should not allow cross-namespace")
 	require.Len(t, memcachedRule.Ports, 1)
 	assert.Equal(t, &protocolTCP, memcachedRule.Ports[0].Protocol)
 	assert.Equal(t, intstr.FromInt32(11211), *memcachedRule.Ports[0].Port)
+}
+
+func TestGenerateDragonflyResources_NetworkPolicyEmptyOperatorNamespace(t *testing.T) {
+	df := &resourcesv1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-df",
+			Namespace: "default",
+		},
+		Spec: resourcesv1.DragonflySpec{
+			Replicas: 1,
+		},
+	}
+
+	objs, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	np := findNetworkPolicy(objs)
+	require.NotNil(t, np)
+
+	adminRule := np.Spec.Ingress[1]
+	require.Len(t, adminRule.From, 2)
+
+	operatorPeer := adminRule.From[0]
+	assert.Equal(t, map[string]string{
+		OperatorControlPlaneLabelKey: OperatorControlPlaneLabelValue,
+	}, operatorPeer.PodSelector.MatchLabels)
+	assert.Nil(t, operatorPeer.NamespaceSelector,
+		"when operator namespace is unknown, admin port should fall back to same-namespace only")
+}
+
+func findStatefulSet(objs []client.Object) *appsv1.StatefulSet {
+	for _, obj := range objs {
+		if sts, ok := obj.(*appsv1.StatefulSet); ok {
+			return sts
+		}
+	}
+	return nil
+}
+
+func findConfigMap(objs []client.Object, name string) *corev1.ConfigMap {
+	for _, obj := range objs {
+		if cm, ok := obj.(*corev1.ConfigMap); ok && cm.Name == name {
+			return cm
+		}
+	}
+	return nil
+}
+
+func TestProbeConfigMaps_NotGeneratedByDefault(t *testing.T) {
+	df := newTestDragonfly(1)
+	objs, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	assert.Nil(t, findConfigMap(objs, "test-df-liveness-probe"), "no ConfigMaps without custom probes")
+	assert.Nil(t, findConfigMap(objs, "test-df-readiness-probe"))
+	assert.Nil(t, findConfigMap(objs, "test-df-startup-probe"))
+}
+
+func TestProbeConfigMaps_GeneratedWhenCustomProbeSet(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.CustomLivenessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-liveness"}
+	objs, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	// custom liveness overrides the default, so no default ConfigMap generated
+	assert.Nil(t, findConfigMap(objs, "test-df-liveness-probe"))
+
+	// defaults generated for probes not overridden
+	readiness := findConfigMap(objs, "test-df-readiness-probe")
+	require.NotNil(t, readiness)
+	assert.Contains(t, readiness.Data, "readiness-check.sh")
+
+	startup := findConfigMap(objs, "test-df-startup-probe")
+	require.NotNil(t, startup)
+	assert.Contains(t, startup.Data, "startup-check.sh")
+}
+
+func TestProbeConfigMaps_AllCustomNoneGenerated(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.CustomLivenessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-liveness"}
+	df.Spec.CustomReadinessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-readiness"}
+	df.Spec.CustomStartupProbeConfigMap = &corev1.LocalObjectReference{Name: "my-startup"}
+	objs, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	assert.Nil(t, findConfigMap(objs, "test-df-liveness-probe"), "no default when all custom")
+	assert.Nil(t, findConfigMap(objs, "test-df-readiness-probe"))
+	assert.Nil(t, findConfigMap(objs, "test-df-startup-probe"))
+}
+
+func TestProbeConfigMaps_EmptyNameTreatedAsNoCustom(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.CustomLivenessProbeConfigMap = &corev1.LocalObjectReference{Name: ""}
+	objs, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	// empty name is treated as no custom probe, keeps default path
+	assert.Nil(t, findConfigMap(objs, "test-df-liveness-probe"), "empty name should not trigger custom probes")
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	c := sts.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, []string{"/bin/sh", "/usr/local/bin/healthcheck.sh"}, c.LivenessProbe.Exec.Command)
+	assert.Nil(t, c.StartupProbe, "no startup probe with empty custom name")
+}
+
+func TestHealthcheckPortEnvVar_IsAdminPort(t *testing.T) {
+	// HEALTHCHECK_PORT always points to the admin port (never requires TLS).
+	df := newTestDragonfly(1)
+	objs, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+
+	var hcPort *corev1.EnvVar
+	for i := range sts.Spec.Template.Spec.Containers[0].Env {
+		env := &sts.Spec.Template.Spec.Containers[0].Env[i]
+		if env.Name == "HEALTHCHECK_PORT" {
+			hcPort = env
+			break
+		}
+	}
+	require.NotNil(t, hcPort, "HEALTHCHECK_PORT env var must be set")
+	assert.Equal(t, fmt.Sprintf("%d", DragonflyAdminPort), hcPort.Value)
+}
+
+func TestHealthcheckPortEnvVar_UnchangedByCustomRedisPort(t *testing.T) {
+	// HEALTHCHECK_PORT stays at the admin port even when the Redis port is customised.
+	df := newTestDragonfly(1)
+	df.Spec.Args = []string{"--port=6380"}
+	objs, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+
+	var hcPort *corev1.EnvVar
+	for i := range sts.Spec.Template.Spec.Containers[0].Env {
+		env := &sts.Spec.Template.Spec.Containers[0].Env[i]
+		if env.Name == "HEALTHCHECK_PORT" {
+			hcPort = env
+			break
+		}
+	}
+	require.NotNil(t, hcPort)
+	assert.Equal(t, fmt.Sprintf("%d", DragonflyAdminPort), hcPort.Value)
+}
+
+func TestProbeVolumesAndMounts_DefaultHasNoProbeVolumes(t *testing.T) {
+	df := newTestDragonfly(1)
+	objs, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+
+	for _, v := range sts.Spec.Template.Spec.Volumes {
+		assert.NotEqual(t, LivenessProbeVolumeName, v.Name, "no probe volumes without custom probes")
+		assert.NotEqual(t, ReadinessProbeVolumeName, v.Name)
+		assert.NotEqual(t, StartupProbeVolumeName, v.Name)
+	}
+}
+
+func TestProbeVolumesAndMounts_PresentWhenCustomProbeSet(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.CustomReadinessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-readiness"}
+	objs, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+
+	volumeNames := make(map[string]string)
+	for _, v := range sts.Spec.Template.Spec.Volumes {
+		if v.ConfigMap != nil {
+			volumeNames[v.Name] = v.ConfigMap.Name
+		}
+	}
+	assert.Equal(t, "test-df-liveness-probe", volumeNames[LivenessProbeVolumeName])
+	assert.Equal(t, "my-readiness", volumeNames[ReadinessProbeVolumeName])
+	assert.Equal(t, "test-df-startup-probe", volumeNames[StartupProbeVolumeName])
+
+	mountPaths := make(map[string]corev1.VolumeMount)
+	for _, m := range sts.Spec.Template.Spec.Containers[0].VolumeMounts {
+		mountPaths[m.Name] = m
+	}
+	assert.Equal(t, ProbeMountPath+"/"+LivenessScriptKey, mountPaths[LivenessProbeVolumeName].MountPath)
+	assert.Equal(t, ProbeMountPath+"/"+ReadinessScriptKey, mountPaths[ReadinessProbeVolumeName].MountPath)
+	assert.Equal(t, ProbeMountPath+"/"+StartupScriptKey, mountPaths[StartupProbeVolumeName].MountPath)
+}
+
+func TestProbes_DefaultUseImageHealthcheck(t *testing.T) {
+	df := newTestDragonfly(1)
+	objs, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	c := sts.Spec.Template.Spec.Containers[0]
+
+	require.NotNil(t, c.LivenessProbe)
+	assert.Equal(t, []string{"/bin/sh", "/usr/local/bin/healthcheck.sh"}, c.LivenessProbe.Exec.Command)
+
+	require.NotNil(t, c.ReadinessProbe)
+	assert.Equal(t, []string{"/bin/sh", "/usr/local/bin/healthcheck.sh"}, c.ReadinessProbe.Exec.Command)
+
+	assert.Nil(t, c.StartupProbe, "no startup probe without custom probes")
+}
+
+func TestProbes_PointToMountedScriptsWhenCustomSet(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.CustomStartupProbeConfigMap = &corev1.LocalObjectReference{Name: "my-startup"}
+	objs, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	c := sts.Spec.Template.Spec.Containers[0]
+
+	assert.Equal(t, []string{"/bin/sh", ProbeMountPath + "/" + LivenessScriptKey}, c.LivenessProbe.Exec.Command)
+	assert.Equal(t, []string{"/bin/sh", ProbeMountPath + "/" + ReadinessScriptKey}, c.ReadinessProbe.Exec.Command)
+
+	require.NotNil(t, c.StartupProbe)
+	assert.Equal(t, []string{"/bin/sh", ProbeMountPath + "/" + StartupScriptKey}, c.StartupProbe.Exec.Command)
+	assert.Equal(t, int32(60), c.StartupProbe.FailureThreshold)
+}
+
+func TestProbeVolumes_CustomConfigMapOverride(t *testing.T) {
+	tests := []struct {
+		name          string
+		setup         func(df *resourcesv1.Dragonfly)
+		volumeName    string
+		wantCM        string
+		defaultCMName string // should NOT appear in generated resources
+	}{
+		{
+			name: "custom liveness",
+			setup: func(df *resourcesv1.Dragonfly) {
+				df.Spec.CustomLivenessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-liveness"}
+			},
+			volumeName:    LivenessProbeVolumeName,
+			wantCM:        "my-liveness",
+			defaultCMName: "test-df-" + LivenessProbeConfigMapSuffix,
+		},
+		{
+			name: "custom readiness",
+			setup: func(df *resourcesv1.Dragonfly) {
+				df.Spec.CustomReadinessProbeConfigMap = &corev1.LocalObjectReference{Name: "my-readiness"}
+			},
+			volumeName:    ReadinessProbeVolumeName,
+			wantCM:        "my-readiness",
+			defaultCMName: "test-df-" + ReadinessProbeConfigMapSuffix,
+		},
+		{
+			name: "custom startup",
+			setup: func(df *resourcesv1.Dragonfly) {
+				df.Spec.CustomStartupProbeConfigMap = &corev1.LocalObjectReference{Name: "my-startup"}
+			},
+			volumeName:    StartupProbeVolumeName,
+			wantCM:        "my-startup",
+			defaultCMName: "test-df-" + StartupProbeConfigMapSuffix,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			df := newTestDragonfly(1)
+			tc.setup(df)
+
+			objs, err := GenerateDragonflyResources(df, "", "")
+			require.NoError(t, err)
+
+			// volume should reference the custom ConfigMap
+			sts := findStatefulSet(objs)
+			require.NotNil(t, sts)
+
+			var found bool
+			for _, v := range sts.Spec.Template.Spec.Volumes {
+				if v.Name == tc.volumeName {
+					require.NotNil(t, v.ConfigMap)
+					assert.Equal(t, tc.wantCM, v.ConfigMap.Name)
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "volume %q not found", tc.volumeName)
+
+			// default ConfigMap should NOT be generated
+			assert.Nil(t, findConfigMap(objs, tc.defaultCMName),
+				"default ConfigMap %q should not be generated when custom is set", tc.defaultCMName)
+		})
+	}
 }
