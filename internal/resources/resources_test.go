@@ -222,15 +222,6 @@ func TestGenerateDragonflyResources_NetworkPolicyDisabled(t *testing.T) {
 	assert.Nil(t, np, "NetworkPolicy should not be generated when disabled")
 }
 
-func findStatefulSet(objs []client.Object) *appsv1.StatefulSet {
-	for _, obj := range objs {
-		if sts, ok := obj.(*appsv1.StatefulSet); ok {
-			return sts
-		}
-	}
-	return nil
-}
-
 func TestGenerateDragonflyResources_PodMetadataLabels(t *testing.T) {
 	df := newTestDragonfly(1)
 	df.Spec.PodMetadata = &resourcesv1.MetadataSpec{
@@ -238,7 +229,7 @@ func TestGenerateDragonflyResources_PodMetadataLabels(t *testing.T) {
 		Annotations: map[string]string{"prometheus.io/scrape": "true"},
 	}
 
-	objs, err := GenerateDragonflyResources(df, "")
+	objs, err := GenerateDragonflyResources(df, "", "")
 	require.NoError(t, err)
 
 	sts := findStatefulSet(objs)
@@ -256,7 +247,7 @@ func TestGenerateDragonflyResources_PodMetadataWinsOverDeprecated(t *testing.T) 
 		Annotations: map[string]string{"note": "new"},
 	}
 
-	objs, err := GenerateDragonflyResources(df, "")
+	objs, err := GenerateDragonflyResources(df, "", "")
 	require.NoError(t, err)
 
 	sts := findStatefulSet(objs)
@@ -301,7 +292,7 @@ func TestGenerateDragonflyResources_RejectProtectedPodLabel(t *testing.T) {
 		t.Run(field.name, func(t *testing.T) {
 			df := newTestDragonfly(1)
 			field.spec(&df.Spec)
-			_, err := GenerateDragonflyResources(df, "")
+			_, err := GenerateDragonflyResources(df, "", "")
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), field.errMsg)
 		})
@@ -315,7 +306,7 @@ func TestGenerateDragonflyResources_OwnedObjectsMetadataLabels(t *testing.T) {
 		Annotations: map[string]string{"owner": "platform"},
 	}
 
-	objs, err := GenerateDragonflyResources(df, "")
+	objs, err := GenerateDragonflyResources(df, "", "")
 	require.NoError(t, err)
 
 	sts := findStatefulSet(objs)
