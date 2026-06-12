@@ -74,8 +74,8 @@ func roleExists(pod *corev1.Pod) bool {
 	return ok
 }
 
-// isRunningAndReady returns true if the pod is running and ready
-func isHealthy(pod *corev1.Pod) bool {
+// isReachable returns true if the Dragonfly admin socket is reachable.
+func isReachable(pod *corev1.Pod) bool {
 	return isRunningAndReady(pod) && !isTerminating(pod)
 }
 
