@@ -18,6 +18,7 @@ package resources
 
 import (
 	"fmt"
+	"maps"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -32,6 +33,28 @@ import (
 var (
 	dflyUserGroup int64 = 999
 )
+
+// operatorManagedLabels are set and owned by the operator. User-supplied labels
+// that collide with any of these keys are rejected to prevent misconfiguration
+// (e.g. breaking the StatefulSet selector or misrepresenting ownership).
+var operatorManagedLabels = map[string]bool{
+	KubernetesAppComponentLabelKey: true,
+	KubernetesAppInstanceLabelKey:  true,
+	KubernetesAppNameLabelKey:      true,
+	KubernetesAppVersionLabelKey:   true,
+	KubernetesPartOfLabelKey:       true,
+	KubernetesManagedByLabelKey:    true,
+	DragonflyNameLabelKey:          true,
+}
+
+func checkLabels(field string, labels map[string]string) error {
+	for key := range labels {
+		if operatorManagedLabels[key] {
+			return fmt.Errorf("%s: cannot override operator-managed label %q", field, key)
+		}
+	}
+	return nil
+}
 
 func hasCustomProbes(df *resourcesv1.Dragonfly) bool {
 	return (df.Spec.CustomLivenessProbeConfigMap != nil && df.Spec.CustomLivenessProbeConfigMap.Name != "") ||
@@ -106,6 +129,25 @@ func generateProbeConfigMap(df *resourcesv1.Dragonfly, name, key, script string)
 // GenerateDragonflyResources returns the resources required for a Dragonfly
 // Instance
 func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage, operatorNamespace string) ([]client.Object, error) {
+	if err := checkLabels("spec.labels", df.Spec.Labels); err != nil {
+		return nil, err
+	}
+	if df.Spec.PodMetadata != nil {
+		if err := checkLabels("spec.podMetadata.labels", df.Spec.PodMetadata.Labels); err != nil {
+			return nil, err
+		}
+	}
+	if df.Spec.OwnedObjectsMetadata != nil {
+		if err := checkLabels("spec.ownedObjectsMetadata.labels", df.Spec.OwnedObjectsMetadata.Labels); err != nil {
+			return nil, err
+		}
+	}
+	if df.Spec.ServiceSpec != nil {
+		if err := checkLabels("spec.serviceSpec.labels", df.Spec.ServiceSpec.Labels); err != nil {
+			return nil, err
+		}
+	}
+
 	var resources []client.Object
 
 	image := df.Spec.Image
@@ -154,6 +196,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 						KubernetesPartOfLabelKey:  KubernetesPartOf,
 						KubernetesAppNameLabelKey: KubernetesAppName,
 					},
+					Annotations: map[string]string{},
 				},
 				Spec: corev1.PodSpec{
 					ImagePullSecrets: df.Spec.ImagePullSecrets,
@@ -400,13 +443,17 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		}...)
 	}
 
+	// Pod labels/annotations: apply deprecated fields first, then podMetadata wins.
+	// Operator-managed keys are rejected at the top of this function so merging is safe.
 	if df.Spec.Annotations != nil {
-		statefulset.Spec.Template.ObjectMeta.Annotations = df.Spec.Annotations
+		maps.Copy(statefulset.Spec.Template.ObjectMeta.Annotations, df.Spec.Annotations)
 	}
-
-	for key := range df.Spec.Labels {
-		// allow df.Spec.Labels to overwrite default labels (e.g. app.kubernetes.io/name)
-		statefulset.Spec.Template.ObjectMeta.Labels[key] = df.Spec.Labels[key]
+	if df.Spec.Labels != nil {
+		maps.Copy(statefulset.Spec.Template.ObjectMeta.Labels, df.Spec.Labels)
+	}
+	if df.Spec.PodMetadata != nil {
+		maps.Copy(statefulset.Spec.Template.ObjectMeta.Labels, df.Spec.PodMetadata.Labels)
+		maps.Copy(statefulset.Spec.Template.ObjectMeta.Annotations, df.Spec.PodMetadata.Annotations)
 	}
 
 	if df.Spec.Affinity != nil {
@@ -560,8 +607,8 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 
 	if df.Spec.ServiceSpec != nil {
 		service.Spec.Type = df.Spec.ServiceSpec.Type
-		service.Annotations = df.Spec.ServiceSpec.Annotations
-		service.Labels = df.Spec.ServiceSpec.Labels
+		maps.Copy(service.Annotations, df.Spec.ServiceSpec.Annotations)
+		maps.Copy(service.Labels, df.Spec.ServiceSpec.Labels)
 		service.Spec.Ports[0].NodePort = df.Spec.ServiceSpec.NodePort
 	}
 	if df.Spec.MemcachedPort != 0 {
@@ -754,9 +801,7 @@ func generateResourceLabels(df *resourcesv1.Dragonfly) map[string]string {
 	}
 
 	if df.Spec.OwnedObjectsMetadata != nil {
-		for key, value := range df.Spec.OwnedObjectsMetadata.Labels {
-			labels[key] = value
-		}
+		maps.Copy(labels, df.Spec.OwnedObjectsMetadata.Labels)
 	}
 
 	return labels
@@ -765,9 +810,7 @@ func generateResourceLabels(df *resourcesv1.Dragonfly) map[string]string {
 func generateResourceAnnotations(df *resourcesv1.Dragonfly) map[string]string {
 	annotations := map[string]string{}
 	if df.Spec.OwnedObjectsMetadata != nil {
-		for key, value := range df.Spec.OwnedObjectsMetadata.Annotations {
-			annotations[key] = value
-		}
+		maps.Copy(annotations, df.Spec.OwnedObjectsMetadata.Annotations)
 	}
 
 	return annotations
