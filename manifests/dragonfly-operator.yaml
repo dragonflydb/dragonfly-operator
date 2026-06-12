@@ -4219,7 +4219,7 @@ spec:
               annotations:
                 additionalProperties:
                   type: string
-                description: (Optional) Annotations to add to the Dragonfly pods.
+                description: 'Deprecated: use spec.podMetadata.annotations instead.'
                 type: object
               args:
                 description: |-
@@ -6099,7 +6099,7 @@ spec:
               labels:
                 additionalProperties:
                   type: string
-                description: (Optional) Labels to add to the Dragonfly pods.
+                description: 'Deprecated: use spec.podMetadata.labels instead.'
                 type: object
               memcachedPort:
                 description: (Optional) Dragonfly memcached port
@@ -6118,8 +6118,8 @@ spec:
                 description: (Optional) Dragonfly pod node selector
                 type: object
               ownedObjectsMetadata:
-                description: (Optional) Dragonfly direct child resources additional
-                  annotations and labels
+                description: (Optional) Labels and annotations to add to all owned
+                  resources (StatefulSet, Service, PDB, etc).
                 properties:
                   annotations:
                     additionalProperties:
@@ -6155,6 +6155,19 @@ spec:
                 x-kubernetes-validations:
                 - message: minAvailable and maxUnavailable cannot be both set
                   rule: '!(has(self.minAvailable) && has(self.maxUnavailable))'
+              podMetadata:
+                description: (Optional) Labels and annotations to add to the Dragonfly
+                  pods.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                type: object
               podSecurityContext:
                 description: (Optional) Dragonfly pod security context
                 properties:
@@ -7511,6 +7524,11 @@ spec:
         - --leader-elect
         command:
         - /manager
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         image: docker.dragonflydb.io/dragonflydb/operator:v1.5.0
         livenessProbe:
           httpGet:
