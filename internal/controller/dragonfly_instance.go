@@ -92,7 +92,7 @@ func (dfi *DragonflyInstance) Close() {
 
 // patchPodMetadata patches a pod's labels/annotations with retry-on-conflict.
 func (dfi *DragonflyInstance) patchPodMetadata(ctx context.Context, podKey types.NamespacedName, mutate func(*corev1.Pod)) error {
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var pod corev1.Pod
 		if err := dfi.client.Get(ctx, podKey, &pod); err != nil {
 			if apierrors.IsNotFound(err) {
@@ -102,7 +102,7 @@ func (dfi *DragonflyInstance) patchPodMetadata(ctx context.Context, podKey types
 			return err
 		}
 
-		patch := client.MergeFrom(pod.DeepCopy())
+		patch := client.MergeFromWithOptions(pod.DeepCopy(), client.MergeFromWithOptimisticLock{})
 		if pod.Labels == nil {
 			pod.Labels = map[string]string{}
 		}
@@ -215,6 +215,8 @@ func (dfi *DragonflyInstance) reconcileReplicaLabel(ctx context.Context, pod *co
 			p.Annotations[resources.MasterIpAnnotationKey] = sanitized
 			if ip := net.ParseIP(sanitized); ip != nil && ip.To4() != nil {
 				p.Labels[resources.MasterIpLabelKey] = sanitized
+        } else {
+          delete(p.Labels, resources.MasterIpLabelKey)
 			}
 		})
 	}
@@ -337,7 +339,7 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 			}
 		}
 
-		// Label unlabeled pods even while loading a snapshot.
+		// Configure (SLAVE OF) and label unlabeled pods even while loading a snapshot.
 		if !roleExists(&pod) && isReachable(&pod) {
 			if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
 				return err

@@ -158,10 +158,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return ctrl.Result{}, fmt.Errorf("failed to configure pod as replica: %w", err)
 		}
 
-		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Configured a new replica")
-
-		// Requeue so the next pass sees the freshly-applied label.
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Reconciled replica role metadata")
 	}
 
 	if !podReady {
