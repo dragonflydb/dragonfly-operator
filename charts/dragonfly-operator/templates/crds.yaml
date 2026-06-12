@@ -4213,7 +4213,7 @@ spec:
               annotations:
                 additionalProperties:
                   type: string
-                description: (Optional) Annotations to add to the Dragonfly pods.
+                description: 'Deprecated: use spec.podMetadata.annotations instead.'
                 type: object
               args:
                 description: |-
@@ -4467,6 +4467,54 @@ spec:
                         type: string
                     type: object
                 type: object
+              customLivenessProbeConfigMap:
+                description: |-
+                  Custom ConfigMap providing key "liveness-check.sh" to override the default liveness probe.
+                  An additionalVolumes entry named "liveness-probe" takes precedence.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              customReadinessProbeConfigMap:
+                description: |-
+                  Custom ConfigMap providing key "readiness-check.sh" to override the default readiness probe.
+                  An additionalVolumes entry named "readiness-probe" takes precedence.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              customStartupProbeConfigMap:
+                description: |-
+                  Custom ConfigMap providing key "startup-check.sh" to override the default startup probe.
+                  An additionalVolumes entry named "startup-probe" takes precedence.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               enableReplicationReadinessGate:
                 description: |-
                   (Optional) When enabled, adds a custom readiness gate to pods that prevents
@@ -6045,7 +6093,7 @@ spec:
               labels:
                 additionalProperties:
                   type: string
-                description: (Optional) Labels to add to the Dragonfly pods.
+                description: 'Deprecated: use spec.podMetadata.labels instead.'
                 type: object
               memcachedPort:
                 description: (Optional) Dragonfly memcached port
@@ -6064,8 +6112,8 @@ spec:
                 description: (Optional) Dragonfly pod node selector
                 type: object
               ownedObjectsMetadata:
-                description: (Optional) Dragonfly direct child resources additional
-                  annotations and labels
+                description: (Optional) Labels and annotations to add to all owned
+                  resources (StatefulSet, Service, PDB, etc).
                 properties:
                   annotations:
                     additionalProperties:
@@ -6101,6 +6149,19 @@ spec:
                 x-kubernetes-validations:
                 - message: minAvailable and maxUnavailable cannot be both set
                   rule: '!(has(self.minAvailable) && has(self.maxUnavailable))'
+              podMetadata:
+                description: (Optional) Labels and annotations to add to the Dragonfly
+                  pods.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                type: object
               podSecurityContext:
                 description: (Optional) Dragonfly pod security context
                 properties:
