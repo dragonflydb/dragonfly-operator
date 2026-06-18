@@ -1,0 +1,20 @@
+# Demo 1 — Single Dragonfly node, vertically scaled across all cores.
+# The hook: ONE pod with many CPUs does what a Redis Cluster of many shards does.
+# Bump cpu/memory live during the demo to show vertical scaling.
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: df-single
+  labels:
+    demo: kubecon
+spec:
+  replicas: 1
+  # Pin the image so the booth demo never surprises you with a different version.
+  image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
+  resources:
+    requests:
+      cpu: "4"
+      memory: 4Gi
+    limits:
+      cpu: "4"
+      memory: 4Gi

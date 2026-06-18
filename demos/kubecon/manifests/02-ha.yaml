@@ -1,0 +1,28 @@
+# Demo 2 — High availability: 1 master + 2 replicas with automatic failover.
+# The operator elects a master, replicates to the others, and exposes a Service
+# that always points at the current master. Delete the master pod and watch the
+# operator promote a replica — no manual intervention. (See ../failover.sh)
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: df-ha
+  labels:
+    demo: kubecon
+spec:
+  replicas: 3            # 1 master + 2 replicas
+  image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
+  resources:
+    requests:
+      cpu: "1"
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  # Spread the pods across nodes so a node failure can't take out master + all replicas.
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app: df-ha

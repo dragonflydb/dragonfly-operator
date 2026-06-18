@@ -1,0 +1,22 @@
+# Scrapes EVERY demo Dragonfly instance at once (df-single, df-ha, ...).
+# - metadata label `group: dragonfly` is how our Prometheus discovers this PodMonitor.
+# - spec.selector matches the label the operator puts on all Dragonfly pods,
+#   so you don't need a PodMonitor per instance.
+# - podTargetLabels copies `app` (= instance name) and `role` onto the metrics,
+#   which is exactly what the Grafana dashboard's "Dragonfly" dropdown keys on.
+# Dragonfly exposes Prometheus metrics on its `admin` port (9999).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: dragonfly-demo
+  labels:
+    group: dragonfly
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dragonfly
+  podTargetLabels:
+    - app
+    - role
+  podMetricsEndpoints:
+    - port: admin

@@ -1,0 +1,54 @@
+# Demo 3 — Persistence: periodic snapshots to a PersistentVolumeClaim.
+# Story: "Your data survives a pod restart." Write keys, snapshot, kill the pod,
+# show the keys come back after the operator restores from the snapshot dir.
+# The demo cron is aggressive (every minute) so you don't wait around at the booth;
+# in production you'd use something like "0 */6 * * *".
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: df-persist
+  labels:
+    demo: kubecon
+spec:
+  replicas: 1
+  image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
+  resources:
+    requests:
+      cpu: "1"
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  snapshot:
+    cron: "*/1 * * * *"          # every minute, for the demo
+    enableOnMasterOnly: false
+    persistentVolumeClaimSpec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 2Gi
+---
+# Bonus: snapshot to S3 instead of a PVC. Uncomment and fill in if you have a
+# bucket + credentials handy. Dragonfly reads AWS creds from env vars (see spec.env).
+# apiVersion: dragonflydb.io/v1alpha1
+# kind: Dragonfly
+# metadata:
+#   name: df-persist-s3
+#   labels:
+#     demo: kubecon
+# spec:
+#   replicas: 1
+#   image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
+#   snapshot:
+#     dir: "s3://my-bucket/dragonfly-snapshots"
+#     cron: "*/1 * * * *"
+#   env:
+#     - name: AWS_ACCESS_KEY_ID
+#       valueFrom:
+#         secretKeyRef: { name: aws-creds, key: access_key_id }
+#     - name: AWS_SECRET_ACCESS_KEY
+#       valueFrom:
+#         secretKeyRef: { name: aws-creds, key: secret_access_key }
+#     - name: AWS_REGION
+#       value: "us-east-1"

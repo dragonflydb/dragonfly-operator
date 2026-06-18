@@ -1,0 +1,34 @@
+# Demo 4 — Authentication: password pulled from a Kubernetes Secret.
+# Story: "Production-ready, not 'redis with no password on the internet'."
+# Connect with redis-cli WITHOUT a password -> NOAUTH error; then WITH -> works.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: df-auth-secret
+  labels:
+    demo: kubecon
+type: Opaque
+stringData:
+  # Change this before the conference. Don't demo with a real prod password.
+  password: kubecon-india-2026
+---
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: df-auth
+  labels:
+    demo: kubecon
+spec:
+  replicas: 2
+  image: docker.dragonflydb.io/dragonflydb/dragonfly:v1.39.0
+  resources:
+    requests:
+      cpu: "1"
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  authentication:
+    passwordFromSecret:
+      name: df-auth-secret
+      key: password

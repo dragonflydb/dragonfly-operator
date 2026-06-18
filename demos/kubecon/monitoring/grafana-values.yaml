@@ -1,0 +1,33 @@
+# Helm values for the Grafana chart so the booth needs ZERO clicking:
+#   - admin login is admin / kubecon
+#   - the Prometheus datasource is pre-wired (uid must be `prometheus` to match
+#     the dashboard JSON we generate in monitor-setup.sh)
+#   - the dashboard sidecar auto-imports any ConfigMap labeled grafana_dashboard=1
+adminUser: admin
+adminPassword: kubecon
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-svc.default.svc.cluster.local:9090
+        isDefault: true
+
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+    folderAnnotation: grafana_folder
+    provider:
+      foldersFromFilesStructure: true
+
+# Keep it light on a laptop kind cluster.
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi

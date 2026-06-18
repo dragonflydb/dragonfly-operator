@@ -1,0 +1,61 @@
+# Prometheus + the RBAC it needs + a Service for Grafana to read it through.
+# Requires the Prometheus Operator CRDs (monitor-setup.sh installs them).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/metrics", "services", "endpoints", "pods"]
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: default
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: prometheus
+spec:
+  serviceAccountName: prometheus
+  # Discover any PodMonitor labeled `group: dragonfly` (see podMonitor.yaml).
+  podMonitorSelector:
+    matchLabels:
+      group: dragonfly
+  # Watch PodMonitors in every namespace (demo runs in `default`, but be liberal).
+  podMonitorNamespaceSelector: {}
+  scrapeInterval: 5s          # snappy graphs for a live booth demo
+  resources:
+    requests:
+      memory: 400Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-svc
+spec:
+  selector:
+    prometheus: prometheus    # the operator labels Prometheus pods with this
+  type: ClusterIP
+  ports:
+    - name: web
+      port: 9090
+      protocol: TCP
+      targetPort: web
