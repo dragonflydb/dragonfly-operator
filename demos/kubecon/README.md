@@ -8,7 +8,7 @@ cluster on your laptop so you **never depend on conference WiFi**.
 > one node does what a whole Redis Cluster does, and this operator runs it on
 > Kubernetes with automatic failover, snapshots, and auth."*
 
-## How it works (point at this while you talk)
+## How it works
 
 You give the operator one short `Dragonfly` YAML; it does the rest — creates a
 StatefulSet, elects a master, replicates to the others, and keeps a Service
@@ -54,14 +54,14 @@ flowchart LR
 ```
 </details>
 
-## Prerequisites (install the night before)
+## Prerequisites
 
 - [`docker`](https://docs.docker.com/get-docker/)
 - [`kind`](https://kind.sigs.k8s.io/) — local Kubernetes in Docker
 - [`kubectl`](https://kubernetes.io/docs/tasks/tools/)
 - Optional but great for visuals: [`k9s`](https://k9scli.io/) and a big terminal font.
 
-## Setup (do this the night before AND the morning of)
+## Setup
 
 ```sh
 ./setup.sh        # creates kind cluster, pre-pulls images, installs the operator
@@ -91,7 +91,7 @@ Talking point: *"To get this throughput with Redis you'd run and shard N
 processes. Here it's one pod — bump the CPU and it scales vertically."* You can
 edit `resources` in the manifest and re-apply to show it grow live.
 
-### 2. HA + automatic failover — the crowd-pleaser (~2 min)
+### 2. HA + automatic failover
 *"Kill the master, the operator heals it."*
 
 ```sh
@@ -104,7 +104,6 @@ Watch the `role` column: a `replica` gets promoted to `master`, a new pod joins
 as a replica, and the Service keeps pointing at the live master the whole time.
 
 ### 3. Drop-in Redis compatibility (~1 min)
-*"Your existing app and tools just work."*
 
 ```sh
 ./connect.sh df-ha
