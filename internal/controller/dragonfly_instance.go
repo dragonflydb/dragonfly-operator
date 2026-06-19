@@ -215,8 +215,8 @@ func (dfi *DragonflyInstance) reconcileReplicaLabel(ctx context.Context, pod *co
 			p.Annotations[resources.MasterIpAnnotationKey] = sanitized
 			if ip := net.ParseIP(sanitized); ip != nil && ip.To4() != nil {
 				p.Labels[resources.MasterIpLabelKey] = sanitized
-        } else {
-          delete(p.Labels, resources.MasterIpLabelKey)
+			} else {
+				delete(p.Labels, resources.MasterIpLabelKey)
 			}
 		})
 	}
