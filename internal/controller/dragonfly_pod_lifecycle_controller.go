@@ -159,6 +159,7 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		r.EventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Replication", "Reconciled replica role metadata")
+		return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 	}
 
 	if !podReady {
