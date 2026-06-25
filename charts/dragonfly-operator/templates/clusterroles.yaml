@@ -1,3 +1,4 @@
+{{- if not .Values.watchNamespaces }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -120,6 +121,8 @@ rules:
       - get
       - patch
       - update
+{{- end }}
+{{- if .Values.rbacProxy.enabled }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -154,3 +157,4 @@ rules:
       - subjectaccessreviews
     verbs:
       - create
+{{- end }}

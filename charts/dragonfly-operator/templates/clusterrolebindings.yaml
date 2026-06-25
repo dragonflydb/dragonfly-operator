@@ -1,3 +1,4 @@
+{{- if not .Values.watchNamespaces }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -13,8 +14,9 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "dragonfly-operator.serviceAccountName" . }}
     namespace: {{ include "dragonfly-operator.namespace" . }}
+{{- end }}
+{{- if .Values.rbacProxy.enabled }}
 ---
-
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -30,6 +32,7 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "dragonfly-operator.serviceAccountName" . }}
     namespace: {{ include "dragonfly-operator.namespace" . }}
+{{- end }}
 {{- if .Values.serviceMonitor.enabled }}
 {{- if .Values.rbacProxy.enabled }}
 {{- if .Values.serviceMonitor.rbacProxyMetricsReader.create }}

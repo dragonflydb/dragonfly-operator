@@ -85,6 +85,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            {{- if .Values.watchNamespaces }}
+            - name: WATCH_NAMESPACE
+              value: {{ .Values.watchNamespaces | quote }}
+            {{- end }}
           securityContext:
             {{- toYaml .Values.manager.securityContext | nindent 12 }}
           image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag | default .Chart.AppVersion  }}"

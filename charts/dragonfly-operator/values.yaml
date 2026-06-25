@@ -25,6 +25,13 @@ additionalLabels: {}
 # -- Create aggregated cluster roles for view, edit, and admin
 createAggregateRoles: true
 
+# -- Restrict the operator to specific namespaces (comma-separated, e.g. "ns1,ns2").
+# When set, namespace-scoped Roles are created in each watched namespace instead of a
+# cluster-wide ClusterRole, allowing deployment without ClusterRole permissions.
+# Leave empty to watch all namespaces (default; requires ClusterRole).
+# To fully avoid ClusterRoles, also set rbacProxy.enabled=false and createAggregateRoles=false.
+watchNamespaces: ""
+
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
