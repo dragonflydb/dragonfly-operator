@@ -244,16 +244,19 @@ func setupPortForwardWithCleanup(ctx context.Context, clientset *kubernetes.Clie
 		return nil, fmt.Errorf("pod %s/%s is not running (phase: %s)", pod.Namespace, pod.Name, pod.Status.Phase)
 	}
 
-	// Verify pod has Ready condition
+	// Verify pod has ContainersReady condition. PodReady is intentionally not
+	// used here: pods with custom readiness gates (e.g. the replication-ready
+	// gate) are connectable long before PodReady turns true, and tests need to
+	// inspect pods exactly in that window.
 	hasReadyCondition := false
 	for _, condition := range pod.Status.Conditions {
-		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+		if condition.Type == corev1.ContainersReady && condition.Status == corev1.ConditionTrue {
 			hasReadyCondition = true
 			break
 		}
 	}
 	if !hasReadyCondition {
-		return nil, fmt.Errorf("pod %s/%s is not ready (Ready condition not true)", pod.Namespace, pod.Name)
+		return nil, fmt.Errorf("pod %s/%s is not ready (ContainersReady condition not true)", pod.Namespace, pod.Name)
 	}
 
 	// Verify the Dragonfly container is ready
@@ -476,7 +479,11 @@ func tryCheckPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientse
 		return "", "", fmt.Errorf("unable to get persistence info: %w", err)
 	}
 
-	// Parse info output
+	loading, loadState = parseLoadingInfo(info)
+	return loading, loadState, nil
+}
+
+func parseLoadingInfo(info string) (loading string, loadState string) {
 	sc := bufio.NewScanner(strings.NewReader(info))
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
@@ -496,5 +503,18 @@ func tryCheckPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientse
 		}
 	}
 
-	return loading, loadState, sc.Err()
+	return loading, loadState
+}
+
+// isDatasetLoading mirrors the operator's isDatasetLoaded check: the dataset is
+// considered loading when INFO persistence reports loading != 0 or a
+// load_state other than done (both snapshot loads and full syncs set these).
+func isDatasetLoading(loading, loadState string) bool {
+	if loading != "" && loading != "0" {
+		return true
+	}
+	if loadState != "" && loadState != "done" {
+		return true
+	}
+	return false
 }

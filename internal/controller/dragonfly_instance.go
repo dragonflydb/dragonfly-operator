@@ -203,11 +203,11 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 }
 
 // reconcileReplicaLabel idempotently re-applies the role=replica label.
-// If Redis is already replicating from the right master, only the label is patched.
+// If Dragonfly is already replicating from the right master, only the label is patched.
 func (dfi *DragonflyInstance) reconcileReplicaLabel(ctx context.Context, pod *corev1.Pod, masterIp string) error {
 	correct, err := dfi.checkReplicaRole(ctx, pod, masterIp)
 	if err == nil && correct {
-		dfi.log.Info("Redis already replicating from correct master; only patching missing label", "pod", pod.Name, "master", masterIp)
+		dfi.log.Info("Dragonfly already replicating from correct master; only patching missing label", "pod", pod.Name, "master", masterIp)
 		sanitized := sanitizeIp(masterIp)
 		podKey := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
 		return dfi.patchPodMetadata(ctx, podKey, func(p *corev1.Pod) {
@@ -221,7 +221,7 @@ func (dfi *DragonflyInstance) reconcileReplicaLabel(ctx context.Context, pod *co
 		})
 	}
 	if err != nil {
-		dfi.log.Info("could not inspect Redis replication state; falling back to full configureReplica", "pod", pod.Name, "error", err.Error())
+		dfi.log.Info("could not inspect Dragonfly replication state; falling back to full configureReplica", "pod", pod.Name, "error", err.Error())
 	}
 	return dfi.configureReplica(ctx, pod, masterIp)
 }
