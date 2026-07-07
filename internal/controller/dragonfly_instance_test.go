@@ -17,12 +17,19 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"testing"
+	"time"
 
+	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestCopyDesiredPayload_ConfigMapDataUpdated(t *testing.T) {
@@ -93,4 +100,47 @@ func TestResourceSpecsEqual_ConfigMapDataEqual(t *testing.T) {
 	}
 
 	assert.True(t, resourceSpecsEqual(desired, existing))
+}
+
+func TestGetDragonflyInstancePropagatesReplTakeoverReadTimeout(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	assert.NoError(t, dfv1alpha1.AddToScheme(scheme))
+
+	df := &dfv1alpha1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "dragonfly",
+			Namespace: "default",
+		},
+	}
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(df).
+		Build()
+	reconciler := Reconciler{
+		Client:              k8sClient,
+		ReplTakeoverTimeout: time.Minute,
+	}
+
+	dfi, err := reconciler.getDragonflyInstance(ctx, types.NamespacedName{Name: df.Name, Namespace: df.Namespace}, logr.Discard())
+	if err != nil {
+		t.Fatalf("getDragonflyInstance() error = %v", err)
+	}
+
+	assert.Equal(t, time.Minute, dfi.replTakeoverTimeout)
+}
+
+func TestGetReplTakeoverRedisClientUsesConfiguredReadTimeout(t *testing.T) {
+	dfi := &DragonflyInstance{
+		replTakeoverTimeout: time.Minute,
+	}
+
+	takeoverClient := dfi.getReplTakeoverRedisClient("10.0.0.2")
+	defer takeoverClient.Close()
+
+	sharedClient := dfi.getRedisClient("10.0.0.3")
+	defer sharedClient.Close()
+
+	assert.Equal(t, time.Minute, takeoverClient.Options().ReadTimeout)
+	assert.Equal(t, 10*time.Second, sharedClient.Options().ReadTimeout)
 }

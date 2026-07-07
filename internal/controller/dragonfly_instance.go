@@ -55,6 +55,7 @@ type DragonflyInstance struct {
 	eventRecorder         record.EventRecorder
 	defaultDragonflyImage string
 	operatorNamespace     string
+	replTakeoverTimeout   time.Duration
 	redisClients          map[string]*redis.Client
 }
 
@@ -79,6 +80,24 @@ func (dfi *DragonflyInstance) getRedisClient(podIP string) *redis.Client {
 	})
 	dfi.redisClients[podIP] = c
 	return c
+}
+
+func (dfi *DragonflyInstance) getReplTakeoverRedisClient(podIP string) *redis.Client {
+	readTimeout := dfi.replTakeoverTimeout
+	if readTimeout <= 0 {
+		readTimeout = 10 * time.Second
+	}
+
+	return redis.NewClient(&redis.Options{
+		ClientName:   resources.DragonflyOperatorName,
+		Addr:         net.JoinHostPort(podIP, strconv.Itoa(resources.DragonflyAdminPort)),
+		DialTimeout:  10 * time.Second,
+		ReadTimeout:  readTimeout,
+		WriteTimeout: 10 * time.Second,
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
+	})
 }
 
 // Close closes all cached Redis clients.
@@ -1119,7 +1138,8 @@ func (dfi *DragonflyInstance) updatedMaster(ctx context.Context, oldMaster *core
 func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev1.Pod, oldMaster *corev1.Pod) error {
 	dfi.log.Info("running REPLTAKEOVER on replica", "pod", newMaster.Name)
 
-	redisClient := dfi.getRedisClient(newMaster.Status.PodIP)
+	redisClient := dfi.getReplTakeoverRedisClient(newMaster.Status.PodIP)
+	defer redisClient.Close()
 
 	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
 	if err != nil {

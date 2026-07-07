@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
@@ -33,6 +34,7 @@ type Reconciler struct {
 	EventRecorder         record.EventRecorder
 	DefaultDragonflyImage string
 	OperatorNamespace     string
+	ReplTakeoverTimeout   time.Duration
 }
 
 func (r *Reconciler) getDragonflyInstance(ctx context.Context, namespacedName types.NamespacedName, log logr.Logger) (*DragonflyInstance, error) {
@@ -51,5 +53,6 @@ func (r *Reconciler) getDragonflyInstance(ctx context.Context, namespacedName ty
 		eventRecorder:         r.EventRecorder,
 		defaultDragonflyImage: r.DefaultDragonflyImage,
 		operatorNamespace:     r.OperatorNamespace,
+		replTakeoverTimeout:   r.ReplTakeoverTimeout,
 	}, nil
 }
