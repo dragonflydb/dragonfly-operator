@@ -465,6 +465,9 @@ func tryCheckPersistenceInfo(ctx context.Context, clientset *kubernetes.Clientse
 		ReadTimeout:           10 * time.Second,
 		WriteTimeout:          10 * time.Second,
 		ContextTimeoutEnabled: true,
+		MaintNotificationsConfig: &maintnotifications.Config{
+			Mode: maintnotifications.ModeDisabled,
+		},
 	})
 	defer adminClient.Close()
 
