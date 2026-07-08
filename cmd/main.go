@@ -94,6 +94,11 @@ func main() {
 		os.Exit(0)
 	}
 
+	if err := validateReplTakeoverTimeout(replTakeoverTimeout); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	mgrOpts := ctrl.Options{
@@ -258,4 +263,11 @@ func resolveOperatorNamespace(saFile string) string {
 		}
 	}
 	return ""
+}
+
+func validateReplTakeoverTimeout(timeout time.Duration) error {
+	if timeout <= 0 {
+		return fmt.Errorf("repl-takeover-read-timeout must be greater than 0")
+	}
+	return nil
 }

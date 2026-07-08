@@ -83,16 +83,11 @@ func (dfi *DragonflyInstance) getRedisClient(podIP string) *redis.Client {
 }
 
 func (dfi *DragonflyInstance) getReplTakeoverRedisClient(podIP string) *redis.Client {
-	readTimeout := dfi.replTakeoverTimeout
-	if readTimeout <= 0 {
-		readTimeout = 10 * time.Second
-	}
-
 	return redis.NewClient(&redis.Options{
 		ClientName:   resources.DragonflyOperatorName,
 		Addr:         net.JoinHostPort(podIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		DialTimeout:  10 * time.Second,
-		ReadTimeout:  readTimeout,
+		ReadTimeout:  dfi.replTakeoverTimeout,
 		WriteTimeout: 10 * time.Second,
 		MaintNotificationsConfig: &maintnotifications.Config{
 			Mode: maintnotifications.ModeDisabled,

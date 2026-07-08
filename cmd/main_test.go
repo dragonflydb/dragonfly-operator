@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestResolveOperatorNamespace(t *testing.T) {
@@ -76,3 +77,38 @@ func TestResolveOperatorNamespace(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestValidateReplTakeoverTimeout(t *testing.T) {
+	tests := []struct {
+		name    string
+		timeout time.Duration
+		wantErr bool
+	}{
+		{
+			name:    "positive duration",
+			timeout: time.Second,
+		},
+		{
+			name:    "zero duration",
+			timeout: 0,
+			wantErr: true,
+		},
+		{
+			name:    "negative duration",
+			timeout: -time.Second,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateReplTakeoverTimeout(tt.timeout)
+			if tt.wantErr && err == nil {
+				t.Fatal("validateReplTakeoverTimeout() error = nil, want error")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("validateReplTakeoverTimeout() error = %v, want nil", err)
+			}
+		})
+	}
+}
