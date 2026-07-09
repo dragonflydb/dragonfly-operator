@@ -205,7 +205,10 @@ func (dfi *DragonflyInstance) configureReplica(ctx context.Context, pod *corev1.
 // reconcileReplicaLabel idempotently re-applies the role=replica label.
 // If Dragonfly is already replicating from the right master, only the label is patched.
 func (dfi *DragonflyInstance) reconcileReplicaLabel(ctx context.Context, pod *corev1.Pod, masterIp string) error {
-	correct, err := dfi.checkReplicaRole(ctx, pod, masterIp)
+	// For label-only recovery we must trust live INFO replication state, not
+	// pod metadata, to avoid re-labeling pods that still replicate from an old
+	// master due to stale master-ip label/annotation values.
+	correct, err := dfi.checkReplicaLiveMaster(ctx, pod, masterIp)
 	if err == nil && correct {
 		dfi.log.Info("Dragonfly already replicating from correct master; only patching missing label", "pod", pod.Name, "master", masterIp)
 		sanitized := sanitizeIp(masterIp)
@@ -224,6 +227,29 @@ func (dfi *DragonflyInstance) reconcileReplicaLabel(ctx context.Context, pod *co
 		dfi.log.Info("could not inspect Dragonfly replication state; falling back to full configureReplica", "pod", pod.Name, "error", err.Error())
 	}
 	return dfi.configureReplica(ctx, pod, masterIp)
+}
+
+// checkReplicaLiveMaster returns true when INFO replication reports this pod is
+// a replica connected to the expected master IP.
+func (dfi *DragonflyInstance) checkReplicaLiveMaster(ctx context.Context, pod *corev1.Pod, masterIp string) (bool, error) {
+	redisClient := dfi.getRedisClient(pod.Status.PodIP)
+
+	info, err := redisClient.Info(ctx, "replication").Result()
+	if err != nil {
+		return false, err
+	}
+
+	replicationData := parseInfoToMap(info)
+	if role, ok := replicationData["role"]; !ok || role == resources.Master {
+		return false, nil
+	}
+
+	liveMasterIP, ok := replicationData["master_host"]
+	if !ok || liveMasterIP == "" {
+		return false, nil
+	}
+
+	return sanitizeIp(liveMasterIP) == sanitizeIp(masterIp), nil
 }
 
 // checkReplicaRole returns true if the given pod is a replica and is connected to the correct master.
