@@ -246,11 +246,6 @@ func (in *DragonflySpec) DeepCopyInto(out *DragonflySpec) {
 		*out = new(MetadataSpec)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.NetworkPolicyEnabled != nil {
-		in, out := &in.NetworkPolicyEnabled, &out.NetworkPolicyEnabled
-		*out = new(bool)
-		**out = **in
-	}
 	if in.Pdb != nil {
 		in, out := &in.Pdb, &out.Pdb
 		*out = new(PdbSpec)

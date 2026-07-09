@@ -189,14 +189,6 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	EnableReplicationReadinessGate bool `json:"enableReplicationReadinessGate,omitempty"`
 
-	// (Optional) Whether to create a NetworkPolicy for this Dragonfly instance.
-	// The NetworkPolicy restricts admin port access to operator and peer pods only.
-	// Defaults to true.
-	// +optional
-	// +kubebuilder:validation:Optional
-	// +kubebuilder:default:=true
-	NetworkPolicyEnabled *bool `json:"networkPolicyEnabled,omitempty"`
-
 	// (Optional) Dragonfly Pod Disruption Budget configuration
 	// +optional
 	// +kubebuilder:validation:Optional

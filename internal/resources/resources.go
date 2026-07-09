@@ -23,7 +23,6 @@ import (
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -128,7 +127,7 @@ func generateProbeConfigMap(df *resourcesv1.Dragonfly, name, key, script string)
 
 // GenerateDragonflyResources returns the resources required for a Dragonfly
 // Instance
-func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage, operatorNamespace string) ([]client.Object, error) {
+func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage string) ([]client.Object, error) {
 	if err := checkLabels("spec.labels", df.Spec.Labels); err != nil {
 		return nil, err
 	}
@@ -663,111 +662,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		resources = append(resources, &pdb)
 	}
 
-	if isNetworkPolicyEnabled(df) {
-		np := generateNetworkPolicy(df, operatorNamespace)
-		resources = append(resources, &np)
-	}
-
 	return resources, nil
-}
-
-func isNetworkPolicyEnabled(df *resourcesv1.Dragonfly) bool {
-	return df.Spec.NetworkPolicyEnabled == nil || *df.Spec.NetworkPolicyEnabled
-}
-
-func generateNetworkPolicy(df *resourcesv1.Dragonfly, operatorNamespace string) networkingv1.NetworkPolicy {
-	protocolTCP := corev1.ProtocolTCP
-
-	instanceSelector := map[string]string{
-		DragonflyNameLabelKey:     df.Name,
-		KubernetesPartOfLabelKey:  KubernetesPartOf,
-		KubernetesAppNameLabelKey: KubernetesAppName,
-	}
-
-	sameNamespacePeer := networkingv1.NetworkPolicyPeer{
-		PodSelector: &metav1.LabelSelector{},
-	}
-
-	clientPortRule := networkingv1.NetworkPolicyIngressRule{
-		Ports: []networkingv1.NetworkPolicyPort{
-			{
-				Protocol: &protocolTCP,
-				Port:     &intstr.IntOrString{Type: intstr.Int, IntVal: DragonflyPort},
-			},
-		},
-		From: []networkingv1.NetworkPolicyPeer{sameNamespacePeer},
-	}
-
-	operatorPeer := networkingv1.NetworkPolicyPeer{
-		PodSelector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				OperatorControlPlaneLabelKey: OperatorControlPlaneLabelValue,
-			},
-		},
-	}
-	if operatorNamespace != "" {
-		operatorPeer.NamespaceSelector = &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				KubernetesNamespaceLabelKey: operatorNamespace,
-			},
-		}
-	}
-
-	adminPortRule := networkingv1.NetworkPolicyIngressRule{
-		Ports: []networkingv1.NetworkPolicyPort{
-			{
-				Protocol: &protocolTCP,
-				Port:     &intstr.IntOrString{Type: intstr.Int, IntVal: DragonflyAdminPort},
-			},
-		},
-		From: []networkingv1.NetworkPolicyPeer{
-			operatorPeer,
-			{
-				PodSelector: &metav1.LabelSelector{
-					MatchLabels: instanceSelector,
-				},
-			},
-		},
-	}
-
-	ingressRules := []networkingv1.NetworkPolicyIngressRule{clientPortRule, adminPortRule}
-
-	if df.Spec.MemcachedPort != 0 {
-		memcachedPortRule := networkingv1.NetworkPolicyIngressRule{
-			Ports: []networkingv1.NetworkPolicyPort{
-				{
-					Protocol: &protocolTCP,
-					Port:     &intstr.IntOrString{Type: intstr.Int, IntVal: df.Spec.MemcachedPort},
-				},
-			},
-			From: []networkingv1.NetworkPolicyPeer{sameNamespacePeer},
-		}
-		ingressRules = append(ingressRules, memcachedPortRule)
-	}
-
-	return networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      df.Name,
-			Namespace: df.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: df.APIVersion,
-					Kind:       df.Kind,
-					Name:       df.Name,
-					UID:        df.UID,
-				},
-			},
-			Labels:      generateResourceLabels(df),
-			Annotations: generateResourceAnnotations(df),
-		},
-		Spec: networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{
-				MatchLabels: instanceSelector,
-			},
-			Ingress:     ingressRules,
-			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
-		},
-	}
 }
 
 // mergeNamedSlices will merge base into override, override takes precendence
