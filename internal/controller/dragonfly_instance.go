@@ -697,23 +697,14 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		}
 		// Update if specs differ
 		patch := client.MergeFrom(existing.DeepCopyObject().(client.Object))
-		existingAnnotations := existing.GetAnnotations()
-		if existingAnnotations == nil {
-			existingAnnotations = make(map[string]string)
-		}
-		for k, v := range desired.GetAnnotations() {
-			existingAnnotations[k] = v
-		}
-		existing.SetAnnotations(existingAnnotations)
-
-		existingLabels := existing.GetLabels()
-		if existingLabels == nil {
-			existingLabels = make(map[string]string)
-		}
-		for k, v := range desired.GetLabels() {
-			existingLabels[k] = v
-		}
-		existing.SetLabels(existingLabels)
+		// Use the desired object as the source of truth for annotations and
+		// labels. The previous merge copied desired keys on top of the live
+		// object's existing map, so annotations/labels removed from the spec
+		// could never be deleted from the running resource. Setting directly
+		// from desired keeps the live object in sync with the spec, matching
+		// how copyDesiredPayload treats Spec/Data as authoritative.
+		existing.SetAnnotations(desired.GetAnnotations())
+		existing.SetLabels(desired.GetLabels())
 
 		copyDesiredPayload(desired, existing)
 
