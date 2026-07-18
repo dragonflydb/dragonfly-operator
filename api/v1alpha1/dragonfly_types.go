@@ -88,6 +88,13 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	AdditionalVolumes []corev1.Volume `json:"additionalVolumes,omitempty"`
 
+	// (Optional) Additional volume mounts to add to the Dragonfly main container.
+	// Pair with additionalVolumes to mount an extra volume — e.g. back the snapshot
+	// dir with an emptyDir. Replace mount on name collision.
+	// +optional
+	// +kubebuilder:validation:Optional
+	AdditionalVolumeMounts []corev1.VolumeMount `json:"additionalVolumeMounts,omitempty"`
+
 	// (Optional) Dragonfly container resource limits. Any container limits
 	// can be specified.
 	// +optional
