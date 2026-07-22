@@ -141,6 +141,14 @@ func TestGetReplTakeoverRedisClientUsesConfiguredReadTimeout(t *testing.T) {
 	sharedClient := dfi.getRedisClient("10.0.0.3")
 	defer sharedClient.Close()
 
-	assert.Equal(t, time.Minute, takeoverClient.Options().ReadTimeout)
+	assert.Equal(t, time.Minute+5*time.Second, takeoverClient.Options().ReadTimeout)
 	assert.Equal(t, 10*time.Second, sharedClient.Options().ReadTimeout)
+}
+
+func TestReplTakeoverTimeoutSecondsRoundsUpToDragonflySeconds(t *testing.T) {
+	dfi := &DragonflyInstance{
+		replTakeoverTimeout: 1500 * time.Millisecond,
+	}
+
+	assert.Equal(t, 2, dfi.replTakeoverTimeoutSeconds())
 }

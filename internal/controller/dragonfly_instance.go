@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"reflect"
 	"sort"
@@ -87,7 +88,7 @@ func (dfi *DragonflyInstance) getReplTakeoverRedisClient(podIP string) *redis.Cl
 		ClientName:   resources.DragonflyOperatorName,
 		Addr:         net.JoinHostPort(podIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		DialTimeout:  10 * time.Second,
-		ReadTimeout:  dfi.replTakeoverTimeout,
+		ReadTimeout:  dfi.replTakeoverTimeout + 5*time.Second,
 		WriteTimeout: 10 * time.Second,
 		MaintNotificationsConfig: &maintnotifications.Config{
 			Mode: maintnotifications.ModeDisabled,
@@ -1136,7 +1137,7 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 	redisClient := dfi.getReplTakeoverRedisClient(newMaster.Status.PodIP)
 	defer redisClient.Close()
 
-	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
+	resp, err := redisClient.Do(ctx, "repltakeover", strconv.Itoa(dfi.replTakeoverTimeoutSeconds())).Result()
 	if err != nil {
 		return fmt.Errorf("error running REPLTAKEOVER command: %w", err)
 	}
@@ -1176,6 +1177,10 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 	}
 
 	return nil
+}
+
+func (dfi *DragonflyInstance) replTakeoverTimeoutSeconds() int {
+	return int(math.Ceil(dfi.replTakeoverTimeout.Seconds()))
 }
 
 func (dfi *DragonflyInstance) getRedisRole(ctx context.Context, pod *corev1.Pod) (string, error) {
