@@ -619,7 +619,7 @@ func (dfi *DragonflyInstance) hasMasterRole(ctx context.Context, redisClient *re
 func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage, dfi.operatorNamespace)
 	if err != nil {
-		return fmt.Errorf("failed to generate dragonfly resources")
+		return fmt.Errorf("failed to generate dragonfly resources: %w", err)
 	}
 	for _, desired := range dfResources {
 		dfi.log.Info("reconciling dragonfly resource", "kind", getGVK(desired, dfi.scheme).Kind, "namespace", desired.GetNamespace(), "Name", desired.GetName())
