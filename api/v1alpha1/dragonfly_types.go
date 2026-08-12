@@ -189,6 +189,14 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	EnableReplicationReadinessGate bool `json:"enableReplicationReadinessGate,omitempty"`
 
+	// (Optional) When enabled, an instance that is promoted to master during an unplanned
+	// failover is flushed before it starts serving traffic. Use this for cache workloads that
+	// must not serve data which is stale relative to the master that was lost. Planned rolling
+	// updates promote through a coordinated takeover and are not affected.
+	// +optional
+	// +kubebuilder:validation:Optional
+	FlushOnFailover bool `json:"flushOnFailover,omitempty"`
+
 	// (Optional) Whether to create a NetworkPolicy for this Dragonfly instance.
 	// The NetworkPolicy restricts admin port access to operator and peer pods only.
 	// Defaults to true.
