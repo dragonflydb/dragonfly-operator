@@ -559,6 +559,13 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		}
 	}
 
+	// Mount extra volume mounts into the main container before additionalContainers
+	// are merged in: that merge prepends additional containers and would shift the
+	// main container off index 0.
+	statefulset.Spec.Template.Spec.Containers[0].VolumeMounts = mergeNamedSlices(
+		statefulset.Spec.Template.Spec.Containers[0].VolumeMounts, df.Spec.AdditionalVolumeMounts,
+		func(m corev1.VolumeMount) string { return m.Name })
+
 	statefulset.Spec.Template.Spec.Containers = mergeNamedSlices(
 		statefulset.Spec.Template.Spec.Containers, df.Spec.AdditionalContainers,
 		func(c corev1.Container) string { return c.Name })
