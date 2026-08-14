@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 func TestResolveOperatorNamespace(t *testing.T) {
@@ -76,3 +78,65 @@ func TestResolveOperatorNamespace(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestResolveCurrentNamespace(t *testing.T) {
+	tests := []struct {
+		name      string
+		clientCfg *clientcmdapi.Config
+		want      string
+	}{
+		{
+			name:      "nil config",
+			clientCfg: nil,
+			want:      "default",
+		},
+		{
+			name:      "empty config",
+			clientCfg: clientcmdapi.NewConfig(),
+			want:      "default",
+		},
+		{
+			name: "unknown current context",
+			clientCfg: &clientcmdapi.Config{
+				CurrentContext: "missing",
+				Contexts: map[string]*clientcmdapi.Context{
+					"other": {Namespace: "other-ns"},
+				},
+			},
+			want: "default",
+		},
+		{
+			name: "nil context",
+			clientCfg: &clientcmdapi.Config{
+				CurrentContext: "broken",
+				Contexts:       map[string]*clientcmdapi.Context{"broken": nil},
+			},
+			want: "default",
+		},
+		{
+			name: "context without namespace",
+			clientCfg: &clientcmdapi.Config{
+				CurrentContext: "ctx",
+				Contexts:       map[string]*clientcmdapi.Context{"ctx": {}},
+			},
+			want: "default",
+		},
+		{
+			name: "context with namespace",
+			clientCfg: &clientcmdapi.Config{
+				CurrentContext: "ctx",
+				Contexts:       map[string]*clientcmdapi.Context{"ctx": {Namespace: "my-ns"}},
+			},
+			want: "my-ns",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveCurrentNamespace(tt.clientCfg)
+			if got != tt.want {
+				t.Errorf("resolveCurrentNamespace() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
