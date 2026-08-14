@@ -37,6 +37,8 @@ import (
 
 	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
+
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 // podCacheConfig returns the cache configuration of the pods.
@@ -202,4 +204,66 @@ func TestManagerCache(t *testing.T) {
 	var pod v1.Pod
 	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: "watched", Name: "dragonfly-0"}, &pod))
 	assert.NotEmpty(t, pod.ManagedFields)
+}
+
+func TestResolveCurrentNamespace(t *testing.T) {
+	tests := []struct {
+		name      string
+		clientCfg *clientcmdapi.Config
+		want      string
+	}{
+		{
+			name:      "nil config",
+			clientCfg: nil,
+			want:      "default",
+		},
+		{
+			name:      "empty config",
+			clientCfg: clientcmdapi.NewConfig(),
+			want:      "default",
+		},
+		{
+			name: "unknown current context",
+			clientCfg: &clientcmdapi.Config{
+				CurrentContext: "missing",
+				Contexts: map[string]*clientcmdapi.Context{
+					"other": {Namespace: "other-ns"},
+				},
+			},
+			want: "default",
+		},
+		{
+			name: "nil context",
+			clientCfg: &clientcmdapi.Config{
+				CurrentContext: "broken",
+				Contexts:       map[string]*clientcmdapi.Context{"broken": nil},
+			},
+			want: "default",
+		},
+		{
+			name: "context without namespace",
+			clientCfg: &clientcmdapi.Config{
+				CurrentContext: "ctx",
+				Contexts:       map[string]*clientcmdapi.Context{"ctx": {}},
+			},
+			want: "default",
+		},
+		{
+			name: "context with namespace",
+			clientCfg: &clientcmdapi.Config{
+				CurrentContext: "ctx",
+				Contexts:       map[string]*clientcmdapi.Context{"ctx": {Namespace: "my-ns"}},
+			},
+			want: "my-ns",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveCurrentNamespace(tt.clientCfg)
+			if got != tt.want {
+				t.Errorf("resolveCurrentNamespace() = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
