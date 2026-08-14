@@ -195,6 +195,18 @@ func sanitizeIp(masterIp string) string {
 	return strings.Trim(masterIp, "[]")
 }
 
+func clientListenerAddress(podIp string) string {
+	return sanitizeIp(podIp) + ":" + strconv.Itoa(resources.DragonflyPort)
+}
+
+func needsClientDisconnect(pod *corev1.Pod) bool {
+	if pod.Annotations[resources.PendingClientDisconnectAnnotationKey] != "true" {
+		return false
+	}
+
+	return !isMaster(pod)
+}
+
 // getOrdinal returns the ordinal of the pod.
 func getOrdinal(podName string) int {
 	parts := strings.Split(podName, "-")
