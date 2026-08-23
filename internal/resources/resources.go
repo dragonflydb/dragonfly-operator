@@ -19,6 +19,8 @@ package resources
 import (
 	"fmt"
 	"maps"
+	"net/url"
+	"strings"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -29,6 +31,80 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+func GetAuthPasswordSecretSelector(df *resourcesv1.Dragonfly) *corev1.SecretKeySelector {
+	if df.Spec.Authentication == nil {
+		return nil
+	}
+
+	if df.Spec.Authentication.PasswordFromSecret != nil {
+		return df.Spec.Authentication.PasswordFromSecret.DeepCopy()
+	}
+
+	if !df.Spec.Authentication.AutoCreatePasswordSecret {
+		return nil
+	}
+
+	return &corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{
+			Name: GetGeneratedPasswordSecretName(df),
+		},
+		Key: GeneratedPasswordSecretKey,
+	}
+}
+
+func GetGeneratedPasswordSecretName(df *resourcesv1.Dragonfly) string {
+	return df.Name + GeneratedPasswordSecretSuffix
+}
+
+func GetServiceName(df *resourcesv1.Dragonfly) string {
+	serviceName := df.Name
+	if df.Spec.ServiceSpec != nil && df.Spec.ServiceSpec.Name != "" {
+		serviceName = df.Spec.ServiceSpec.Name
+	}
+	return serviceName
+}
+
+func BuildAuthSecretData(df *resourcesv1.Dragonfly, password, clusterDomain string) map[string][]byte {
+	host := GetServiceName(df)
+	port := fmt.Sprintf("%d", DragonflyPort)
+	user := GeneratedPasswordUsername
+	scheme := "redis"
+	if df.Spec.TLSSecretRef != nil {
+		scheme = "rediss"
+	}
+	if clusterDomain == "" {
+		clusterDomain = DefaultKubernetesClusterDomain
+	}
+	clusterDomain = strings.TrimSuffix(clusterDomain, ".")
+	shortURI := buildRedisURI(scheme, user, password, host, df.Namespace, "")
+	fqdnURI := buildRedisURI(scheme, user, password, host, df.Namespace, clusterDomain)
+
+	return map[string][]byte{
+		GeneratedPasswordUsernameKey: []byte(user),
+		GeneratedPasswordUserKey:     []byte(user),
+		GeneratedPasswordSecretKey:   []byte(password),
+		GeneratedPasswordHostKey:     []byte(host),
+		GeneratedPasswordPortKey:     []byte(port),
+		GeneratedPasswordURIKey:      []byte(shortURI),
+		GeneratedPasswordFQDNURIKey:  []byte(fqdnURI),
+	}
+}
+
+func buildRedisURI(scheme, user, password, serviceName, namespace, clusterDomain string) string {
+	host := fmt.Sprintf("%s.%s", serviceName, namespace)
+	if clusterDomain != "" {
+		host = fmt.Sprintf("%s.svc.%s", host, clusterDomain)
+	}
+
+	uri := &url.URL{
+		Scheme: scheme,
+		User:   url.UserPassword(user, password),
+		Host:   fmt.Sprintf("%s:%d", host, DragonflyPort),
+	}
+
+	return uri.String()
+}
 
 var (
 	dflyUserGroup int64 = 999
@@ -481,12 +557,12 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 	}
 
 	if df.Spec.Authentication != nil {
-		if df.Spec.Authentication.PasswordFromSecret != nil {
+		if passwordSecret := GetAuthPasswordSecretSelector(df); passwordSecret != nil {
 			// load the secret key as a password into env
 			statefulset.Spec.Template.Spec.Containers[0].Env = append(statefulset.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
 				Name: "DFLY_requirepass",
 				ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: df.Spec.Authentication.PasswordFromSecret,
+					SecretKeyRef: passwordSecret,
 				},
 			})
 		}
@@ -569,10 +645,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 
 	resources = append(resources, &statefulset)
 
-	serviceName := df.Name
-	if df.Spec.ServiceSpec != nil && df.Spec.ServiceSpec.Name != "" {
-		serviceName = df.Spec.ServiceSpec.Name
-	}
+	serviceName := GetServiceName(df)
 
 	service := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -807,6 +880,10 @@ func generateResourceLabels(df *resourcesv1.Dragonfly) map[string]string {
 	return labels
 }
 
+func GenerateOwnedResourceLabels(df *resourcesv1.Dragonfly) map[string]string {
+	return generateResourceLabels(df)
+}
+
 func generateResourceAnnotations(df *resourcesv1.Dragonfly) map[string]string {
 	annotations := map[string]string{}
 	if df.Spec.OwnedObjectsMetadata != nil {
@@ -814,4 +891,8 @@ func generateResourceAnnotations(df *resourcesv1.Dragonfly) map[string]string {
 	}
 
 	return annotations
+}
+
+func GenerateOwnedResourceAnnotations(df *resourcesv1.Dragonfly) map[string]string {
+	return generateResourceAnnotations(df)
 }

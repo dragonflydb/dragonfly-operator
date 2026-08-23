@@ -131,6 +131,104 @@ func TestGenerateDragonflyResources_ReadinessGateEnabled(t *testing.T) {
 	t.Fatal("StatefulSet not found in generated resources")
 }
 
+func TestGetAuthPasswordSecretSelector(t *testing.T) {
+	t.Run("returns nil when auth disabled", func(t *testing.T) {
+		df := newTestDragonfly(1)
+
+		assert.Nil(t, GetAuthPasswordSecretSelector(df))
+	})
+
+	t.Run("returns explicit secret selector", func(t *testing.T) {
+		df := newTestDragonfly(1)
+		df.Spec.Authentication = &resourcesv1.Authentication{
+			PasswordFromSecret: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "user-secret"},
+				Key:                  "custom-password",
+			},
+			AutoCreatePasswordSecret: true,
+		}
+
+		selector := GetAuthPasswordSecretSelector(df)
+		require.NotNil(t, selector)
+		assert.Equal(t, "user-secret", selector.Name)
+		assert.Equal(t, "custom-password", selector.Key)
+	})
+
+	t.Run("returns generated secret selector when enabled", func(t *testing.T) {
+		df := newTestDragonfly(1)
+		df.Spec.Authentication = &resourcesv1.Authentication{
+			AutoCreatePasswordSecret: true,
+		}
+
+		selector := GetAuthPasswordSecretSelector(df)
+		require.NotNil(t, selector)
+		assert.Equal(t, "test-df-password", selector.Name)
+		assert.Equal(t, GeneratedPasswordSecretKey, selector.Key)
+	})
+}
+
+func TestGenerateDragonflyResources_AutoCreatePasswordSecret(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.Authentication = &resourcesv1.Authentication{
+		AutoCreatePasswordSecret: true,
+	}
+
+	resources, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	for _, obj := range resources {
+		if sts, ok := obj.(*appsv1.StatefulSet); ok {
+			require.Len(t, sts.Spec.Template.Spec.Containers, 1)
+			assert.Contains(t, sts.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{
+				Name: "DFLY_requirepass",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: "test-df-password"},
+						Key:                  GeneratedPasswordSecretKey,
+					},
+				},
+			})
+			return
+		}
+	}
+
+	t.Fatal("StatefulSet not found in generated resources")
+}
+
+func TestBuildAuthSecretData(t *testing.T) {
+	df := newTestDragonfly(1)
+	data := BuildAuthSecretData(df, "secret-pass", "")
+
+	assert.Equal(t, "default", string(data[GeneratedPasswordUsernameKey]))
+	assert.Equal(t, "default", string(data[GeneratedPasswordUserKey]))
+	assert.Equal(t, "secret-pass", string(data[GeneratedPasswordSecretKey]))
+	assert.Equal(t, "test-df", string(data[GeneratedPasswordHostKey]))
+	assert.Equal(t, "6379", string(data[GeneratedPasswordPortKey]))
+	assert.Equal(t, "redis://default:secret-pass@test-df.default:6379", string(data[GeneratedPasswordURIKey]))
+	assert.Equal(t, "redis://default:secret-pass@test-df.default.svc.cluster.local:6379", string(data[GeneratedPasswordFQDNURIKey]))
+}
+
+func TestBuildAuthSecretData_UsesCustomServiceName(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.ServiceSpec = &resourcesv1.ServiceSpec{Name: "dragonfly-rw"}
+
+	data := BuildAuthSecretData(df, "secret-pass", "corp.internal")
+
+	assert.Equal(t, "dragonfly-rw", string(data[GeneratedPasswordHostKey]))
+	assert.Equal(t, "redis://default:secret-pass@dragonfly-rw.default:6379", string(data[GeneratedPasswordURIKey]))
+	assert.Equal(t, "redis://default:secret-pass@dragonfly-rw.default.svc.corp.internal:6379", string(data[GeneratedPasswordFQDNURIKey]))
+}
+
+func TestBuildAuthSecretData_TLS(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.TLSSecretRef = &corev1.SecretReference{Name: "dragonfly-tls"}
+
+	data := BuildAuthSecretData(df, "secret-pass", "cluster.example.")
+
+	assert.Equal(t, "rediss://default:secret-pass@test-df.default:6379", string(data[GeneratedPasswordURIKey]))
+	assert.Equal(t, "rediss://default:secret-pass@test-df.default.svc.cluster.example:6379", string(data[GeneratedPasswordFQDNURIKey]))
+}
+
 func findNetworkPolicy(objs []client.Object) *networkingv1.NetworkPolicy {
 	for _, obj := range objs {
 		if np, ok := obj.(*networkingv1.NetworkPolicy); ok {

@@ -16,7 +16,11 @@ limitations under the License.
 
 package resources
 
-import "fmt"
+import (
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
+)
 
 const (
 	// DragonflyPortName is the name of the port on which the Dragonfly instance listens
@@ -87,7 +91,8 @@ const (
 	MasterIpLabelKey      = "master-ip"
 	DragonflyNameLabelKey = "app"
 
-	MasterIpAnnotationKey = "operator.dragonflydb.io/masterIP"
+	MasterIpAnnotationKey              = "operator.dragonflydb.io/masterIP"
+	GeneratedPasswordHashAnnotationKey = "operator.dragonflydb.io/generated-password-hash"
 
 	RoleLabelKey = "role"
 
@@ -121,6 +126,18 @@ const (
 	LivenessProbeVolumeName  = "liveness-probe"
 	ReadinessProbeVolumeName = "readiness-probe"
 	StartupProbeVolumeName   = "startup-probe"
+
+	GeneratedPasswordSecretSuffix  = "-password"
+	GeneratedPasswordSecretKey     = "password"
+	GeneratedPasswordSecretType    = corev1.SecretTypeBasicAuth
+	GeneratedPasswordUserKey       = "user"
+	GeneratedPasswordUsernameKey   = "username"
+	GeneratedPasswordUsername      = "default"
+	GeneratedPasswordHostKey       = "host"
+	GeneratedPasswordPortKey       = "port"
+	GeneratedPasswordURIKey        = "uri"
+	GeneratedPasswordFQDNURIKey    = "fqdn-uri"
+	DefaultKubernetesClusterDomain = "cluster.local"
 )
 
 var DefaultDragonflyArgs = []string{

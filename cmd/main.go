@@ -44,6 +44,7 @@ import (
 
 	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/controller"
+	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -71,9 +72,11 @@ func main() {
 	var versionFlag bool
 	var watchCurrentNamespace bool
 	var dragonflyImage string
+	var clusterDomain string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.StringVar(&dragonflyImage, "dragonfly-image", "", "The default dragonfly image to use.")
+	flag.StringVar(&clusterDomain, "cluster-domain", resources.DefaultKubernetesClusterDomain, "The Kubernetes cluster DNS domain.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -159,6 +162,7 @@ func main() {
 			EventRecorder:         eventRecorder,
 			DefaultDragonflyImage: dragonflyImage,
 			OperatorNamespace:     operatorNamespace,
+			ClusterDomain:         clusterDomain,
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Dragonfly")
@@ -172,6 +176,7 @@ func main() {
 			EventRecorder:         eventRecorder,
 			DefaultDragonflyImage: dragonflyImage,
 			OperatorNamespace:     operatorNamespace,
+			ClusterDomain:         clusterDomain,
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Health")

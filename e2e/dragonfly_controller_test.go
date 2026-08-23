@@ -1041,6 +1041,158 @@ var _ = Describe("Dragonfly with additional container and volume", Ordered, Flak
 	})
 })
 
+var _ = Describe("Dragonfly auto-created password secret", Ordered, FlakeAttempts(3), func() {
+	ctx := context.Background()
+	name := "df-auto-password"
+	namespace := "default"
+
+	df := resourcesv1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: resourcesv1.DragonflySpec{
+			Replicas: 1,
+			Authentication: &resourcesv1.Authentication{
+				AutoCreatePasswordSecret: true,
+			},
+		},
+	}
+
+	Context("Generated secret lifecycle", func() {
+		It("creates the cluster and generated secret", func() {
+			Expect(k8sClient.Create(ctx, &df)).To(Succeed())
+			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseResourcesCreated, 2*time.Minute)).To(Succeed())
+			Expect(waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)).To(Succeed())
+			Expect(waitForMasterPod(ctx, k8sClient, name, namespace, 2*time.Minute)).To(Succeed())
+		})
+
+		It("creates a basic auth secret and uses it for connectivity", func() {
+			var secret corev1.Secret
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: name + "-password", Namespace: namespace}, &secret)
+			}, 1*time.Minute, 2*time.Second).Should(Succeed())
+
+			Expect(secret.Type).To(Equal(corev1.SecretTypeBasicAuth))
+			Expect(secret.Data).To(HaveKey("username"))
+			Expect(secret.Data).To(HaveKey("user"))
+			Expect(secret.Data).To(HaveKey("password"))
+			Expect(secret.Data).To(HaveKey("host"))
+			Expect(secret.Data).To(HaveKey("port"))
+			Expect(secret.Data).To(HaveKey("uri"))
+			Expect(secret.Data).To(HaveKey("fqdn-uri"))
+			Expect(string(secret.Data["username"])).To(Equal("default"))
+			Expect(string(secret.Data["user"])).To(Equal("default"))
+			Expect(string(secret.Data["host"])).To(Equal(name))
+			Expect(string(secret.Data["port"])).To(Equal("6379"))
+			Expect(string(secret.Data["uri"])).To(ContainSubstring("redis://default:"))
+			Expect(string(secret.Data["uri"])).To(ContainSubstring("@" + name + ".default:6379"))
+			Expect(string(secret.Data["fqdn-uri"])).To(ContainSubstring("@" + name + ".default.svc.cluster.local:6379"))
+
+			stopChan := make(chan struct{}, 1)
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, string(secret.Data["password"]), 6397)
+			Expect(err).To(BeNil())
+			defer close(stopChan)
+			defer rc.Close()
+
+			Expect(rc.Set(ctx, "auto-secret", "ok", 0).Err()).To(BeNil())
+		})
+
+		It("rolls the cluster when the generated password changes", func() {
+			var statefulSet appsv1.StatefulSet
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, &statefulSet)).To(Succeed())
+			oldHash := statefulSet.Spec.Template.Annotations[resources.GeneratedPasswordHashAnnotationKey]
+			Expect(oldHash).NotTo(BeEmpty())
+
+			var pods corev1.PodList
+			Expect(k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+				resources.DragonflyNameLabelKey: name,
+			})).To(Succeed())
+			Expect(pods.Items).To(HaveLen(1))
+			oldPodUID := pods.Items[0].UID
+
+			var secret corev1.Secret
+			secretKey := types.NamespacedName{Name: name + "-password", Namespace: namespace}
+			Expect(k8sClient.Get(ctx, secretKey, &secret)).To(Succeed())
+			secret.Data[resources.GeneratedPasswordSecretKey] = []byte("rotated-password")
+			Expect(k8sClient.Update(ctx, &secret)).To(Succeed())
+
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, &statefulSet)).To(Succeed())
+				g.Expect(statefulSet.Spec.Template.Annotations[resources.GeneratedPasswordHashAnnotationKey]).NotTo(Equal(oldHash))
+			}, 1*time.Minute, 2*time.Second).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+					resources.DragonflyNameLabelKey: name,
+				})).To(Succeed())
+				g.Expect(pods.Items).To(HaveLen(1))
+				g.Expect(pods.Items[0].UID).NotTo(Equal(oldPodUID))
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+			Expect(waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)).To(Succeed())
+			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)).To(Succeed())
+			Expect(waitForMasterPod(ctx, k8sClient, name, namespace, 2*time.Minute)).To(Succeed())
+
+			stopChan := make(chan struct{}, 1)
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "rotated-password", 6397)
+			Expect(err).To(BeNil())
+			defer close(stopChan)
+			defer rc.Close()
+			Expect(rc.Set(ctx, "auto-secret-rotated", "ok", 0).Err()).To(BeNil())
+		})
+
+		It("retains the generated secret when disabled", func() {
+			var pods corev1.PodList
+			Expect(k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+				resources.DragonflyNameLabelKey: name,
+			})).To(Succeed())
+			Expect(pods.Items).To(HaveLen(1))
+			oldPodUID := pods.Items[0].UID
+
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, &df)).To(Succeed())
+			df.Spec.Authentication.AutoCreatePasswordSecret = false
+			Expect(k8sClient.Update(ctx, &df)).To(Succeed())
+
+			Eventually(func(g Gomega) {
+				var statefulSet appsv1.StatefulSet
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, &statefulSet)).To(Succeed())
+				g.Expect(statefulSet.Spec.Template.Annotations).NotTo(HaveKey(resources.GeneratedPasswordHashAnnotationKey))
+			}, 1*time.Minute, 2*time.Second).Should(Succeed())
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+					resources.DragonflyNameLabelKey: name,
+				})).To(Succeed())
+				g.Expect(pods.Items).To(HaveLen(1))
+				g.Expect(pods.Items[0].UID).NotTo(Equal(oldPodUID))
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+			Expect(waitForStatefulSetReady(ctx, k8sClient, name, namespace, 2*time.Minute)).To(Succeed())
+			Expect(waitForDragonflyPhase(ctx, k8sClient, name, namespace, controller.PhaseReady, 2*time.Minute)).To(Succeed())
+
+			Consistently(func() error {
+				var secret corev1.Secret
+				return k8sClient.Get(ctx, types.NamespacedName{Name: name + "-password", Namespace: namespace}, &secret)
+			}, 10*time.Second, 2*time.Second).Should(Succeed())
+
+			stopChan := make(chan struct{}, 1)
+			rc, err := checkAndK8sPortForwardRedis(ctx, clientset, cfg, stopChan, name, namespace, "", 6397)
+			Expect(err).To(BeNil())
+			defer close(stopChan)
+			defer rc.Close()
+			Expect(rc.Set(ctx, "auto-secret-disabled", "ok", 0).Err()).To(BeNil())
+		})
+
+		It("Cleanup", func() {
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, &df)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &df)).To(Succeed())
+			Eventually(func() bool {
+				var secret corev1.Secret
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: name + "-password", Namespace: namespace}, &secret)
+				return apierrors.IsNotFound(err)
+			}, 1*time.Minute, 2*time.Second).Should(BeTrue())
+		})
+	})
+})
+
 var _ = Describe("Dragonfly Server TLS tests", Ordered, FlakeAttempts(3), func() {
 	ctx := context.Background()
 	name := "df-tls"

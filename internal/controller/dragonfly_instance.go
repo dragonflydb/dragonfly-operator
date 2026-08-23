@@ -18,7 +18,12 @@ package controller
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
+	"maps"
 	"net"
 	"reflect"
 	"sort"
@@ -55,6 +60,7 @@ type DragonflyInstance struct {
 	eventRecorder         record.EventRecorder
 	defaultDragonflyImage string
 	operatorNamespace     string
+	clusterDomain         string
 	redisClients          map[string]*redis.Client
 }
 
@@ -621,6 +627,19 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to generate dragonfly resources: %w", err)
 	}
+
+	generatedPasswordHash, err := dfi.reconcilePasswordSecret(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to reconcile password secret: %w", err)
+	}
+	if generatedPasswordHash != "" {
+		for _, resource := range dfResources {
+			if statefulSet, ok := resource.(*appsv1.StatefulSet); ok {
+				statefulSet.Spec.Template.Annotations[resources.GeneratedPasswordHashAnnotationKey] = generatedPasswordHash
+				break
+			}
+		}
+	}
 	for _, desired := range dfResources {
 		dfi.log.Info("reconciling dragonfly resource", "kind", getGVK(desired, dfi.scheme).Kind, "namespace", desired.GetNamespace(), "Name", desired.GetName())
 
@@ -763,6 +782,148 @@ func copyDesiredPayload(desired, existing client.Object) {
 	if desiredSpec.IsValid() && existingSpec.IsValid() {
 		existingSpec.Set(desiredSpec)
 	}
+}
+
+func (dfi *DragonflyInstance) reconcilePasswordSecret(ctx context.Context) (string, error) {
+	autoCreateEnabled := dfi.df.Spec.Authentication != nil && dfi.df.Spec.Authentication.AutoCreatePasswordSecret
+	hasExplicitPasswordSecret := dfi.df.Spec.Authentication != nil && dfi.df.Spec.Authentication.PasswordFromSecret != nil
+
+	if hasExplicitPasswordSecret {
+		if err := dfi.validatePasswordSecretTransition(ctx); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
+	if !autoCreateEnabled {
+		return "", nil
+	}
+
+	secretName := resources.GetGeneratedPasswordSecretName(dfi.df)
+	var existing corev1.Secret
+	err := dfi.client.Get(ctx, client.ObjectKey{Namespace: dfi.df.Namespace, Name: secretName}, &existing)
+	secretExists := err == nil
+
+	password := ""
+	if secretExists {
+		if !metav1.IsControlledBy(&existing, dfi.df) {
+			return "", fmt.Errorf("secret %s already exists and is not controlled by Dragonfly %s", secretName, dfi.df.Name)
+		}
+		passwordBytes, ok := existing.Data[resources.GeneratedPasswordSecretKey]
+		if !ok || len(passwordBytes) == 0 {
+			return "", fmt.Errorf("generated password secret %s is missing %q", secretName, resources.GeneratedPasswordSecretKey)
+		}
+		password = string(passwordBytes)
+	} else if !apierrors.IsNotFound(err) {
+		return "", err
+	}
+
+	if password == "" {
+		password, err = generatePasswordSecretValue()
+		if err != nil {
+			return "", err
+		}
+	}
+
+	secretData := maps.Clone(existing.Data)
+	if secretData == nil {
+		secretData = map[string][]byte{}
+	}
+	maps.Copy(secretData, resources.BuildAuthSecretData(dfi.df, password, dfi.clusterDomain))
+	passwordHash := hashGeneratedPassword(password)
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        secretName,
+			Namespace:   dfi.df.Namespace,
+			Labels:      resources.GenerateOwnedResourceLabels(dfi.df),
+			Annotations: resources.GenerateOwnedResourceAnnotations(dfi.df),
+		},
+		Type: resources.GeneratedPasswordSecretType,
+		Data: secretData,
+	}
+
+	if err := controllerutil.SetControllerReference(dfi.df, secret, dfi.scheme); err != nil {
+		return "", fmt.Errorf("failed to set controller reference: %w", err)
+	}
+
+	if !secretExists {
+		if err := dfi.client.Create(ctx, secret); err != nil {
+			return "", err
+		}
+
+		dfi.log.Info("created generated password secret", "secret", secretName)
+		return passwordHash, nil
+	}
+
+	patch := client.MergeFrom(existing.DeepCopy())
+	oldType := existing.Type
+	oldData := existing.Data
+	oldLabels := existing.Labels
+	oldAnnotations := existing.Annotations
+	oldOwnerReferences := existing.OwnerReferences
+
+	existing.Type = secret.Type
+	existing.Data = secret.Data
+	existing.Labels = secret.Labels
+	existing.Annotations = secret.Annotations
+	existing.OwnerReferences = secret.OwnerReferences
+
+	if oldType == existing.Type &&
+		reflect.DeepEqual(oldData, existing.Data) &&
+		reflect.DeepEqual(oldLabels, existing.Labels) &&
+		reflect.DeepEqual(oldAnnotations, existing.Annotations) &&
+		reflect.DeepEqual(oldOwnerReferences, existing.OwnerReferences) {
+		return passwordHash, nil
+	}
+
+	if err := dfi.client.Patch(ctx, &existing, patch); err != nil {
+		return "", err
+	}
+
+	dfi.log.Info("updated generated password secret", "secret", secretName)
+	return passwordHash, nil
+}
+
+func (dfi *DragonflyInstance) validatePasswordSecretTransition(ctx context.Context) error {
+	var generated corev1.Secret
+	err := dfi.client.Get(ctx, client.ObjectKey{
+		Namespace: dfi.df.Namespace,
+		Name:      resources.GetGeneratedPasswordSecretName(dfi.df),
+	}, &generated)
+	if apierrors.IsNotFound(err) || (err == nil && !metav1.IsControlledBy(&generated, dfi.df)) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	selector := dfi.df.Spec.Authentication.PasswordFromSecret
+	if selector.Name == "" || selector.Key == "" {
+		return fmt.Errorf("passwordFromSecret name and key must be set before replacing generated credentials")
+	}
+
+	var explicit corev1.Secret
+	if err := dfi.client.Get(ctx, client.ObjectKey{Namespace: dfi.df.Namespace, Name: selector.Name}, &explicit); err != nil {
+		return fmt.Errorf("cannot replace generated credentials: %w", err)
+	}
+	if value, ok := explicit.Data[selector.Key]; !ok || len(value) == 0 {
+		return fmt.Errorf("cannot replace generated credentials: secret %s is missing non-empty key %q", selector.Name, selector.Key)
+	}
+	return nil
+}
+
+func hashGeneratedPassword(password string) string {
+	digest := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(digest[:])
+}
+
+func generatePasswordSecretValue() (string, error) {
+	payload := make([]byte, 24)
+	if _, err := rand.Read(payload); err != nil {
+		return "", fmt.Errorf("failed to generate password: %w", err)
+	}
+
+	return base64.RawURLEncoding.EncodeToString(payload), nil
 }
 
 // Helper function to compare resource specs (add to the file)

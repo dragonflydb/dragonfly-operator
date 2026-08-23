@@ -305,6 +305,14 @@ type Snapshot struct {
 }
 
 type Authentication struct {
+	// (Optional) When enabled, the operator auto-creates the password Secret.
+	// If passwordFromSecret is omitted, the Secret name defaults to <cluster-name>-password
+	// and the key defaults to "password". The generated Secret is retained if this is
+	// later disabled and is garbage-collected when the Dragonfly resource is deleted.
+	// +optional
+	// +kubebuilder:validation:Optional
+	AutoCreatePasswordSecret bool `json:"autoCreatePasswordSecret,omitempty"`
+
 	// (Optional) Dragonfly Password from Secret as a reference to a specific key
 	// +optional
 	PasswordFromSecret *corev1.SecretKeySelector `json:"passwordFromSecret,omitempty"`

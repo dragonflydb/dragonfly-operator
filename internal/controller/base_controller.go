@@ -33,6 +33,7 @@ type Reconciler struct {
 	EventRecorder         record.EventRecorder
 	DefaultDragonflyImage string
 	OperatorNamespace     string
+	ClusterDomain         string
 }
 
 func (r *Reconciler) getDragonflyInstance(ctx context.Context, namespacedName types.NamespacedName, log logr.Logger) (*DragonflyInstance, error) {
@@ -51,5 +52,6 @@ func (r *Reconciler) getDragonflyInstance(ctx context.Context, namespacedName ty
 		eventRecorder:         r.EventRecorder,
 		defaultDragonflyImage: r.DefaultDragonflyImage,
 		operatorNamespace:     r.OperatorNamespace,
+		clusterDomain:         r.ClusterDomain,
 	}, nil
 }

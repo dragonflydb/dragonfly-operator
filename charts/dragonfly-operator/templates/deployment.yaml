@@ -71,6 +71,7 @@ spec:
             - /manager
           args:
             - --leader-elect
+            - --cluster-domain={{ .Values.clusterDomain }}
             {{- if .Values.dragonflyImage }}
             - --dragonfly-image={{ .Values.dragonflyImage }}
             {{- end }}

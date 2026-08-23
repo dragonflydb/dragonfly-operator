@@ -4225,6 +4225,13 @@ spec:
               authentication:
                 description: (Optional) Dragonfly Authentication mechanism
                 properties:
+                  autoCreatePasswordSecret:
+                    description: |-
+                      (Optional) When enabled, the operator auto-creates the password Secret.
+                      If passwordFromSecret is omitted, the Secret name defaults to <cluster-name>-password
+                      and the key defaults to "password". The generated Secret is retained if this is
+                      later disabled and is garbage-collected when the Dragonfly resource is deleted.
+                    type: boolean
                   clientCaCertSecret:
                     description: |-
                       (Optional) If specified, the Dragonfly instance will check if the
