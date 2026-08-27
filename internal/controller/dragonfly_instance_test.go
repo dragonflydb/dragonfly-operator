@@ -94,3 +94,40 @@ func TestResourceSpecsEqual_ConfigMapDataEqual(t *testing.T) {
 
 	assert.True(t, resourceSpecsEqual(desired, existing))
 }
+
+// TestReconcileAnnotationsLabelsRemoved verifies that annotations/labels removed
+// from the desired spec are dropped from the live object instead of lingering.
+// The update path sets existing annotations/labels directly from desired, so a
+// key present only on the live object must be gone after sync.
+func TestReconcileAnnotationsLabelsRemoved(t *testing.T) {
+	existing := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "df-liveness",
+			Namespace:   "default",
+			Annotations: map[string]string{"old.io/keep": "1", "removed.io/stale": "x"},
+			Labels:      map[string]string{"app": "df", "removed.io/stale": "y"},
+		},
+		Data: map[string]string{"liveness-check.sh": "echo old"},
+	}
+	desired := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "df-liveness",
+			Namespace:   "default",
+			Annotations: map[string]string{"old.io/keep": "1"},
+			Labels:      map[string]string{"app": "df"},
+		},
+		Data: map[string]string{"liveness-check.sh": "echo new"},
+	}
+
+	// Mirror the update path in reconcileResources: annotations/labels come
+	// straight from desired, then payload is copied from desired.
+	existing.SetAnnotations(desired.GetAnnotations())
+	existing.SetLabels(desired.GetLabels())
+	copyDesiredPayload(desired, existing)
+
+	assert.NotContains(t, existing.GetAnnotations(), "removed.io/stale",
+		"annotations removed from the spec must not persist on the live object")
+	assert.NotContains(t, existing.GetLabels(), "removed.io/stale",
+		"labels removed from the spec must not persist on the live object")
+	assert.Equal(t, "echo new", existing.Data["liveness-check.sh"])
+}

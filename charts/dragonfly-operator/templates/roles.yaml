@@ -39,4 +39,131 @@ rules:
     verbs:
       - create
       - patch
+{{- if .Values.watchNamespaces }}
+{{- range $ns := splitList "," .Values.watchNamespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "dragonfly-operator.fullname" $ }}-manager-role
+  namespace: {{ $ns | trim }}
+  labels:
+    {{- include "dragonfly-operator.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: rbac
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - statefulsets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - policy
+    resources:
+      - poddisruptionbudgets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - networkpolicies
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - dragonflydb.io
+    resources:
+      - dragonflies
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - dragonflydb.io
+    resources:
+      - dragonflies/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - dragonflydb.io
+    resources:
+      - dragonflies/status
+    verbs:
+      - get
+      - patch
+      - update
+{{- end }}
+{{- end }}
 
