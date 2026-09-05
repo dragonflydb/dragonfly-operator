@@ -18,6 +18,7 @@ package controller
 
 import (
 	"testing"
+	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	corev1 "k8s.io/api/core/v1"
@@ -151,6 +152,82 @@ func TestSelectMasterCandidate(t *testing.T) {
 
 			if got.Name != tc.wantName {
 				t.Errorf("expected pod %q, got %q", tc.wantName, got.Name)
+			}
+		})
+	}
+}
+
+func TestClientListenerAddress(t *testing.T) {
+	tests := []struct {
+		name  string
+		podIp string
+		want  string
+	}{
+		{
+			name:  "ipv4",
+			podIp: "10.42.1.7",
+			want:  "10.42.1.7:6379",
+		},
+		{
+			name:  "ipv6",
+			podIp: "fd00::1",
+			want:  "fd00::1:6379",
+		},
+		{
+			name:  "bracketed ipv6",
+			podIp: "[fd00::1]",
+			want:  "fd00::1:6379",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := clientListenerAddress(tc.podIp); got != tc.want {
+				t.Errorf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestPendingClientDisconnectSince(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		wantPending bool
+		wantExpired bool
+	}{
+		{
+			name:        "no annotation",
+			wantPending: false,
+		},
+		{
+			name:        "valid timestamp",
+			annotations: map[string]string{resources.PendingClientDisconnectAnnotationKey: time.Now().UTC().Format(time.RFC3339)},
+			wantPending: true,
+			wantExpired: false,
+		},
+		{
+			name:        "unparsable value",
+			annotations: map[string]string{resources.PendingClientDisconnectAnnotationKey: "true"},
+			wantPending: true,
+			wantExpired: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pod := corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "df-0", Annotations: tc.annotations}}
+
+			demotedAt, pending := pendingClientDisconnectSince(&pod)
+			if pending != tc.wantPending {
+				t.Fatalf("expected pending %v, got %v", tc.wantPending, pending)
+			}
+			if !pending {
+				return
+			}
+
+			if expired := time.Since(demotedAt) >= clientDisconnectTimeout; expired != tc.wantExpired {
+				t.Errorf("expected expired %v, got %v", tc.wantExpired, expired)
 			}
 		})
 	}
