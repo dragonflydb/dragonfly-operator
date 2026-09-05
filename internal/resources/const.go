@@ -89,6 +89,7 @@ const (
 
 	MasterIpAnnotationKey = "operator.dragonflydb.io/masterIP"
 
+	// PendingClientDisconnectAnnotationKey holds the RFC3339 demotion time of a pod owing a disconnect.
 	PendingClientDisconnectAnnotationKey = "operator.dragonflydb.io/pendingClientDisconnect"
 
 	RoleLabelKey = "role"

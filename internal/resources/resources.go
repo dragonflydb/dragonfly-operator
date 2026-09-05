@@ -126,6 +126,15 @@ func generateProbeConfigMap(df *resourcesv1.Dragonfly, name, key, script string)
 	}
 }
 
+// MasterServiceName returns the name of the service that selects the master pod.
+func MasterServiceName(df *resourcesv1.Dragonfly) string {
+	if df.Spec.ServiceSpec != nil && df.Spec.ServiceSpec.Name != "" {
+		return df.Spec.ServiceSpec.Name
+	}
+
+	return df.Name
+}
+
 // GenerateDragonflyResources returns the resources required for a Dragonfly
 // Instance
 func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage, operatorNamespace string) ([]client.Object, error) {
@@ -569,14 +578,9 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 
 	resources = append(resources, &statefulset)
 
-	serviceName := df.Name
-	if df.Spec.ServiceSpec != nil && df.Spec.ServiceSpec.Name != "" {
-		serviceName = df.Spec.ServiceSpec.Name
-	}
-
 	service := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName,
+			Name:      MasterServiceName(df),
 			Namespace: df.Namespace,
 			// Useful for automatically deleting the resources when the Dragonfly object is deleted
 			OwnerReferences: []metav1.OwnerReference{

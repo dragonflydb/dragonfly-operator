@@ -33,6 +33,7 @@ import (
 	"github.com/redis/go-redis/v9/maintnotifications"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -479,6 +480,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	}
 
 	if wasMaster {
+		// Too early to disconnect: the master service still routes to this pod.
 		if err := dfi.setPendingClientDisconnect(ctx, pod, true); err != nil {
 			return fmt.Errorf("could not mark pod for client disconnect: %w", err)
 		}
@@ -522,21 +524,71 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		return fmt.Errorf("could not update replica metadata: %w", err)
 	}
 
-	if wasMaster {
-		// Prevent clients from sending commands to this old master
-		if err := dfi.disconnectClients(ctx, pod); err != nil {
-			dfi.log.Error(err, "failed to disconnect clients, will retry", "pod", pod.Name)
-			// Returning an error here would abort the caller's loop over the remaining pods.
-			// The annotation stays set, the next reconcile retries.
-			return nil
-		}
+	return nil
+}
 
-		if err := dfi.setPendingClientDisconnect(ctx, pod, false); err != nil {
-			return fmt.Errorf("could not clear the client disconnect marker: %w", err)
+// clientDisconnectTimeout stops a stalled EndpointSlice controller from blocking the disconnect.
+const clientDisconnectTimeout = 30 * time.Second
+
+// reconcileClientDisconnect disconnects a demoted pod's clients once it has left the
+// master service's endpoint slices.
+func (dfi *DragonflyInstance) reconcileClientDisconnect(ctx context.Context, pod *corev1.Pod) (ctrl.Result, error) {
+	demotedAt, pending := pendingClientDisconnectSince(pod)
+	if !pending {
+		return ctrl.Result{}, nil
+	}
+
+	if isMaster(pod) {
+		// Promoted again before the disconnect ran, so it is no longer owed.
+		return ctrl.Result{}, dfi.setPendingClientDisconnect(ctx, pod, false)
+	}
+
+	if pod.Status.PodIP == "" {
+		// The pod lost its address, so the connections went with it.
+		return ctrl.Result{}, dfi.setPendingClientDisconnect(ctx, pod, false)
+	}
+
+	inEndpoints, err := dfi.inMasterServiceEndpoints(ctx, pod)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if inEndpoints {
+		if waited := time.Since(demotedAt); waited < clientDisconnectTimeout {
+			dfi.log.Info("waiting for the demoted pod to leave the master service", "pod", pod.Name, "waited", waited)
+			return ctrl.Result{RequeueAfter: clientDisconnectTimeout - waited}, nil
+		}
+		dfi.log.Info("master service still lists the demoted pod, disconnecting clients anyway",
+			"pod", pod.Name, "timeout", clientDisconnectTimeout)
+	}
+
+	if err := dfi.disconnectClients(ctx, pod); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to disconnect the clients of demoted pod %s: %w", pod.Name, err)
+	}
+
+	return ctrl.Result{}, dfi.setPendingClientDisconnect(ctx, pod, false)
+}
+
+// inMasterServiceEndpoints reports whether the pod is still listed in the master
+// service's endpoint slices. Node data planes converge on their own after that.
+func (dfi *DragonflyInstance) inMasterServiceEndpoints(ctx context.Context, pod *corev1.Pod) (bool, error) {
+	var endpointSlices discoveryv1.EndpointSliceList
+	if err := dfi.client.List(ctx, &endpointSlices,
+		client.InNamespace(dfi.df.Namespace),
+		client.MatchingLabels{discoveryv1.LabelServiceName: resources.MasterServiceName(dfi.df)},
+	); err != nil {
+		return false, fmt.Errorf("failed to list the endpoint slices of the master service: %w", err)
+	}
+
+	for _, endpointSlice := range endpointSlices.Items {
+		for _, endpoint := range endpointSlice.Endpoints {
+			if endpointTargetsPod(endpoint, pod) {
+				return true, nil
+			}
 		}
 	}
 
-	return nil
+	return false, nil
 }
 
 // replicaOfNoOne configures the pod as a master along while updating other pods to be replicas
@@ -608,7 +660,7 @@ func (dfi *DragonflyInstance) setPendingClientDisconnect(ctx context.Context, po
 		if pod.Annotations == nil {
 			pod.Annotations = make(map[string]string)
 		}
-		pod.Annotations[resources.PendingClientDisconnectAnnotationKey] = "true"
+		pod.Annotations[resources.PendingClientDisconnectAnnotationKey] = time.Now().UTC().Format(time.RFC3339)
 	} else {
 		delete(pod.Annotations, resources.PendingClientDisconnectAnnotationKey)
 	}

@@ -20,12 +20,15 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -199,12 +202,28 @@ func clientListenerAddress(podIp string) string {
 	return sanitizeIp(podIp) + ":" + strconv.Itoa(resources.DragonflyPort)
 }
 
-func needsClientDisconnect(pod *corev1.Pod) bool {
-	if pod.Annotations[resources.PendingClientDisconnectAnnotationKey] != "true" {
-		return false
+// pendingClientDisconnectSince returns the demotion time; an unparsable value reads as long expired.
+func pendingClientDisconnectSince(pod *corev1.Pod) (time.Time, bool) {
+	demotedAt, ok := pod.Annotations[resources.PendingClientDisconnectAnnotationKey]
+	if !ok {
+		return time.Time{}, false
 	}
 
-	return !isMaster(pod)
+	parsed, err := time.Parse(time.RFC3339, demotedAt)
+	if err != nil {
+		return time.Time{}, true
+	}
+
+	return parsed, true
+}
+
+// endpointTargetsPod reports whether a service endpoint routes to the pod.
+func endpointTargetsPod(endpoint discoveryv1.Endpoint, pod *corev1.Pod) bool {
+	if ref := endpoint.TargetRef; ref != nil && ref.Kind == "Pod" {
+		return ref.Name == pod.Name
+	}
+
+	return slices.Contains(endpoint.Addresses, pod.Status.PodIP)
 }
 
 // getOrdinal returns the ordinal of the pod.

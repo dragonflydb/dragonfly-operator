@@ -24,12 +24,16 @@ import (
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 type DfPodLifeCycleReconciler struct {
@@ -39,6 +43,7 @@ type DfPodLifeCycleReconciler struct {
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -71,15 +76,10 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	defer dfi.Close()
 
-	if needsClientDisconnect(&pod) {
-		if err := dfi.disconnectClients(ctx, &pod); err != nil {
-			log.Error(err, "failed to disconnect clients, will retry", "pod", pod.Name)
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-		}
-
-		if err := dfi.setPendingClientDisconnect(ctx, &pod, false); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to clear the client disconnect marker: %w", err)
-		}
+	// Returning early only defers this pod's own reconcile; master election is
+	// driven by every pod's events, not just this one.
+	if result, err := dfi.reconcileClientDisconnect(ctx, &pod); !result.IsZero() || err != nil {
+		return result, err
 	}
 
 	podReady, readinessErr := dfi.isPodReady(ctx, &pod)
@@ -214,10 +214,29 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, nil
 }
 
+// pendingClientDisconnectIndex keeps the endpoint slice handler off a full pod scan.
+const pendingClientDisconnectIndex = "pendingClientDisconnect"
+
+func indexPendingClientDisconnect(obj client.Object) []string {
+	if _, pending := pendingClientDisconnectSince(obj.(*corev1.Pod)); !pending {
+		return nil
+	}
+
+	return []string{"true"}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *DfPodLifeCycleReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &corev1.Pod{},
+		pendingClientDisconnectIndex, indexPendingClientDisconnect); err != nil {
+		return fmt.Errorf("failed to index pods pending a client disconnect: %w", err)
+	}
+
+	// This predicate reads pod labels, so it must stay scoped to the pod source
+	// rather than going back to WithEventFilter, which also covers the slices below.
 	return ctrl.NewControllerManagedBy(mgr).
-		WithEventFilter(
+		Named("DragonflyPodLifecycle").
+		For(&corev1.Pod{}, builder.WithPredicates(
 			predicate.Funcs{
 				UpdateFunc: func(e event.UpdateEvent) bool {
 					return e.ObjectNew.GetLabels()[resources.KubernetesAppNameLabelKey] == resources.KubernetesAppName
@@ -228,8 +247,30 @@ func (r *DfPodLifeCycleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				DeleteFunc: func(e event.DeleteEvent) bool {
 					return e.Object.GetLabels()[resources.KubernetesAppNameLabelKey] == resources.KubernetesAppName
 				},
-			}).
-		Named("DragonflyPodLifecycle").
-		For(&corev1.Pod{}).
+			})).
+		Watches(&discoveryv1.EndpointSlice{}, handler.EnqueueRequestsFromMapFunc(r.podsAwaitingClientDisconnect)).
 		Complete(r)
+}
+
+// podsAwaitingClientDisconnect enqueues the demoted pods of the namespace whose endpoints changed.
+func (r *DfPodLifeCycleReconciler) podsAwaitingClientDisconnect(ctx context.Context, endpointSlice client.Object) []reconcile.Request {
+	if _, ok := endpointSlice.GetLabels()[discoveryv1.LabelServiceName]; !ok {
+		return nil
+	}
+
+	var pods corev1.PodList
+	if err := r.Client.List(ctx, &pods,
+		client.InNamespace(endpointSlice.GetNamespace()),
+		client.MatchingFields{pendingClientDisconnectIndex: "true"},
+	); err != nil {
+		log.FromContext(ctx).Error(err, "failed to list the pods pending a client disconnect")
+		return nil
+	}
+
+	requests := make([]reconcile.Request, 0, len(pods.Items))
+	for i := range pods.Items {
+		requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&pods.Items[i])})
+	}
+
+	return requests
 }

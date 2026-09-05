@@ -18,6 +18,7 @@ package controller
 
 import (
 	"testing"
+	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	corev1 "k8s.io/api/core/v1"
@@ -188,54 +189,45 @@ func TestClientListenerAddress(t *testing.T) {
 	}
 }
 
-func TestNeedsClientDisconnect(t *testing.T) {
+func TestPendingClientDisconnectSince(t *testing.T) {
 	tests := []struct {
 		name        string
 		annotations map[string]string
-		labels      map[string]string
-		want        bool
+		wantPending bool
+		wantExpired bool
 	}{
 		{
-			name: "no annotations",
-			want: false,
+			name:        "no annotation",
+			wantPending: false,
 		},
 		{
-			name:        "marked and demoted",
+			name:        "valid timestamp",
+			annotations: map[string]string{resources.PendingClientDisconnectAnnotationKey: time.Now().UTC().Format(time.RFC3339)},
+			wantPending: true,
+			wantExpired: false,
+		},
+		{
+			name:        "unparsable value",
 			annotations: map[string]string{resources.PendingClientDisconnectAnnotationKey: "true"},
-			labels:      map[string]string{resources.RoleLabelKey: resources.Replica},
-			want:        true,
-		},
-		{
-			name:        "marked without a role label",
-			annotations: map[string]string{resources.PendingClientDisconnectAnnotationKey: "true"},
-			want:        true,
-		},
-		{
-			name:        "marked but promoted again",
-			annotations: map[string]string{resources.PendingClientDisconnectAnnotationKey: "true"},
-			labels:      map[string]string{resources.RoleLabelKey: resources.Master},
-			want:        false,
-		},
-		{
-			name:        "unrelated annotation",
-			annotations: map[string]string{resources.MasterIpAnnotationKey: "10.42.1.7"},
-			labels:      map[string]string{resources.RoleLabelKey: resources.Replica},
-			want:        false,
+			wantPending: true,
+			wantExpired: true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			pod := corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "df-0",
-					Labels:      tc.labels,
-					Annotations: tc.annotations,
-				},
+			pod := corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "df-0", Annotations: tc.annotations}}
+
+			demotedAt, pending := pendingClientDisconnectSince(&pod)
+			if pending != tc.wantPending {
+				t.Fatalf("expected pending %v, got %v", tc.wantPending, pending)
+			}
+			if !pending {
+				return
 			}
 
-			if got := needsClientDisconnect(&pod); got != tc.want {
-				t.Errorf("expected %v, got %v", tc.want, got)
+			if expired := time.Since(demotedAt) >= clientDisconnectTimeout; expired != tc.wantExpired {
+				t.Errorf("expected expired %v, got %v", tc.wantExpired, expired)
 			}
 		})
 	}
