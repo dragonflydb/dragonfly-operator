@@ -35,6 +35,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -655,7 +656,7 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		// the change is silently dropped here — a delete+recreate is required.
 		if stsDesired, ok := desired.(*appsv1.StatefulSet); ok {
 			if stsExisting, ok := existing.(*appsv1.StatefulSet); ok {
-				if !reflect.DeepEqual(stsDesired.Spec.VolumeClaimTemplates, stsExisting.Spec.VolumeClaimTemplates) {
+				if !volumeClaimTemplatesEqual(stsDesired.Spec.VolumeClaimTemplates, stsExisting.Spec.VolumeClaimTemplates) {
 					dfi.log.Info("VolumeClaimTemplates change detected but cannot be applied to an existing StatefulSet; delete and recreate the Dragonfly instance to change PVC configuration",
 						"resource", stsDesired.Name)
 					dfi.eventRecorder.Event(dfi.df, corev1.EventTypeWarning, "ImmutableField",
@@ -763,6 +764,39 @@ func copyDesiredPayload(desired, existing client.Object) {
 	if desiredSpec.IsValid() && existingSpec.IsValid() {
 		existingSpec.Set(desiredSpec)
 	}
+}
+
+// volumeClaimTemplatesEqual compares only the fields the operator sets on
+// VolumeClaimTemplates, ignoring fields populated by the API server
+// (TypeMeta, status, defaulted volumeMode).
+func volumeClaimTemplatesEqual(desired, existing []corev1.PersistentVolumeClaim) bool {
+	if len(desired) != len(existing) {
+		return false
+	}
+	for i := range desired {
+		d, e := &desired[i], &existing[i]
+		if d.Name != e.Name {
+			return false
+		}
+		if !equality.Semantic.DeepEqual(d.Labels, e.Labels) ||
+			!equality.Semantic.DeepEqual(d.Annotations, e.Annotations) {
+			return false
+		}
+		if !equality.Semantic.DeepEqual(defaultedPVCSpec(d.Spec), defaultedPVCSpec(e.Spec)) {
+			return false
+		}
+	}
+	return true
+}
+
+// defaultedPVCSpec applies the API server defaults to a PVC spec.
+func defaultedPVCSpec(spec corev1.PersistentVolumeClaimSpec) corev1.PersistentVolumeClaimSpec {
+	out := *spec.DeepCopy()
+	if out.VolumeMode == nil {
+		fs := corev1.PersistentVolumeFilesystem
+		out.VolumeMode = &fs
+	}
+	return out
 }
 
 // Helper function to compare resource specs (add to the file)
