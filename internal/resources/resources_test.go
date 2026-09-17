@@ -637,3 +637,22 @@ func TestProbeVolumes_CustomConfigMapOverride(t *testing.T) {
 		})
 	}
 }
+
+func TestGenerateDragonflyResources_ServiceLinksDisabled(t *testing.T) {
+	df := newTestDragonfly(1)
+
+	resources, err := GenerateDragonflyResources(df, "", "")
+	require.NoError(t, err)
+
+	for _, obj := range resources {
+		if sts, ok := obj.(*appsv1.StatefulSet); ok {
+			enabled := sts.Spec.Template.Spec.EnableServiceLinks
+			require.NotNil(t, enabled,
+				"EnableServiceLinks must be set explicitly; nil defaults to true and lets the "+
+					"kubelet inject DFLY_-prefixed service variables that the server rejects as flags")
+			assert.False(t, *enabled, "service links should be disabled")
+			return
+		}
+	}
+	t.Fatal("StatefulSet not found in generated resources")
+}

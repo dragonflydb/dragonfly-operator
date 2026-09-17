@@ -27,6 +27,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -200,6 +201,13 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 				},
 				Spec: corev1.PodSpec{
 					ImagePullSecrets: df.Spec.ImagePullSecrets,
+					// The kubelet projects a variable for every Service in the namespace,
+					// and Dragonfly reads DFLY_-prefixed variables as flags and exits on
+					// one it does not recognize. A Service named dfly-* therefore stops
+					// every Dragonfly pod in the namespace from starting, whatever the
+					// instance is called. Nothing the kubelet injects can parse as a flag,
+					// so none of these variables are useful here.
+					EnableServiceLinks: ptr.To(false),
 					Containers: []corev1.Container{
 						{
 							Name:  DragonflyContainerName,
