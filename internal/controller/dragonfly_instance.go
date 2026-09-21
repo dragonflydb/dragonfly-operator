@@ -813,6 +813,10 @@ func (dfi *DragonflyInstance) isDatasetLoaded(ctx context.Context, pod *corev1.P
 
 	redisClient := dfi.getRedisClient(pod.Status.PodIP)
 
+	// Bound the call so an unreachable pod does not block the reconciler on dial retries
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
 	persistenceInfo, err := redisClient.Info(ctx, "persistence").Result()
 	if err != nil {
 		return false, err
