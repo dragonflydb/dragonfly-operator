@@ -37,6 +37,7 @@ const (
 	PhaseReady            string = "Ready"
 	PhaseRollingUpdate    string = "RollingUpdate"
 	PhaseConfiguring      string = "Configuring"
+	PhaseNotReady         string = "NotReady"
 	// PhaseReadyOld TODO: remove this in a future release.
 	PhaseReadyOld string = "ready"
 )
