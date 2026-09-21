@@ -74,6 +74,9 @@ func (dfi *DragonflyInstance) getRedisClient(podIP string) *redis.Client {
 		DialTimeout:  10 * time.Second,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
+		// The reconciler requeues on failure; client retries only stall the worker.
+		MaxRetries:    -1,
+		DialerRetries: 1,
 		MaintNotificationsConfig: &maintnotifications.Config{
 			Mode: maintnotifications.ModeDisabled,
 		},
