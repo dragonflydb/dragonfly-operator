@@ -77,15 +77,6 @@ jobs:
       - name: Install helm
         uses: azure/setup-helm@v5
 
-      - name: Push Helm chart as OCI to Github
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-          helm registry login -u ${{ github.actor }} --password-stdin ghcr.io
-
-          helm package charts/dragonfly-operator
-
-          helm push dragonfly-operator-${{ env.VERSION }}.tgz oci://ghcr.io/dragonflydb/dragonfly-operator/helm
-
       - name: Build and Publish image into GHCR
         uses: docker/build-push-action@v7
         with:
@@ -100,6 +91,15 @@ jobs:
           DOCKER_BUILDKIT: 1
           DOCKER_USERNAME: ${{ github.actor }}
           DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Helm chart as OCI to Github
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+          helm registry login -u ${{ github.actor }} --password-stdin ghcr.io
+
+          helm package charts/dragonfly-operator --app-version ${{ env.VERSION }}
+
+          helm push dragonfly-operator-${{ env.VERSION }}.tgz oci://ghcr.io/dragonflydb/dragonfly-operator/helm
 
       - name: publish github release
         uses: softprops/action-gh-release@v3
