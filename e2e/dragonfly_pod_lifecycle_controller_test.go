@@ -188,30 +188,29 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
 			Expect(err).To(BeNil())
 
-			// Check if there are relevant pods with expected roles
-			var pods corev1.PodList
-			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				resources.DragonflyNameLabelKey:    name,
-				resources.KubernetesPartOfLabelKey: "dragonfly",
-			})
-			Expect(err).To(BeNil())
+			// The new pod is labeled only after it becomes ready, so poll for the roles
+			Eventually(func() bool {
+				var pods corev1.PodList
+				err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+					resources.DragonflyNameLabelKey:    name,
+					resources.KubernetesPartOfLabelKey: "dragonfly",
+				})
+				if err != nil || len(pods.Items) != replicas {
+					return false
+				}
 
-			// 4 pod replicas = 1 master + 3 replicas
-			Expect(pods.Items).To(HaveLen(replicas))
+				podRoles := make(map[string][]string)
+				for _, pod := range pods.Items {
+					role, ok := pod.Labels[resources.RoleLabelKey]
+					if !ok {
+						return false
+					}
+					podRoles[role] = append(podRoles[role], pod.Name)
+				}
 
-			// Get the pods along with their roles
-			podRoles := make(map[string][]string)
-			for _, pod := range pods.Items {
-				role, ok := pod.Labels[resources.RoleLabelKey]
-				// error if there is no label
-				Expect(ok).To(BeTrue())
-				// verify the role to match the label
-				podRoles[role] = append(podRoles[role], pod.Name)
-			}
-
-			// One Master & Three Replicas
-			Expect(podRoles[resources.Master]).To(HaveLen(1))
-			Expect(podRoles[resources.Replica]).To(HaveLen(replicas - 1))
+				// One Master & Three Replicas
+				return len(podRoles[resources.Master]) == 1 && len(podRoles[resources.Replica]) == replicas-1
+			}, 1*time.Minute, 2*time.Second).Should(BeTrue())
 		})
 		It("Cleanup", func() {
 			var df dfv1alpha1.Dragonfly
