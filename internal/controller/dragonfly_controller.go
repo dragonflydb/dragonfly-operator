@@ -75,7 +75,7 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	dfiStatus := dfi.getStatus()
 
-	if dfiStatus.Phase == PhaseReady || dfiStatus.Phase == PhaseReadyOld {
+	if dfiStatus.Phase == PhaseReady || dfiStatus.Phase == PhaseReadyOld || dfiStatus.Phase == PhaseNotReady {
 		dfiStatus, err = dfi.detectRollingUpdate(ctx)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to detect rolling update: %w", err)
