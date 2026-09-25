@@ -35,6 +35,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -213,13 +214,28 @@ func getWatchNamespaceFromEnvVariable() string {
 	return ns
 }
 
+const defaultNamespace = "default"
+
 func getCurrentNamespace() string {
-	clientCfg, _ := clientcmd.NewDefaultClientConfigLoadingRules().Load()
-	ns := clientCfg.Contexts[clientCfg.CurrentContext].Namespace
-	if ns == "" {
-		ns = "default"
+	clientCfg, err := clientcmd.NewDefaultClientConfigLoadingRules().Load()
+	if err != nil {
+		setupLog.Error(err, "failed to load kubeconfig, falling back to the default namespace")
+		return defaultNamespace
 	}
-	return ns
+	return resolveCurrentNamespace(clientCfg)
+}
+
+func resolveCurrentNamespace(clientCfg *clientcmdapi.Config) string {
+	if clientCfg == nil {
+		return defaultNamespace
+	}
+
+	kubeContext, ok := clientCfg.Contexts[clientCfg.CurrentContext]
+	if !ok || kubeContext == nil || kubeContext.Namespace == "" {
+		return defaultNamespace
+	}
+
+	return kubeContext.Namespace
 }
 
 func addNamespacesToOpts(namespaces string, ops *ctrl.Options) error {
