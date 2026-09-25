@@ -42,15 +42,13 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 	namespace := "default"
 	replicas := 4
 
-	disabled := false
 	df := dfv1alpha1.Dragonfly{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
 		Spec: dfv1alpha1.DragonflySpec{
-			Replicas:             int32(replicas),
-			NetworkPolicyEnabled: &disabled,
+			Replicas: int32(replicas),
 		},
 	}
 
