@@ -528,6 +528,18 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
 	redisClient := dfi.getRedisClient(pod.Status.PodIP)
 
+	// Only a pod that is currently a replica is being promoted. This function also runs during
+	// initial master election, where the pod is already a master and its dataset (for example one
+	// restored from a snapshot) must be kept.
+	promoted := false
+	if dfi.df.Spec.FlushOnFailover {
+		hasMaster, err := dfi.hasMasterRole(ctx, redisClient)
+		if err != nil {
+			return fmt.Errorf("failed to get the role of pod %s: %w", pod.Name, err)
+		}
+		promoted = !hasMaster
+	}
+
 	dfi.log.Info("running SLAVE OF NO ONE command", "pod", pod.Name, "addr", redisClient.Options().Addr)
 	resp, err := redisClient.SlaveOf(ctx, "NO", "ONE").Result()
 	if err != nil {
@@ -536,6 +548,15 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 
 	if resp != "OK" {
 		return fmt.Errorf("response of `SLAVE OF NO ONE` on master is not OK: %s", resp)
+	}
+
+	// Flushed before the role label below is patched: the master Service selects on that label, so
+	// the promoted pod is not an endpoint of it yet and no client can read the stale dataset.
+	if promoted {
+		dfi.log.Info("flushing the promoted master", "pod", pod.Name)
+		if _, err := redisClient.FlushAll(ctx).Result(); err != nil {
+			return fmt.Errorf("failed to flush the promoted master %s: %w", pod.Name, err)
+		}
 	}
 
 	if dfi.df.Spec.Snapshot != nil && dfi.df.Spec.Snapshot.EnableOnMasterOnly {

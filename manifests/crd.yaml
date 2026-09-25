@@ -4633,6 +4633,13 @@ spec:
                   - name
                   type: object
                 type: array
+              flushOnFailover:
+                description: |-
+                  (Optional) When enabled, an instance that is promoted to master during an unplanned
+                  failover is flushed before it starts serving traffic. Use this for cache workloads that
+                  must not serve data which is stale relative to the master that was lost. Planned rolling
+                  updates promote through a coordinated takeover and are not affected.
+                type: boolean
               image:
                 description: Image is the Dragonfly image to use
                 type: string
