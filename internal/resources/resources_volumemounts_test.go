@@ -19,7 +19,7 @@ func TestAdditionalVolumeMounts(t *testing.T) {
 		{Name: "snapshots", MountPath: "/dragonfly/snapshots"},
 	}
 
-	objs, err := GenerateDragonflyResources(df, "", "dragonfly-operator-system")
+	objs, err := GenerateDragonflyResources(df, "")
 	require.NoError(t, err)
 	sts := findStatefulSet(objs)
 	require.NotNil(t, sts)
@@ -54,7 +54,7 @@ func TestAdditionalVolumeMountsNotAddedToAdditionalContainers(t *testing.T) {
 		{Name: "snapshots", MountPath: "/dragonfly/snapshots"},
 	}
 
-	objs, err := GenerateDragonflyResources(df, "", "dragonfly-operator-system")
+	objs, err := GenerateDragonflyResources(df, "")
 	require.NoError(t, err)
 	sts := findStatefulSet(objs)
 	require.NotNil(t, sts)
@@ -91,7 +91,7 @@ func TestAdditionalVolumeMountsReplaceOnCollision(t *testing.T) {
 		{Name: "custom", MountPath: "/custom"},
 	}
 
-	objs, err := GenerateDragonflyResources(df, "", "dragonfly-operator-system")
+	objs, err := GenerateDragonflyResources(df, "")
 	require.NoError(t, err)
 	sts := findStatefulSet(objs)
 	require.NotNil(t, sts)
