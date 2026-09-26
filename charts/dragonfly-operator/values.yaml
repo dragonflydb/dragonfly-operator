@@ -160,6 +160,21 @@ manager:
 #                values:
 #                  - linux
 
+# -- A [PodDisruptionBudget] for the operator pod, useful when running more
+# than one replica (replicaCount > 1) so voluntary disruptions (e.g. node
+# drains) keep at least one operator pod available.
+## Ref: https://kubernetes.io/docs/tasks/run-application/configure-pdb/
+podDisruptionBudget:
+  # When set true a PodDisruptionBudget is created for the operator pod
+  enabled: false
+  # minAvailable and maxUnavailable are mutually exclusive; minAvailable takes
+  # precedence when both are set. Each may be an integer or a percentage string.
+  minAvailable: 1
+  maxUnavailable: ""
+  # unhealthyPodEvictionPolicy controls how unhealthy pods are counted (requires
+  # Kubernetes 1.27+). Leave empty to use the cluster default (IfHealthyBudget).
+  unhealthyPodEvictionPolicy: ""
+
 serviceMonitor:
   # When set true then use a ServiceMonitor to configure scraping
   enabled: false

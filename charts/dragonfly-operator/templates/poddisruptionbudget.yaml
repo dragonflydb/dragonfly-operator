@@ -1,0 +1,24 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "dragonfly-operator.fullname" . }}-controller-manager-pod-disruption-budget
+  labels:
+    {{- include "dragonfly-operator.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+    control-plane: controller-manager
+  namespace: {{ include "dragonfly-operator.namespace" . }}
+spec:
+  {{- if not (kindIs "invalid" .Values.podDisruptionBudget.minAvailable) }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- else if .Values.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  {{- with .Values.podDisruptionBudget.unhealthyPodEvictionPolicy }}
+  unhealthyPodEvictionPolicy: {{ . }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "dragonfly-operator.selectorLabels" . | nindent 6 }}
+      control-plane: controller-manager
+{{- end }}

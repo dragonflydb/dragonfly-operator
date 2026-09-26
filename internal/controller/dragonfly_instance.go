@@ -33,8 +33,8 @@ import (
 	"github.com/redis/go-redis/v9/maintnotifications"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -54,7 +54,6 @@ type DragonflyInstance struct {
 	scheme                *runtime.Scheme
 	eventRecorder         record.EventRecorder
 	defaultDragonflyImage string
-	operatorNamespace     string
 	redisClients          map[string]*redis.Client
 }
 
@@ -73,6 +72,9 @@ func (dfi *DragonflyInstance) getRedisClient(podIP string) *redis.Client {
 		DialTimeout:  10 * time.Second,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
+		// The reconciler requeues on failure; client retries only stall the worker.
+		MaxRetries:    -1,
+		DialerRetries: 1,
 		MaintNotificationsConfig: &maintnotifications.Config{
 			Mode: maintnotifications.ModeDisabled,
 		},
@@ -617,9 +619,9 @@ func (dfi *DragonflyInstance) hasMasterRole(ctx context.Context, redisClient *re
 
 // reconcileResources creates or updates the dragonfly resources
 func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
-	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage, dfi.operatorNamespace)
+	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage)
 	if err != nil {
-		return fmt.Errorf("failed to generate dragonfly resources")
+		return fmt.Errorf("failed to generate dragonfly resources: %w", err)
 	}
 	for _, desired := range dfResources {
 		dfi.log.Info("reconciling dragonfly resource", "kind", getGVK(desired, dfi.scheme).Kind, "namespace", desired.GetNamespace(), "Name", desired.GetName())
@@ -655,7 +657,7 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		// the change is silently dropped here — a delete+recreate is required.
 		if stsDesired, ok := desired.(*appsv1.StatefulSet); ok {
 			if stsExisting, ok := existing.(*appsv1.StatefulSet); ok {
-				if !reflect.DeepEqual(stsDesired.Spec.VolumeClaimTemplates, stsExisting.Spec.VolumeClaimTemplates) {
+				if !volumeClaimTemplatesEqual(stsDesired.Spec.VolumeClaimTemplates, stsExisting.Spec.VolumeClaimTemplates) {
 					dfi.log.Info("VolumeClaimTemplates change detected but cannot be applied to an existing StatefulSet; delete and recreate the Dragonfly instance to change PVC configuration",
 						"resource", stsDesired.Name)
 					dfi.eventRecorder.Event(dfi.df, corev1.EventTypeWarning, "ImmutableField",
@@ -697,23 +699,14 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		}
 		// Update if specs differ
 		patch := client.MergeFrom(existing.DeepCopyObject().(client.Object))
-		existingAnnotations := existing.GetAnnotations()
-		if existingAnnotations == nil {
-			existingAnnotations = make(map[string]string)
-		}
-		for k, v := range desired.GetAnnotations() {
-			existingAnnotations[k] = v
-		}
-		existing.SetAnnotations(existingAnnotations)
-
-		existingLabels := existing.GetLabels()
-		if existingLabels == nil {
-			existingLabels = make(map[string]string)
-		}
-		for k, v := range desired.GetLabels() {
-			existingLabels[k] = v
-		}
-		existing.SetLabels(existingLabels)
+		// Use the desired object as the source of truth for annotations and
+		// labels. The previous merge copied desired keys on top of the live
+		// object's existing map, so annotations/labels removed from the spec
+		// could never be deleted from the running resource. Setting directly
+		// from desired keeps the live object in sync with the spec, matching
+		// how copyDesiredPayload treats Spec/Data as authoritative.
+		existing.SetAnnotations(desired.GetAnnotations())
+		existing.SetLabels(desired.GetLabels())
 
 		copyDesiredPayload(desired, existing)
 
@@ -730,16 +723,6 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 			},
 		}); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to delete pod disruption budget: %w", err)
-		}
-	}
-	if dfi.df.Spec.NetworkPolicyEnabled != nil && !*dfi.df.Spec.NetworkPolicyEnabled {
-		if err = dfi.client.Delete(ctx, &networkingv1.NetworkPolicy{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      dfi.df.Name,
-				Namespace: dfi.df.Namespace,
-			},
-		}); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to delete network policy: %w", err)
 		}
 	}
 	status := dfi.getStatus()
@@ -772,6 +755,39 @@ func copyDesiredPayload(desired, existing client.Object) {
 	if desiredSpec.IsValid() && existingSpec.IsValid() {
 		existingSpec.Set(desiredSpec)
 	}
+}
+
+// volumeClaimTemplatesEqual compares only the fields the operator sets on
+// VolumeClaimTemplates, ignoring fields populated by the API server
+// (TypeMeta, status, defaulted volumeMode).
+func volumeClaimTemplatesEqual(desired, existing []corev1.PersistentVolumeClaim) bool {
+	if len(desired) != len(existing) {
+		return false
+	}
+	for i := range desired {
+		d, e := &desired[i], &existing[i]
+		if d.Name != e.Name {
+			return false
+		}
+		if !equality.Semantic.DeepEqual(d.Labels, e.Labels) ||
+			!equality.Semantic.DeepEqual(d.Annotations, e.Annotations) {
+			return false
+		}
+		if !equality.Semantic.DeepEqual(defaultedPVCSpec(d.Spec), defaultedPVCSpec(e.Spec)) {
+			return false
+		}
+	}
+	return true
+}
+
+// defaultedPVCSpec applies the API server defaults to a PVC spec.
+func defaultedPVCSpec(spec corev1.PersistentVolumeClaimSpec) corev1.PersistentVolumeClaimSpec {
+	out := *spec.DeepCopy()
+	if out.VolumeMode == nil {
+		fs := corev1.PersistentVolumeFilesystem
+		out.VolumeMode = &fs
+	}
+	return out
 }
 
 // Helper function to compare resource specs (add to the file)
@@ -821,6 +837,10 @@ func (dfi *DragonflyInstance) isDatasetLoaded(ctx context.Context, pod *corev1.P
 	}
 
 	redisClient := dfi.getRedisClient(pod.Status.PodIP)
+
+	// Bound the call so an unreachable pod does not block the reconciler on dial retries
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
 	persistenceInfo, err := redisClient.Info(ctx, "persistence").Result()
 	if err != nil {

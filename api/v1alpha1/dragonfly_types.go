@@ -196,14 +196,6 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	EnableReplicationReadinessGate bool `json:"enableReplicationReadinessGate,omitempty"`
 
-	// (Optional) Whether to create a NetworkPolicy for this Dragonfly instance.
-	// The NetworkPolicy restricts admin port access to operator and peer pods only.
-	// Defaults to true.
-	// +optional
-	// +kubebuilder:validation:Optional
-	// +kubebuilder:default:=true
-	NetworkPolicyEnabled *bool `json:"networkPolicyEnabled,omitempty"`
-
 	// (Optional) Dragonfly Pod Disruption Budget configuration
 	// +optional
 	// +kubebuilder:validation:Optional
@@ -329,9 +321,11 @@ type DragonflyStatus struct {
 
 	// Status of the Dragonfly Instance
 	// It can be one of the following:
-	// - "ready": The Dragonfly instance is ready to serve requests
-	// - "configuring-replication": The controller is updating the master of the Dragonfly instance
-	// - "resources-created": The Dragonfly instance resources were created but not yet configured
+	// - "Ready": The Dragonfly instance is ready to serve requests
+	// - "NotReady": The Dragonfly instance was ready but has no healthy master
+	// - "Configuring": The controller is updating the master of the Dragonfly instance
+	// - "RollingUpdate": The Dragonfly instance pods are being updated to a new version
+	// - "ResourcesCreated": The Dragonfly instance resources were created but not yet configured
 	Phase string `json:"phase,omitempty"`
 
 	// TODO: remove this in a future release.

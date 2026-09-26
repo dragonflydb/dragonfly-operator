@@ -6505,13 +6505,6 @@ spec:
                 description: (Optional) Dragonfly memcached port
                 format: int32
                 type: integer
-              networkPolicyEnabled:
-                default: true
-                description: |-
-                  (Optional) Whether to create a NetworkPolicy for this Dragonfly instance.
-                  The NetworkPolicy restricts admin port access to operator and peer pods only.
-                  Defaults to true.
-                type: boolean
               nodeSelector:
                 additionalProperties:
                   type: string
@@ -7557,9 +7550,11 @@ spec:
                 description: |-
                   Status of the Dragonfly Instance
                   It can be one of the following:
-                  - "ready": The Dragonfly instance is ready to serve requests
-                  - "configuring-replication": The controller is updating the master of the Dragonfly instance
-                  - "resources-created": The Dragonfly instance resources were created but not yet configured
+                  - "Ready": The Dragonfly instance is ready to serve requests
+                  - "NotReady": The Dragonfly instance was ready but has no healthy master
+                  - "Configuring": The controller is updating the master of the Dragonfly instance
+                  - "RollingUpdate": The Dragonfly instance pods are being updated to a new version
+                  - "ResourcesCreated": The Dragonfly instance resources were created but not yet configured
                 type: string
             type: object
         type: object
