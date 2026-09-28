@@ -1,0 +1,24 @@
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  labels:
+    app.kubernetes.io/name: dragonfly
+    app.kubernetes.io/instance: dragonfly-emptydir-snapshot
+    app.kubernetes.io/part-of: dragonfly-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: dragonfly-operator
+  name: dragonfly-emptydir-snapshot
+spec:
+  replicas: 2
+  # Back the snapshot dir with an emptyDir using additionalVolumes +
+  # additionalVolumeMounts. Survives in-place container restarts (e.g. a kubelet
+  # upgrade) without pinning the pod to a node like a local-path PVC does.
+  snapshot:
+    dir: /dragonfly/snapshots
+    cron: "0 */6 * * *"  # Snapshot every 6 hours
+  additionalVolumes:
+    - name: snapshots
+      emptyDir: {}
+  additionalVolumeMounts:
+    - name: snapshots
+      mountPath: /dragonfly/snapshots
