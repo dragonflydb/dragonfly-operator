@@ -323,7 +323,7 @@ var _ = Describe("Dragonfly Lifecycle tests", Ordered, FlakeAttempts(3), func() 
 			}, &df)
 			Expect(err).To(BeNil())
 
-			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.38.0")
+			df.Spec.Image = fmt.Sprintf("%s:%s", resources.DragonflyImage, "v1.39.0")
 			err = k8sClient.Update(ctx, &df)
 			Expect(err).To(BeNil())
 		})
@@ -620,16 +620,14 @@ user john on >peacepass -@all +@string +hset
 				},
 			})
 			Expect(err).To(BeNil())
-			disabled := false
 			err = k8sClient.Create(ctx, &resourcesv1.Dragonfly{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
 					Namespace: namespace,
 				},
 				Spec: resourcesv1.DragonflySpec{
-					Replicas:             1,
-					Args:                 args,
-					NetworkPolicyEnabled: &disabled,
+					Replicas: 1,
+					Args:     args,
 					AclFromSecret: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
 							Name: "df-acl",
