@@ -55,6 +55,7 @@ rules:
       - ""
     resources:
       - configmaps
+      - secrets
     verbs:
       - create
       - delete
@@ -166,4 +167,3 @@ rules:
       - update
 {{- end }}
 {{- end }}
-
