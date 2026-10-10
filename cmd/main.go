@@ -67,6 +67,7 @@ func init() {
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
+	var leaderElectionReleaseOnCancel bool
 	var probeAddr string
 	var versionFlag bool
 	var watchCurrentNamespace bool
@@ -77,6 +78,9 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&leaderElectionReleaseOnCancel, "leader-elect-release-on-cancel", false,
+		"Release the leader election lease when the manager stops, "+
+			"so that a new leader does not have to wait for the lease to expire.")
 	flag.BoolVar(&versionFlag, "version", false, "Print version and exist")
 	flag.BoolVar(&watchCurrentNamespace, "watch-current-namespace", false, "Watch only namespace where operator is deployed")
 
@@ -114,7 +118,7 @@ func main() {
 		// the manager stops, so would be fine to enable this option. However,
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
+		LeaderElectionReleaseOnCancel: leaderElectionReleaseOnCancel,
 	}
 
 	// Watch namespace taken from the environment variable WATCH_NAMESPACE.
