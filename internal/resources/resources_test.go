@@ -129,6 +129,30 @@ func TestGenerateDragonflyResources_ReadinessGateEnabled(t *testing.T) {
 	t.Fatal("StatefulSet not found in generated resources")
 }
 
+func TestGenerateDragonflyResources_PodManagementPolicyDefault(t *testing.T) {
+	df := newTestDragonfly(2)
+
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	assert.Empty(t, sts.Spec.PodManagementPolicy,
+		"an unset policy must leave the StatefulSet on the Kubernetes OrderedReady default")
+}
+
+func TestGenerateDragonflyResources_PodManagementPolicyParallel(t *testing.T) {
+	df := newTestDragonfly(3)
+	df.Spec.PodManagementPolicy = string(appsv1.ParallelPodManagement)
+
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	assert.Equal(t, appsv1.ParallelPodManagement, sts.Spec.PodManagementPolicy)
+}
+
 func TestGenerateDragonflyResources_PodMetadataLabels(t *testing.T) {
 	df := newTestDragonfly(1)
 	df.Spec.PodMetadata = &resourcesv1.MetadataSpec{
