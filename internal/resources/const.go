@@ -89,6 +89,8 @@ const (
 
 	MasterIpAnnotationKey = "operator.dragonflydb.io/masterIP"
 
+	PendingClientDisconnectAnnotationKey = "operator.dragonflydb.io/pendingClientDisconnect"
+
 	RoleLabelKey = "role"
 
 	Master = "master"
