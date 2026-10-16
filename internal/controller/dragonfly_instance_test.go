@@ -17,12 +17,21 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"testing"
 
+	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestCopyDesiredPayload_ConfigMapDataUpdated(t *testing.T) {
@@ -130,4 +139,55 @@ func TestReconcileAnnotationsLabelsRemoved(t *testing.T) {
 	assert.NotContains(t, existing.GetLabels(), "removed.io/stale",
 		"labels removed from the spec must not persist on the live object")
 	assert.Equal(t, "echo new", existing.Data["liveness-check.sh"])
+}
+
+// TestReconcileResources_PreservesLoadBalancerClass runs the real reconcile path
+// against a fake client. A webhook (e.g. AWS Load Balancer Controller) sets
+// spec.loadBalancerClass on the live Service; the next reconcile must not patch
+// it back to null, since the field is immutable and the API server would reject it.
+func TestReconcileResources_PreservesLoadBalancerClass(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, dfv1alpha1.AddToScheme(scheme))
+
+	df := &dfv1alpha1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{Name: "df", Namespace: "default", UID: "uid"},
+		Spec: dfv1alpha1.DragonflySpec{
+			Replicas:    1,
+			ServiceSpec: &dfv1alpha1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(df).WithStatusSubresource(df).Build()
+	dfi := &DragonflyInstance{
+		df:                    df,
+		client:                c,
+		log:                   logr.Discard(),
+		scheme:                scheme,
+		eventRecorder:         record.NewFakeRecorder(10),
+		defaultDragonflyImage: "dragonfly:test",
+	}
+
+	require.NoError(t, dfi.reconcileResources(ctx))
+
+	// Simulate the mutating webhook setting the class on the live Service.
+	var svc corev1.Service
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "default", Name: "df"}, &svc))
+	nlb := "service.k8s.aws/nlb"
+	svc.Spec.LoadBalancerClass = &nlb
+	// Simulate externalTrafficPolicy set to Local externally, with the
+	// API server allocating a healthCheckNodePort.
+	svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyLocal
+	svc.Spec.HealthCheckNodePort = 32000
+	require.NoError(t, c.Update(ctx, &svc))
+
+	require.NoError(t, dfi.reconcileResources(ctx))
+
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "default", Name: "df"}, &svc))
+	assert.Equal(t, &nlb, svc.Spec.LoadBalancerClass,
+		"webhook-set loadBalancerClass must be preserved to avoid patching an immutable field to null")
+	assert.Equal(t, corev1.ServiceExternalTrafficPolicyLocal, svc.Spec.ExternalTrafficPolicy,
+		"externally-set externalTrafficPolicy must be preserved")
+	assert.Equal(t, int32(32000), svc.Spec.HealthCheckNodePort,
+		"healthCheckNodePort must be preserved while externalTrafficPolicy is Local")
 }

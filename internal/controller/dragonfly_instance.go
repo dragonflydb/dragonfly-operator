@@ -687,8 +687,19 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 					}
 				}
 				// Also preserve HealthCheckNodePort if external
-				if svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer && svcDesired.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyLocal {
-					svcDesired.Spec.HealthCheckNodePort = svcExisting.Spec.HealthCheckNodePort
+				if svcDesired.Spec.Type == corev1.ServiceTypeNodePort || svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer {
+					svcDesired.Spec.ExternalTrafficPolicy = svcExisting.Spec.ExternalTrafficPolicy
+					if svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer &&
+						svcExisting.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyLocal {
+						svcDesired.Spec.HealthCheckNodePort = svcExisting.Spec.HealthCheckNodePort
+					}
+				}
+				// LoadBalancerClass is immutable once set and is commonly injected by
+				// a webhook (e.g. AWS Load Balancer Controller sets service.k8s.aws/nlb).
+				// It must stay unset when switching away from LoadBalancer, so only
+				// preserve it while the type is still LoadBalancer.
+				if svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer {
+					svcDesired.Spec.LoadBalancerClass = svcExisting.Spec.LoadBalancerClass
 				}
 			}
 		}
