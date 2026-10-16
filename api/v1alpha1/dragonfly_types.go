@@ -33,6 +33,17 @@ type DragonflySpec struct {
 	// Replicas is the total number of Dragonfly instances including the master
 	Replicas int32 `json:"replicas,omitempty"`
 
+	// (Optional) podManagementPolicy of the Dragonfly StatefulSet.
+	// OrderedReady (default) starts and stops pods one at a time, in order.
+	// Parallel starts and stops pods at the same time, so a pod that cannot
+	// schedule does not block the rest of the instance from starting.
+	// This field is immutable after the StatefulSet is created. Delete and
+	// recreate the Dragonfly instance to change it.
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Enum=OrderedReady;Parallel
+	PodManagementPolicy string `json:"podManagementPolicy,omitempty"`
+
 	// Image is the Dragonfly image to use
 	Image string `json:"image,omitempty"`
 

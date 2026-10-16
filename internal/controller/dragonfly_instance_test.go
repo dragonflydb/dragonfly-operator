@@ -65,6 +65,12 @@ func TestCopyDesiredPayload_ConfigMapBinaryDataUpdated(t *testing.T) {
 	assert.Equal(t, []byte("new"), existing.BinaryData["k"])
 }
 
+func TestPodManagementPolicyOrDefault(t *testing.T) {
+	assert.Equal(t, appsv1.OrderedReadyPodManagement, podManagementPolicyOrDefault(""))
+	assert.Equal(t, appsv1.OrderedReadyPodManagement, podManagementPolicyOrDefault(appsv1.OrderedReadyPodManagement))
+	assert.Equal(t, appsv1.ParallelPodManagement, podManagementPolicyOrDefault(appsv1.ParallelPodManagement))
+}
+
 func TestCopyDesiredPayload_StatefulSetSpecUpdated(t *testing.T) {
 	one, three := int32(1), int32(3)
 	existing := &appsv1.StatefulSet{Spec: appsv1.StatefulSetSpec{Replicas: &one}}

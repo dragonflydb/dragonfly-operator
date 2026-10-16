@@ -79,6 +79,22 @@ To scale up/down the number of replicas, you can edit the `spec.replicas` field 
 kubectl patch dragonfly dragonfly-sample --type merge -p '{"spec":{"replicas":5}}'
 ```
 
+### Starting pods in parallel
+
+The StatefulSet uses `OrderedReady` by default, so pods start and stop one at a time. A pod that cannot start, for example because its node is drained, blocks every later pod. Set `spec.podManagementPolicy` to `Parallel` to start and stop pods together:
+
+```yaml
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: dragonfly-sample
+spec:
+  replicas: 3
+  podManagementPolicy: Parallel
+```
+
+`podManagementPolicy` cannot be changed on an existing instance. Delete and recreate the Dragonfly instance to switch policies. With `Parallel`, scaling down terminates pods at the same time rather than one at a time.
+
 ### Vertically scaling the instance
 
 To vertically scale the instance, you can edit the `spec.resources` field in the Dragonfly instance. For example, to increase the memory limit to 2GiB, you can run
