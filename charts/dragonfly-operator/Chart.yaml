@@ -1,6 +1,8 @@
 apiVersion: v2
 name: dragonfly-operator
 description: A Helm chart for dragonfly-operator
+sources:
+  - https://github.com/dragonflydb/dragonfly-operator
 
 # A chart can be either an 'application' or a 'library' chart.
 #
