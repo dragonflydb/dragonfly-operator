@@ -17,11 +17,17 @@ limitations under the License.
 package controller
 
 import (
+	"bufio"
 	"context"
+	"net"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/go-logr/logr"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
@@ -190,4 +196,116 @@ func TestReconcileResources_PreservesLoadBalancerClass(t *testing.T) {
 		"externally-set externalTrafficPolicy must be preserved")
 	assert.Equal(t, int32(32000), svc.Spec.HealthCheckNodePort,
 		"healthCheckNodePort must be preserved while externalTrafficPolicy is Local")
+}
+
+// fakeTakeoverServer answers RESP commands with +OK and records the arguments
+// of REPLTAKEOVER. HELLO is rejected so the client falls back to RESP2.
+func fakeTakeoverServer(t *testing.T) (string, <-chan []string) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+
+	takeovers := make(chan []string, 1)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				r := bufio.NewReader(conn)
+				for {
+					args, err := readRESPArray(r)
+					if err != nil {
+						return
+					}
+					switch strings.ToUpper(args[0]) {
+					case "HELLO":
+						_, err = conn.Write([]byte("-ERR unknown command\r\n"))
+					case "REPLTAKEOVER":
+						takeovers <- args[1:]
+						_, err = conn.Write([]byte("+OK\r\n"))
+					default:
+						_, err = conn.Write([]byte("+OK\r\n"))
+					}
+					if err != nil {
+						return
+					}
+				}
+			}(conn)
+		}
+	}()
+	return ln.Addr().String(), takeovers
+}
+
+func readRESPArray(r *bufio.Reader) ([]string, error) {
+	line, err := r.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "*")))
+	if err != nil {
+		return nil, err
+	}
+	args := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		if _, err := r.ReadString('\n'); err != nil {
+			return nil, err
+		}
+		arg, err := r.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, strings.TrimSuffix(arg, "\r\n"))
+	}
+	return args, nil
+}
+
+// TestReplTakeover_TimeoutShorterThanReadTimeout guards against REPLTAKEOVER
+// keeping the old master locked down after the operator's client has already
+// timed out. The REPLTAKEOVER timeout is in seconds and must be shorter than
+// the client read timeout.
+func TestReplTakeover_TimeoutShorterThanReadTimeout(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, dfv1alpha1.AddToScheme(scheme))
+
+	df := &dfv1alpha1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{Name: "df", Namespace: "default"},
+	}
+	newMaster := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "df-1", Namespace: "default", Labels: map[string]string{}},
+		Status:     corev1.PodStatus{PodIP: "10.0.0.2"},
+	}
+	oldMaster := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "df-0", Namespace: "default"},
+		Status:     corev1.PodStatus{PodIP: "10.0.0.1"},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(df, newMaster, oldMaster).Build()
+	dfi := &DragonflyInstance{
+		df:            df,
+		client:        c,
+		log:           logr.Discard(),
+		scheme:        scheme,
+		eventRecorder: record.NewFakeRecorder(10),
+	}
+	defer dfi.Close()
+
+	readTimeout := dfi.getRedisClient("10.0.0.3").Options().ReadTimeout
+
+	addr, takeovers := fakeTakeoverServer(t)
+	dfi.redisClients[newMaster.Status.PodIP] = redis.NewClient(&redis.Options{Addr: addr, MaxRetries: -1})
+
+	require.NoError(t, dfi.replTakeover(ctx, newMaster, oldMaster))
+
+	args := <-takeovers
+	require.Len(t, args, 1)
+	timeoutSeconds, err := strconv.Atoi(args[0])
+	require.NoError(t, err)
+	assert.Positive(t, timeoutSeconds)
+	assert.Less(t, time.Duration(timeoutSeconds)*time.Second, readTimeout,
+		"REPLTAKEOVER timeout (seconds) must be shorter than the client read timeout")
 }
