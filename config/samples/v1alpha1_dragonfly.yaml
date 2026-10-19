@@ -9,7 +9,7 @@ metadata:
     app.kubernetes.io/created-by: dragonfly-operator
   name: dragonfly-sample
 spec:
-  replicas: 2
+  replicas: 3
   resources:
     requests:
       cpu: 500m
