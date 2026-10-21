@@ -45,10 +45,10 @@ import (
 )
 
 const (
-	// redisReadTimeout is the read timeout of the operator's Redis clients.
-	redisReadTimeout = 10 * time.Second
+	// dragonflyReadTimeout is the read timeout of the operator's Dragonfly clients.
+	dragonflyReadTimeout = 10 * time.Second
 	// replTakeoverTimeout bounds how long REPLTAKEOVER keeps the old master
-	// locked down. It must stay below redisReadTimeout so the operator receives
+	// locked down. It must stay below dragonflyReadTimeout so the operator receives
 	// the reply instead of giving up while the old master is still locked.
 	replTakeoverTimeout = 5 * time.Second
 )
@@ -79,7 +79,7 @@ func (dfi *DragonflyInstance) getRedisClient(podIP string) *redis.Client {
 		ClientName:   resources.DragonflyOperatorName,
 		Addr:         net.JoinHostPort(podIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		DialTimeout:  10 * time.Second,
-		ReadTimeout:  redisReadTimeout,
+		ReadTimeout:  dragonflyReadTimeout,
 		WriteTimeout: 10 * time.Second,
 		// The reconciler requeues on failure; client retries only stall the worker.
 		MaxRetries:    -1,
