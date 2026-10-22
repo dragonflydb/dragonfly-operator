@@ -18,6 +18,9 @@ namespaceOverride: ""
 # -- Default dragonfly image to use
 dragonflyImage: ""
 
+# -- Kubernetes cluster DNS domain used in generated connection URIs
+clusterDomain: cluster.local
+
 # -- Additional labels to add to all resources
 additionalLabels: {}
   # app: dragonfly-operator

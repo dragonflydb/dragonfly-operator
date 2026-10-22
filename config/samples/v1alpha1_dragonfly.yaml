@@ -10,6 +10,8 @@ metadata:
   name: dragonfly-sample
 spec:
   replicas: 2
+  authentication:
+    autoCreatePasswordSecret: true
   resources:
     requests:
       cpu: 500m
