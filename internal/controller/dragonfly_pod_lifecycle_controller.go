@@ -104,6 +104,12 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			})
 			if masterCandidate == nil {
 				log.Info("no healthy pod available to set up a master")
+				if dfiStatus := dfi.getStatus(); dfiStatus.Phase == PhaseReady || dfiStatus.Phase == PhaseReadyOld {
+					dfiStatus.Phase = PhaseNotReady
+					if err = dfi.patchStatus(ctx, dfiStatus); err != nil {
+						return ctrl.Result{}, fmt.Errorf("failed to update the dragonfly status: %w", err)
+					}
+				}
 				// Always requeue when no master candidate is available to avoid
 				// stalling master election on transient readiness errors.
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
