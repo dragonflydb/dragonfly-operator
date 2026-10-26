@@ -44,6 +44,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
+const (
+	// dragonflyReadTimeout is the read timeout of the operator's Dragonfly clients.
+	dragonflyReadTimeout = 10 * time.Second
+	// replTakeoverTimeout bounds how long REPLTAKEOVER keeps the old master
+	// locked down. It must stay below dragonflyReadTimeout so the operator receives
+	// the reply instead of giving up while the old master is still locked.
+	replTakeoverTimeout = 5 * time.Second
+)
+
 // DragonflyInstance is an abstraction over the `Dragonfly` CRD and provides methods to handle replication.
 type DragonflyInstance struct {
 	// Dragonfly is the relevant Dragonfly CRD that it performs actions over
@@ -70,7 +79,7 @@ func (dfi *DragonflyInstance) getRedisClient(podIP string) *redis.Client {
 		ClientName:   resources.DragonflyOperatorName,
 		Addr:         net.JoinHostPort(podIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		DialTimeout:  10 * time.Second,
-		ReadTimeout:  10 * time.Second,
+		ReadTimeout:  dragonflyReadTimeout,
 		WriteTimeout: 10 * time.Second,
 		// The reconciler requeues on failure; client retries only stall the worker.
 		MaxRetries:    -1,
@@ -1170,7 +1179,9 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 
 	redisClient := dfi.getRedisClient(newMaster.Status.PodIP)
 
-	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
+	// REPLTAKEOVER takes its timeout in seconds.
+	timeoutSeconds := strconv.Itoa(int(replTakeoverTimeout.Seconds()))
+	resp, err := redisClient.Do(ctx, "repltakeover", timeoutSeconds).Result()
 	if err != nil {
 		return fmt.Errorf("error running REPLTAKEOVER command: %w", err)
 	}
