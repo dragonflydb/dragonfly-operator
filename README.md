@@ -93,7 +93,7 @@ spec:
   podManagementPolicy: Parallel
 ```
 
-`podManagementPolicy` cannot be changed on an existing instance. Delete and recreate the Dragonfly instance to switch policies. With `Parallel`, scaling down terminates pods at the same time rather than one at a time.
+`podManagementPolicy` is immutable. The API server rejects a change on an existing instance, so delete and recreate the Dragonfly instance to switch policies. With `Parallel`, scaling down terminates pods at the same time rather than one at a time.
 
 ### Vertically scaling the instance
 

@@ -197,3 +197,89 @@ func TestReconcileResources_PreservesLoadBalancerClass(t *testing.T) {
 	assert.Equal(t, int32(32000), svc.Spec.HealthCheckNodePort,
 		"healthCheckNodePort must be preserved while externalTrafficPolicy is Local")
 }
+
+// TestReconcileResources_PreservesPodManagementPolicy runs the real reconcile path.
+// podManagementPolicy is immutable, so a later spec change must leave the live
+// StatefulSet policy in place and record a warning. An omitted spec matches the
+// Kubernetes default of OrderedReady and must not warn.
+func TestReconcileResources_PreservesPodManagementPolicy(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("mismatch leaves live policy and warns", func(t *testing.T) {
+		df := &dfv1alpha1.Dragonfly{
+			ObjectMeta: metav1.ObjectMeta{Name: "df", Namespace: "default", UID: "uid"},
+			Spec: dfv1alpha1.DragonflySpec{
+				Replicas:            1,
+				PodManagementPolicy: string(appsv1.ParallelPodManagement),
+			},
+		}
+		c, recorder, dfi := newReconcileFixture(t, df)
+		require.NoError(t, dfi.reconcileResources(ctx))
+		drainEvents(recorder)
+
+		df.Spec.PodManagementPolicy = string(appsv1.OrderedReadyPodManagement)
+		require.NoError(t, dfi.reconcileResources(ctx))
+
+		var sts appsv1.StatefulSet
+		require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "default", Name: "df"}, &sts))
+		assert.Equal(t, appsv1.ParallelPodManagement, sts.Spec.PodManagementPolicy,
+			"a spec change must not rewrite the immutable live policy")
+		assert.Contains(t, drainEvents(recorder),
+			"Warning ImmutableField PodManagementPolicy change ignored: delete and recreate the Dragonfly instance to apply it")
+	})
+
+	t.Run("omitted policy matches live OrderedReady without warning", func(t *testing.T) {
+		df := &dfv1alpha1.Dragonfly{
+			ObjectMeta: metav1.ObjectMeta{Name: "df", Namespace: "default", UID: "uid"},
+			Spec:       dfv1alpha1.DragonflySpec{Replicas: 1},
+		}
+		c, recorder, dfi := newReconcileFixture(t, df)
+		require.NoError(t, dfi.reconcileResources(ctx))
+
+		// The apiserver defaults an empty policy to OrderedReady on the live object.
+		var sts appsv1.StatefulSet
+		require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "default", Name: "df"}, &sts))
+		sts.Spec.PodManagementPolicy = appsv1.OrderedReadyPodManagement
+		require.NoError(t, c.Update(ctx, &sts))
+		drainEvents(recorder)
+
+		require.NoError(t, dfi.reconcileResources(ctx))
+
+		require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "default", Name: "df"}, &sts))
+		assert.Equal(t, appsv1.OrderedReadyPodManagement, sts.Spec.PodManagementPolicy)
+		for _, event := range drainEvents(recorder) {
+			assert.NotContains(t, event, "PodManagementPolicy")
+		}
+	})
+}
+
+func newReconcileFixture(t *testing.T, df *dfv1alpha1.Dragonfly) (client.Client, *record.FakeRecorder, *DragonflyInstance) {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, dfv1alpha1.AddToScheme(scheme))
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(df).WithStatusSubresource(df).Build()
+	recorder := record.NewFakeRecorder(10)
+	dfi := &DragonflyInstance{
+		df:                    df,
+		client:                c,
+		log:                   logr.Discard(),
+		scheme:                scheme,
+		eventRecorder:         recorder,
+		defaultDragonflyImage: "dragonfly:test",
+	}
+	return c, recorder, dfi
+}
+
+func drainEvents(recorder *record.FakeRecorder) []string {
+	var events []string
+	for {
+		select {
+		case event := <-recorder.Events:
+			events = append(events, event)
+		default:
+			return events
+		}
+	}
+}
