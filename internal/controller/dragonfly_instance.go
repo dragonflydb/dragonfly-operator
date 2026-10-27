@@ -626,6 +626,16 @@ func (dfi *DragonflyInstance) hasMasterRole(ctx context.Context, redisClient *re
 	return strings.Contains(replInfo, "role:master"), nil
 }
 
+// podManagementPolicyOrDefault treats an empty policy as OrderedReady, which
+// is the Kubernetes StatefulSet default. An unset spec field and a StatefulSet
+// created before this field existed are therefore the same policy.
+func podManagementPolicyOrDefault(policy appsv1.PodManagementPolicyType) appsv1.PodManagementPolicyType {
+	if policy == "" {
+		return appsv1.OrderedReadyPodManagement
+	}
+	return policy
+}
+
 // reconcileResources creates or updates the dragonfly resources
 func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage)
@@ -662,8 +672,8 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		// Special handling for StatefulSets to preserve immutable fields.
 		// VolumeClaimTemplates, Selector, ServiceName, and PodManagementPolicy
 		// cannot be changed after creation. Copy them from existing so they
-		// never appear as a diff. If the user changes e.g. persistentVolumeClaimSpec,
-		// the change is silently dropped here — a delete+recreate is required.
+		// never appear as a diff. Applying a new value requires deleting and
+		// recreating the Dragonfly instance.
 		if stsDesired, ok := desired.(*appsv1.StatefulSet); ok {
 			if stsExisting, ok := existing.(*appsv1.StatefulSet); ok {
 				if !volumeClaimTemplatesEqual(stsDesired.Spec.VolumeClaimTemplates, stsExisting.Spec.VolumeClaimTemplates) {
@@ -671,6 +681,14 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 						"resource", stsDesired.Name)
 					dfi.eventRecorder.Event(dfi.df, corev1.EventTypeWarning, "ImmutableField",
 						"VolumeClaimTemplates change ignored: delete and recreate the Dragonfly instance to apply PVC configuration changes")
+				}
+				if podManagementPolicyOrDefault(stsDesired.Spec.PodManagementPolicy) != podManagementPolicyOrDefault(stsExisting.Spec.PodManagementPolicy) {
+					dfi.log.Info("PodManagementPolicy change detected but cannot be applied to an existing StatefulSet; delete and recreate the Dragonfly instance to change it",
+						"resource", stsDesired.Name,
+						"existing", podManagementPolicyOrDefault(stsExisting.Spec.PodManagementPolicy),
+						"desired", podManagementPolicyOrDefault(stsDesired.Spec.PodManagementPolicy))
+					dfi.eventRecorder.Event(dfi.df, corev1.EventTypeWarning, "ImmutableField",
+						"PodManagementPolicy change ignored: delete and recreate the Dragonfly instance to apply it")
 				}
 				stsDesired.Spec.VolumeClaimTemplates = stsExisting.Spec.VolumeClaimTemplates
 				stsDesired.Spec.Selector = stsExisting.Spec.Selector
