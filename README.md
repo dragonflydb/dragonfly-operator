@@ -40,7 +40,7 @@ To create a sample Dragonfly instance, you can run the following command:
 kubectl apply -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/config/samples/v1alpha1_dragonfly.yaml
 ```
 
-This will create a Dragonfly instance with 3 replicas. You can check the status of the instance by running
+This will create a Dragonfly instance with 2 replicas. You can check the status of the instance by running
 
 ```sh
 kubectl describe dragonflies.dragonflydb.io dragonfly-sample
