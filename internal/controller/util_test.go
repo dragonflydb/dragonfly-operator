@@ -155,3 +155,88 @@ func TestSelectMasterCandidate(t *testing.T) {
 		})
 	}
 }
+
+func TestClientListenerAddress(t *testing.T) {
+	tests := []struct {
+		name  string
+		podIp string
+		want  string
+	}{
+		{
+			name:  "ipv4",
+			podIp: "10.42.1.7",
+			want:  "10.42.1.7:6379",
+		},
+		{
+			name:  "ipv6",
+			podIp: "fd00::1",
+			want:  "fd00::1:6379",
+		},
+		{
+			name:  "bracketed ipv6",
+			podIp: "[fd00::1]",
+			want:  "fd00::1:6379",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := clientListenerAddress(tc.podIp); got != tc.want {
+				t.Errorf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestNeedsClientDisconnect(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		labels      map[string]string
+		want        bool
+	}{
+		{
+			name: "no annotations",
+			want: false,
+		},
+		{
+			name:        "marked and demoted",
+			annotations: map[string]string{resources.PendingClientDisconnectAnnotationKey: "true"},
+			labels:      map[string]string{resources.RoleLabelKey: resources.Replica},
+			want:        true,
+		},
+		{
+			name:        "marked without a role label",
+			annotations: map[string]string{resources.PendingClientDisconnectAnnotationKey: "true"},
+			want:        true,
+		},
+		{
+			name:        "marked but promoted again",
+			annotations: map[string]string{resources.PendingClientDisconnectAnnotationKey: "true"},
+			labels:      map[string]string{resources.RoleLabelKey: resources.Master},
+			want:        false,
+		},
+		{
+			name:        "unrelated annotation",
+			annotations: map[string]string{resources.MasterIpAnnotationKey: "10.42.1.7"},
+			labels:      map[string]string{resources.RoleLabelKey: resources.Replica},
+			want:        false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pod := corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "df-0",
+					Labels:      tc.labels,
+					Annotations: tc.annotations,
+				},
+			}
+
+			if got := needsClientDisconnect(&pod); got != tc.want {
+				t.Errorf("expected %v, got %v", tc.want, got)
+			}
+		})
+	}
+}
