@@ -274,6 +274,10 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		}
 	}
 
+	if df.Spec.PodManagementPolicy != "" {
+		statefulset.Spec.PodManagementPolicy = appsv1.PodManagementPolicyType(df.Spec.PodManagementPolicy)
+	}
+
 	if len(df.Spec.InitContainers) > 0 {
 		statefulset.Spec.Template.Spec.InitContainers = df.Spec.InitContainers
 	}
