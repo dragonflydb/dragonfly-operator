@@ -17,5 +17,5 @@ limitations under the License.
 package resources
 
 const (
-	Version = "v2.0.0"
+	Version = "v2.0.2"
 )

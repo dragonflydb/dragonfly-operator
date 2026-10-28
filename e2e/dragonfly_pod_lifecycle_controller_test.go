@@ -175,9 +175,13 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			err = k8sClient.Delete(ctx, &pod)
 			Expect(err).To(BeNil())
 
-			// Wait until the loop is reconciled. This is needed as status is ready previously
-			// and the test might move forward even before the reconcile loop is triggered
-			time.Sleep(10 * time.Second)
+			Eventually(func(g Gomega) {
+				var replacement corev1.Pod
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&pod), &replacement)).To(Succeed())
+				g.Expect(replacement.UID).NotTo(Equal(pod.UID))
+				g.Expect(replacement.DeletionTimestamp.IsZero()).To(BeTrue())
+				g.Expect(replacement.Status.Phase).To(Equal(corev1.PodRunning))
+			}, 1*time.Minute, time.Second).Should(Succeed())
 
 			// Expect a new replica
 			// Wait for Status to be ready

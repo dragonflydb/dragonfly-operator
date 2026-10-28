@@ -44,6 +44,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
+const (
+	// dragonflyReadTimeout is the read timeout of the operator's Dragonfly clients.
+	dragonflyReadTimeout = 10 * time.Second
+	// replTakeoverTimeout bounds how long REPLTAKEOVER keeps the old master
+	// locked down. It must stay below dragonflyReadTimeout so the operator receives
+	// the reply instead of giving up while the old master is still locked.
+	replTakeoverTimeout = 5 * time.Second
+)
+
 // DragonflyInstance is an abstraction over the `Dragonfly` CRD and provides methods to handle replication.
 type DragonflyInstance struct {
 	// Dragonfly is the relevant Dragonfly CRD that it performs actions over
@@ -70,7 +79,7 @@ func (dfi *DragonflyInstance) getRedisClient(podIP string) *redis.Client {
 		ClientName:   resources.DragonflyOperatorName,
 		Addr:         net.JoinHostPort(podIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		DialTimeout:  10 * time.Second,
-		ReadTimeout:  10 * time.Second,
+		ReadTimeout:  dragonflyReadTimeout,
 		WriteTimeout: 10 * time.Second,
 		// The reconciler requeues on failure; client retries only stall the worker.
 		MaxRetries:    -1,
@@ -617,6 +626,16 @@ func (dfi *DragonflyInstance) hasMasterRole(ctx context.Context, redisClient *re
 	return strings.Contains(replInfo, "role:master"), nil
 }
 
+// podManagementPolicyOrDefault treats an empty policy as OrderedReady, which
+// is the Kubernetes StatefulSet default. An unset spec field and a StatefulSet
+// created before this field existed are therefore the same policy.
+func podManagementPolicyOrDefault(policy appsv1.PodManagementPolicyType) appsv1.PodManagementPolicyType {
+	if policy == "" {
+		return appsv1.OrderedReadyPodManagement
+	}
+	return policy
+}
+
 // reconcileResources creates or updates the dragonfly resources
 func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage)
@@ -653,8 +672,8 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		// Special handling for StatefulSets to preserve immutable fields.
 		// VolumeClaimTemplates, Selector, ServiceName, and PodManagementPolicy
 		// cannot be changed after creation. Copy them from existing so they
-		// never appear as a diff. If the user changes e.g. persistentVolumeClaimSpec,
-		// the change is silently dropped here — a delete+recreate is required.
+		// never appear as a diff. Applying a new value requires deleting and
+		// recreating the Dragonfly instance.
 		if stsDesired, ok := desired.(*appsv1.StatefulSet); ok {
 			if stsExisting, ok := existing.(*appsv1.StatefulSet); ok {
 				if !volumeClaimTemplatesEqual(stsDesired.Spec.VolumeClaimTemplates, stsExisting.Spec.VolumeClaimTemplates) {
@@ -662,6 +681,14 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 						"resource", stsDesired.Name)
 					dfi.eventRecorder.Event(dfi.df, corev1.EventTypeWarning, "ImmutableField",
 						"VolumeClaimTemplates change ignored: delete and recreate the Dragonfly instance to apply PVC configuration changes")
+				}
+				if podManagementPolicyOrDefault(stsDesired.Spec.PodManagementPolicy) != podManagementPolicyOrDefault(stsExisting.Spec.PodManagementPolicy) {
+					dfi.log.Info("PodManagementPolicy change detected but cannot be applied to an existing StatefulSet; delete and recreate the Dragonfly instance to change it",
+						"resource", stsDesired.Name,
+						"existing", podManagementPolicyOrDefault(stsExisting.Spec.PodManagementPolicy),
+						"desired", podManagementPolicyOrDefault(stsDesired.Spec.PodManagementPolicy))
+					dfi.eventRecorder.Event(dfi.df, corev1.EventTypeWarning, "ImmutableField",
+						"PodManagementPolicy change ignored: delete and recreate the Dragonfly instance to apply it")
 				}
 				stsDesired.Spec.VolumeClaimTemplates = stsExisting.Spec.VolumeClaimTemplates
 				stsDesired.Spec.Selector = stsExisting.Spec.Selector
@@ -687,8 +714,19 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 					}
 				}
 				// Also preserve HealthCheckNodePort if external
-				if svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer && svcDesired.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyLocal {
-					svcDesired.Spec.HealthCheckNodePort = svcExisting.Spec.HealthCheckNodePort
+				if svcDesired.Spec.Type == corev1.ServiceTypeNodePort || svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer {
+					svcDesired.Spec.ExternalTrafficPolicy = svcExisting.Spec.ExternalTrafficPolicy
+					if svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer &&
+						svcExisting.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyLocal {
+						svcDesired.Spec.HealthCheckNodePort = svcExisting.Spec.HealthCheckNodePort
+					}
+				}
+				// LoadBalancerClass is immutable once set and is commonly injected by
+				// a webhook (e.g. AWS Load Balancer Controller sets service.k8s.aws/nlb).
+				// It must stay unset when switching away from LoadBalancer, so only
+				// preserve it while the type is still LoadBalancer.
+				if svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer {
+					svcDesired.Spec.LoadBalancerClass = svcExisting.Spec.LoadBalancerClass
 				}
 			}
 		}
@@ -1141,7 +1179,9 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 
 	redisClient := dfi.getRedisClient(newMaster.Status.PodIP)
 
-	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
+	// REPLTAKEOVER takes its timeout in seconds.
+	timeoutSeconds := strconv.Itoa(int(replTakeoverTimeout.Seconds()))
+	resp, err := redisClient.Do(ctx, "repltakeover", timeoutSeconds).Result()
 	if err != nil {
 		return fmt.Errorf("error running REPLTAKEOVER command: %w", err)
 	}
