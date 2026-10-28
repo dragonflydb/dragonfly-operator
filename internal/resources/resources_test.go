@@ -490,7 +490,7 @@ func TestProbeVolumes_CustomConfigMapOverride(t *testing.T) {
 func TestGenerateDragonflyResources_ServiceLinksDisabled(t *testing.T) {
 	df := newTestDragonfly(1)
 
-	resources, err := GenerateDragonflyResources(df, "", "")
+	resources, err := GenerateDragonflyResources(df, "")
 	require.NoError(t, err)
 
 	for _, obj := range resources {
