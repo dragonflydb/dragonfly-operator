@@ -67,8 +67,6 @@ spec:
             {{- toYaml .Values.rbacProxy.resources | nindent 12 }}
           {{- end }}
         - name: manager
-          command:
-            - /manager
           args:
             - --leader-elect
             {{- if .Values.dragonflyImage }}
@@ -89,6 +87,8 @@ spec:
             - name: WATCH_NAMESPACE
               value: {{ .Values.watchNamespaces | quote }}
             {{- end }}
+          command:
+            - /manager
           securityContext:
             {{- toYaml .Values.manager.securityContext | nindent 12 }}
           image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag | default .Chart.AppVersion  }}"

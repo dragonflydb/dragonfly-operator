@@ -30,6 +30,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/tools/record"
 
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -37,6 +38,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -44,6 +46,7 @@ import (
 
 	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/controller"
+	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -95,6 +98,7 @@ func main() {
 
 	mgrOpts := ctrl.Options{
 		Scheme: scheme,
+		Cache:  cacheOptions(),
 		Metrics: metricsserver.Options{
 			BindAddress: metricsAddr,
 		},
@@ -145,20 +149,12 @@ func main() {
 
 	defer eventBroadcaster.Shutdown()
 
-	operatorNamespace := getOperatorNamespace()
-	if operatorNamespace != "" {
-		setupLog.Info(fmt.Sprintf("Operator namespace: %s", operatorNamespace))
-	} else {
-		setupLog.Info("Operator namespace could not be determined; admin port NetworkPolicy will be restricted to same-namespace only")
-	}
-
 	if err = (&controller.DragonflyReconciler{
 		Reconciler: controller.Reconciler{
 			Client:                mgr.GetClient(),
 			Scheme:                mgr.GetScheme(),
 			EventRecorder:         eventRecorder,
 			DefaultDragonflyImage: dragonflyImage,
-			OperatorNamespace:     operatorNamespace,
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Dragonfly")
@@ -171,7 +167,6 @@ func main() {
 			Scheme:                mgr.GetScheme(),
 			EventRecorder:         eventRecorder,
 			DefaultDragonflyImage: dragonflyImage,
-			OperatorNamespace:     operatorNamespace,
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Health")
@@ -222,6 +217,22 @@ func getCurrentNamespace() string {
 	return ns
 }
 
+// cacheOptions returns the options of the manager cache.
+func cacheOptions() cache.Options {
+	return cache.Options{
+		// The operator never reads the managed fields.
+		DefaultTransform: cache.TransformStripManagedFields(),
+		ByObject: map[client.Object]cache.ByObject{
+			// Cache only the Dragonfly pods and not every pod of the watched namespaces.
+			&v1.Pod{}: {
+				Label: labels.SelectorFromSet(labels.Set{
+					resources.KubernetesAppNameLabelKey: resources.KubernetesAppName,
+				}),
+			},
+		},
+	}
+}
+
 func addNamespacesToOpts(namespaces string, ops *ctrl.Options) error {
 	nsList := map[string]cache.Config{}
 	if namespaces != "" {
@@ -235,22 +246,4 @@ func addNamespacesToOpts(namespaces string, ops *ctrl.Options) error {
 
 	}
 	return nil
-}
-
-const saNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
-
-func getOperatorNamespace() string {
-	return resolveOperatorNamespace(saNamespaceFile)
-}
-
-func resolveOperatorNamespace(saFile string) string {
-	if ns, ok := os.LookupEnv("POD_NAMESPACE"); ok && ns != "" {
-		return ns
-	}
-	if data, err := os.ReadFile(saFile); err == nil {
-		if ns := strings.TrimSpace(string(data)); ns != "" {
-			return ns
-		}
-	}
-	return ""
 }

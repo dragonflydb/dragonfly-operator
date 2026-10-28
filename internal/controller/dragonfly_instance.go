@@ -33,8 +33,8 @@ import (
 	"github.com/redis/go-redis/v9/maintnotifications"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -42,6 +42,15 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+)
+
+const (
+	// dragonflyReadTimeout is the read timeout of the operator's Dragonfly clients.
+	dragonflyReadTimeout = 10 * time.Second
+	// replTakeoverTimeout bounds how long REPLTAKEOVER keeps the old master
+	// locked down. It must stay below dragonflyReadTimeout so the operator receives
+	// the reply instead of giving up while the old master is still locked.
+	replTakeoverTimeout = 5 * time.Second
 )
 
 // DragonflyInstance is an abstraction over the `Dragonfly` CRD and provides methods to handle replication.
@@ -54,7 +63,6 @@ type DragonflyInstance struct {
 	scheme                *runtime.Scheme
 	eventRecorder         record.EventRecorder
 	defaultDragonflyImage string
-	operatorNamespace     string
 	redisClients          map[string]*redis.Client
 }
 
@@ -71,8 +79,11 @@ func (dfi *DragonflyInstance) getRedisClient(podIP string) *redis.Client {
 		ClientName:   resources.DragonflyOperatorName,
 		Addr:         net.JoinHostPort(podIP, strconv.Itoa(resources.DragonflyAdminPort)),
 		DialTimeout:  10 * time.Second,
-		ReadTimeout:  10 * time.Second,
+		ReadTimeout:  dragonflyReadTimeout,
 		WriteTimeout: 10 * time.Second,
+		// The reconciler requeues on failure; client retries only stall the worker.
+		MaxRetries:    -1,
+		DialerRetries: 1,
 		MaintNotificationsConfig: &maintnotifications.Config{
 			Mode: maintnotifications.ModeDisabled,
 		},
@@ -615,9 +626,19 @@ func (dfi *DragonflyInstance) hasMasterRole(ctx context.Context, redisClient *re
 	return strings.Contains(replInfo, "role:master"), nil
 }
 
+// podManagementPolicyOrDefault treats an empty policy as OrderedReady, which
+// is the Kubernetes StatefulSet default. An unset spec field and a StatefulSet
+// created before this field existed are therefore the same policy.
+func podManagementPolicyOrDefault(policy appsv1.PodManagementPolicyType) appsv1.PodManagementPolicyType {
+	if policy == "" {
+		return appsv1.OrderedReadyPodManagement
+	}
+	return policy
+}
+
 // reconcileResources creates or updates the dragonfly resources
 func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
-	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage, dfi.operatorNamespace)
+	dfResources, err := resources.GenerateDragonflyResources(dfi.df, dfi.defaultDragonflyImage)
 	if err != nil {
 		return fmt.Errorf("failed to generate dragonfly resources: %w", err)
 	}
@@ -651,15 +672,23 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		// Special handling for StatefulSets to preserve immutable fields.
 		// VolumeClaimTemplates, Selector, ServiceName, and PodManagementPolicy
 		// cannot be changed after creation. Copy them from existing so they
-		// never appear as a diff. If the user changes e.g. persistentVolumeClaimSpec,
-		// the change is silently dropped here — a delete+recreate is required.
+		// never appear as a diff. Applying a new value requires deleting and
+		// recreating the Dragonfly instance.
 		if stsDesired, ok := desired.(*appsv1.StatefulSet); ok {
 			if stsExisting, ok := existing.(*appsv1.StatefulSet); ok {
-				if !reflect.DeepEqual(stsDesired.Spec.VolumeClaimTemplates, stsExisting.Spec.VolumeClaimTemplates) {
+				if !volumeClaimTemplatesEqual(stsDesired.Spec.VolumeClaimTemplates, stsExisting.Spec.VolumeClaimTemplates) {
 					dfi.log.Info("VolumeClaimTemplates change detected but cannot be applied to an existing StatefulSet; delete and recreate the Dragonfly instance to change PVC configuration",
 						"resource", stsDesired.Name)
 					dfi.eventRecorder.Event(dfi.df, corev1.EventTypeWarning, "ImmutableField",
 						"VolumeClaimTemplates change ignored: delete and recreate the Dragonfly instance to apply PVC configuration changes")
+				}
+				if podManagementPolicyOrDefault(stsDesired.Spec.PodManagementPolicy) != podManagementPolicyOrDefault(stsExisting.Spec.PodManagementPolicy) {
+					dfi.log.Info("PodManagementPolicy change detected but cannot be applied to an existing StatefulSet; delete and recreate the Dragonfly instance to change it",
+						"resource", stsDesired.Name,
+						"existing", podManagementPolicyOrDefault(stsExisting.Spec.PodManagementPolicy),
+						"desired", podManagementPolicyOrDefault(stsDesired.Spec.PodManagementPolicy))
+					dfi.eventRecorder.Event(dfi.df, corev1.EventTypeWarning, "ImmutableField",
+						"PodManagementPolicy change ignored: delete and recreate the Dragonfly instance to apply it")
 				}
 				stsDesired.Spec.VolumeClaimTemplates = stsExisting.Spec.VolumeClaimTemplates
 				stsDesired.Spec.Selector = stsExisting.Spec.Selector
@@ -685,8 +714,19 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 					}
 				}
 				// Also preserve HealthCheckNodePort if external
-				if svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer && svcDesired.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyLocal {
-					svcDesired.Spec.HealthCheckNodePort = svcExisting.Spec.HealthCheckNodePort
+				if svcDesired.Spec.Type == corev1.ServiceTypeNodePort || svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer {
+					svcDesired.Spec.ExternalTrafficPolicy = svcExisting.Spec.ExternalTrafficPolicy
+					if svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer &&
+						svcExisting.Spec.ExternalTrafficPolicy == corev1.ServiceExternalTrafficPolicyLocal {
+						svcDesired.Spec.HealthCheckNodePort = svcExisting.Spec.HealthCheckNodePort
+					}
+				}
+				// LoadBalancerClass is immutable once set and is commonly injected by
+				// a webhook (e.g. AWS Load Balancer Controller sets service.k8s.aws/nlb).
+				// It must stay unset when switching away from LoadBalancer, so only
+				// preserve it while the type is still LoadBalancer.
+				if svcDesired.Spec.Type == corev1.ServiceTypeLoadBalancer {
+					svcDesired.Spec.LoadBalancerClass = svcExisting.Spec.LoadBalancerClass
 				}
 			}
 		}
@@ -723,16 +763,6 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 			return fmt.Errorf("failed to delete pod disruption budget: %w", err)
 		}
 	}
-	if dfi.df.Spec.NetworkPolicyEnabled != nil && !*dfi.df.Spec.NetworkPolicyEnabled {
-		if err = dfi.client.Delete(ctx, &networkingv1.NetworkPolicy{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      dfi.df.Name,
-				Namespace: dfi.df.Namespace,
-			},
-		}); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to delete network policy: %w", err)
-		}
-	}
 	status := dfi.getStatus()
 	if status.Phase == "" {
 		status.Phase = PhaseResourcesCreated
@@ -763,6 +793,39 @@ func copyDesiredPayload(desired, existing client.Object) {
 	if desiredSpec.IsValid() && existingSpec.IsValid() {
 		existingSpec.Set(desiredSpec)
 	}
+}
+
+// volumeClaimTemplatesEqual compares only the fields the operator sets on
+// VolumeClaimTemplates, ignoring fields populated by the API server
+// (TypeMeta, status, defaulted volumeMode).
+func volumeClaimTemplatesEqual(desired, existing []corev1.PersistentVolumeClaim) bool {
+	if len(desired) != len(existing) {
+		return false
+	}
+	for i := range desired {
+		d, e := &desired[i], &existing[i]
+		if d.Name != e.Name {
+			return false
+		}
+		if !equality.Semantic.DeepEqual(d.Labels, e.Labels) ||
+			!equality.Semantic.DeepEqual(d.Annotations, e.Annotations) {
+			return false
+		}
+		if !equality.Semantic.DeepEqual(defaultedPVCSpec(d.Spec), defaultedPVCSpec(e.Spec)) {
+			return false
+		}
+	}
+	return true
+}
+
+// defaultedPVCSpec applies the API server defaults to a PVC spec.
+func defaultedPVCSpec(spec corev1.PersistentVolumeClaimSpec) corev1.PersistentVolumeClaimSpec {
+	out := *spec.DeepCopy()
+	if out.VolumeMode == nil {
+		fs := corev1.PersistentVolumeFilesystem
+		out.VolumeMode = &fs
+	}
+	return out
 }
 
 // Helper function to compare resource specs (add to the file)
@@ -812,6 +875,10 @@ func (dfi *DragonflyInstance) isDatasetLoaded(ctx context.Context, pod *corev1.P
 	}
 
 	redisClient := dfi.getRedisClient(pod.Status.PodIP)
+
+	// Bound the call so an unreachable pod does not block the reconciler on dial retries
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 
 	persistenceInfo, err := redisClient.Info(ctx, "persistence").Result()
 	if err != nil {
@@ -1112,7 +1179,9 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 
 	redisClient := dfi.getRedisClient(newMaster.Status.PodIP)
 
-	resp, err := redisClient.Do(ctx, "repltakeover", "10000").Result()
+	// REPLTAKEOVER takes its timeout in seconds.
+	timeoutSeconds := strconv.Itoa(int(replTakeoverTimeout.Seconds()))
+	resp, err := redisClient.Do(ctx, "repltakeover", timeoutSeconds).Result()
 	if err != nil {
 		return fmt.Errorf("error running REPLTAKEOVER command: %w", err)
 	}

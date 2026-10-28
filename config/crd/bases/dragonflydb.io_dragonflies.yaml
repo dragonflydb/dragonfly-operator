@@ -50,7 +50,10 @@ spec:
           metadata:
             type: object
           spec:
-            description: DragonflySpec defines the desired state of Dragonfly
+            description: |-
+              DragonflySpec defines the desired state of Dragonfly.
+              An empty podManagementPolicy is treated as OrderedReady, so updates to an
+              existing instance are still accepted when the field was left unset.
             properties:
               aclFromSecret:
                 description: (Optional) Acl file Secret to pass to the container
@@ -6438,13 +6441,6 @@ spec:
                 description: (Optional) Dragonfly memcached port
                 format: int32
                 type: integer
-              networkPolicyEnabled:
-                default: true
-                description: |-
-                  (Optional) Whether to create a NetworkPolicy for this Dragonfly instance.
-                  The NetworkPolicy restricts admin port access to operator and peer pods only.
-                  Defaults to true.
-                type: boolean
               nodeSelector:
                 additionalProperties:
                   type: string
@@ -6488,6 +6484,19 @@ spec:
                 x-kubernetes-validations:
                 - message: minAvailable and maxUnavailable cannot be both set
                   rule: '!(has(self.minAvailable) && has(self.maxUnavailable))'
+              podManagementPolicy:
+                description: |-
+                  (Optional) podManagementPolicy of the Dragonfly StatefulSet.
+                  OrderedReady (default) starts and stops pods one at a time, in order.
+                  Parallel starts and stops pods at the same time, so a pod that cannot
+                  schedule does not block the rest of the instance from starting.
+                  This field is immutable. The API server rejects a change, and the
+                  operator leaves the existing StatefulSet policy in place. Delete and
+                  recreate the Dragonfly instance to change it.
+                enum:
+                - OrderedReady
+                - Parallel
+                type: string
               podMetadata:
                 description: (Optional) Labels and annotations to add to the Dragonfly
                   pods.
@@ -7479,6 +7488,13 @@ spec:
                   type: object
                 type: array
             type: object
+            x-kubernetes-validations:
+            - message: podManagementPolicy is immutable; delete and recreate the Dragonfly
+                instance to change it
+              rule: '(has(self.podManagementPolicy) && self.podManagementPolicy !=
+                '''' ? self.podManagementPolicy : ''OrderedReady'') == (has(oldSelf.podManagementPolicy)
+                && oldSelf.podManagementPolicy != '''' ? oldSelf.podManagementPolicy
+                : ''OrderedReady'')'
           status:
             description: DragonflyStatus defines the observed state of Dragonfly
             properties:
@@ -7490,9 +7506,11 @@ spec:
                 description: |-
                   Status of the Dragonfly Instance
                   It can be one of the following:
-                  - "ready": The Dragonfly instance is ready to serve requests
-                  - "configuring-replication": The controller is updating the master of the Dragonfly instance
-                  - "resources-created": The Dragonfly instance resources were created but not yet configured
+                  - "Ready": The Dragonfly instance is ready to serve requests
+                  - "NotReady": The Dragonfly instance was ready but has no healthy master
+                  - "Configuring": The controller is updating the master of the Dragonfly instance
+                  - "RollingUpdate": The Dragonfly instance pods are being updated to a new version
+                  - "ResourcesCreated": The Dragonfly instance resources were created but not yet configured
                 type: string
             type: object
         type: object
