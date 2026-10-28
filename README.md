@@ -40,7 +40,7 @@ To create a sample Dragonfly instance, you can run the following command:
 kubectl apply -f https://raw.githubusercontent.com/dragonflydb/dragonfly-operator/main/config/samples/v1alpha1_dragonfly.yaml
 ```
 
-This will create a Dragonfly instance with 3 replicas. You can check the status of the instance by running
+This will create a Dragonfly instance with 2 replicas. You can check the status of the instance by running
 
 ```sh
 kubectl describe dragonflies.dragonflydb.io dragonfly-sample
@@ -78,6 +78,22 @@ To scale up/down the number of replicas, you can edit the `spec.replicas` field 
 ```sh
 kubectl patch dragonfly dragonfly-sample --type merge -p '{"spec":{"replicas":5}}'
 ```
+
+### Starting pods in parallel
+
+The StatefulSet uses `OrderedReady` by default, so pods start and stop one at a time. A pod that cannot start, for example because its node is drained, blocks every later pod. Set `spec.podManagementPolicy` to `Parallel` to start and stop pods together:
+
+```yaml
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: dragonfly-sample
+spec:
+  replicas: 3
+  podManagementPolicy: Parallel
+```
+
+`podManagementPolicy` is immutable. The API server rejects a change on an existing instance, so delete and recreate the Dragonfly instance to switch policies. With `Parallel`, scaling down terminates pods at the same time rather than one at a time.
 
 ### Vertically scaling the instance
 

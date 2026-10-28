@@ -25,13 +25,28 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// DragonflySpec defines the desired state of Dragonfly
+// DragonflySpec defines the desired state of Dragonfly.
+// An empty podManagementPolicy is treated as OrderedReady, so updates to an
+// existing instance are still accepted when the field was left unset.
+// +kubebuilder:validation:XValidation:rule="(has(self.podManagementPolicy) && self.podManagementPolicy != '' ? self.podManagementPolicy : 'OrderedReady') == (has(oldSelf.podManagementPolicy) && oldSelf.podManagementPolicy != '' ? oldSelf.podManagementPolicy : 'OrderedReady')",message="podManagementPolicy is immutable; delete and recreate the Dragonfly instance to change it"
 type DragonflySpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Replicas is the total number of Dragonfly instances including the master
 	Replicas int32 `json:"replicas,omitempty"`
+
+	// (Optional) podManagementPolicy of the Dragonfly StatefulSet.
+	// OrderedReady (default) starts and stops pods one at a time, in order.
+	// Parallel starts and stops pods at the same time, so a pod that cannot
+	// schedule does not block the rest of the instance from starting.
+	// This field is immutable. The API server rejects a change, and the
+	// operator leaves the existing StatefulSet policy in place. Delete and
+	// recreate the Dragonfly instance to change it.
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Enum=OrderedReady;Parallel
+	PodManagementPolicy string `json:"podManagementPolicy,omitempty"`
 
 	// Image is the Dragonfly image to use
 	Image string `json:"image,omitempty"`
@@ -87,6 +102,13 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	AdditionalVolumes []corev1.Volume `json:"additionalVolumes,omitempty"`
+
+	// (Optional) Additional volume mounts to add to the Dragonfly main container.
+	// Pair with additionalVolumes to mount an extra volume — e.g. back the snapshot
+	// dir with an emptyDir. Replace mount on name collision.
+	// +optional
+	// +kubebuilder:validation:Optional
+	AdditionalVolumeMounts []corev1.VolumeMount `json:"additionalVolumeMounts,omitempty"`
 
 	// (Optional) Dragonfly container resource limits. Any container limits
 	// can be specified.

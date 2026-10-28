@@ -30,6 +30,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/tools/record"
 
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -37,6 +38,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -44,6 +46,7 @@ import (
 
 	dragonflydbiov1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	"github.com/dragonflydb/dragonfly-operator/internal/controller"
+	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -95,6 +98,7 @@ func main() {
 
 	mgrOpts := ctrl.Options{
 		Scheme: scheme,
+		Cache:  cacheOptions(),
 		Metrics: metricsserver.Options{
 			BindAddress: metricsAddr,
 		},
@@ -211,6 +215,22 @@ func getCurrentNamespace() string {
 		ns = "default"
 	}
 	return ns
+}
+
+// cacheOptions returns the options of the manager cache.
+func cacheOptions() cache.Options {
+	return cache.Options{
+		// The operator never reads the managed fields.
+		DefaultTransform: cache.TransformStripManagedFields(),
+		ByObject: map[client.Object]cache.ByObject{
+			// Cache only the Dragonfly pods and not every pod of the watched namespaces.
+			&v1.Pod{}: {
+				Label: labels.SelectorFromSet(labels.Set{
+					resources.KubernetesAppNameLabelKey: resources.KubernetesAppName,
+				}),
+			},
+		},
+	}
 }
 
 func addNamespacesToOpts(namespaces string, ops *ctrl.Options) error {
