@@ -42,15 +42,13 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 	namespace := "default"
 	replicas := 4
 
-	disabled := false
 	df := dfv1alpha1.Dragonfly{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
 		Spec: dfv1alpha1.DragonflySpec{
-			Replicas:             int32(replicas),
-			NetworkPolicyEnabled: &disabled,
+			Replicas: int32(replicas),
 		},
 	}
 
@@ -192,28 +190,29 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
 			Expect(err).To(BeNil())
 
-			// StatefulSet readiness does not guarantee that the operator has assigned roles.
-			Eventually(func(g Gomega) {
+			// The new pod is labeled only after it becomes ready, so poll for the roles
+			Eventually(func() bool {
 				var pods corev1.PodList
-				g.Expect(k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+				err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
 					resources.DragonflyNameLabelKey:    name,
 					resources.KubernetesPartOfLabelKey: "dragonfly",
-				})).To(Succeed())
-
-				// 4 pod replicas = 1 master + 3 replicas
-				g.Expect(pods.Items).To(HaveLen(replicas))
+				})
+				if err != nil || len(pods.Items) != replicas {
+					return false
+				}
 
 				podRoles := make(map[string][]string)
 				for _, pod := range pods.Items {
 					role, ok := pod.Labels[resources.RoleLabelKey]
-					g.Expect(ok).To(BeTrue())
+					if !ok {
+						return false
+					}
 					podRoles[role] = append(podRoles[role], pod.Name)
 				}
 
 				// One Master & Three Replicas
-				g.Expect(podRoles[resources.Master]).To(HaveLen(1))
-				g.Expect(podRoles[resources.Replica]).To(HaveLen(replicas - 1))
-			}, 1*time.Minute, time.Second).Should(Succeed())
+				return len(podRoles[resources.Master]) == 1 && len(podRoles[resources.Replica]) == replicas-1
+			}, 1*time.Minute, 2*time.Second).Should(BeTrue())
 		})
 		It("Cleanup", func() {
 			var df dfv1alpha1.Dragonfly

@@ -168,6 +168,13 @@ func (in *DragonflySpec) DeepCopyInto(out *DragonflySpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.AdditionalVolumeMounts != nil {
+		in, out := &in.AdditionalVolumeMounts, &out.AdditionalVolumeMounts
+		*out = make([]v1.VolumeMount, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.Resources != nil {
 		in, out := &in.Resources, &out.Resources
 		*out = new(v1.ResourceRequirements)
@@ -245,11 +252,6 @@ func (in *DragonflySpec) DeepCopyInto(out *DragonflySpec) {
 		in, out := &in.OwnedObjectsMetadata, &out.OwnedObjectsMetadata
 		*out = new(MetadataSpec)
 		(*in).DeepCopyInto(*out)
-	}
-	if in.NetworkPolicyEnabled != nil {
-		in, out := &in.NetworkPolicyEnabled, &out.NetworkPolicyEnabled
-		*out = new(bool)
-		**out = **in
 	}
 	if in.Pdb != nil {
 		in, out := &in.Pdb, &out.Pdb

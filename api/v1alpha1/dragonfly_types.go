@@ -25,13 +25,28 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// DragonflySpec defines the desired state of Dragonfly
+// DragonflySpec defines the desired state of Dragonfly.
+// An empty podManagementPolicy is treated as OrderedReady, so updates to an
+// existing instance are still accepted when the field was left unset.
+// +kubebuilder:validation:XValidation:rule="(has(self.podManagementPolicy) && self.podManagementPolicy != '' ? self.podManagementPolicy : 'OrderedReady') == (has(oldSelf.podManagementPolicy) && oldSelf.podManagementPolicy != '' ? oldSelf.podManagementPolicy : 'OrderedReady')",message="podManagementPolicy is immutable; delete and recreate the Dragonfly instance to change it"
 type DragonflySpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Replicas is the total number of Dragonfly instances including the master
 	Replicas int32 `json:"replicas,omitempty"`
+
+	// (Optional) podManagementPolicy of the Dragonfly StatefulSet.
+	// OrderedReady (default) starts and stops pods one at a time, in order.
+	// Parallel starts and stops pods at the same time, so a pod that cannot
+	// schedule does not block the rest of the instance from starting.
+	// This field is immutable. The API server rejects a change, and the
+	// operator leaves the existing StatefulSet policy in place. Delete and
+	// recreate the Dragonfly instance to change it.
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Enum=OrderedReady;Parallel
+	PodManagementPolicy string `json:"podManagementPolicy,omitempty"`
 
 	// Image is the Dragonfly image to use
 	Image string `json:"image,omitempty"`
@@ -87,6 +102,13 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	AdditionalVolumes []corev1.Volume `json:"additionalVolumes,omitempty"`
+
+	// (Optional) Additional volume mounts to add to the Dragonfly main container.
+	// Pair with additionalVolumes to mount an extra volume — e.g. back the snapshot
+	// dir with an emptyDir. Replace mount on name collision.
+	// +optional
+	// +kubebuilder:validation:Optional
+	AdditionalVolumeMounts []corev1.VolumeMount `json:"additionalVolumeMounts,omitempty"`
 
 	// (Optional) Dragonfly container resource limits. Any container limits
 	// can be specified.
@@ -188,14 +210,6 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	EnableReplicationReadinessGate bool `json:"enableReplicationReadinessGate,omitempty"`
-
-	// (Optional) Whether to create a NetworkPolicy for this Dragonfly instance.
-	// The NetworkPolicy restricts admin port access to operator and peer pods only.
-	// Defaults to true.
-	// +optional
-	// +kubebuilder:validation:Optional
-	// +kubebuilder:default:=true
-	NetworkPolicyEnabled *bool `json:"networkPolicyEnabled,omitempty"`
 
 	// (Optional) Dragonfly Pod Disruption Budget configuration
 	// +optional
@@ -322,9 +336,11 @@ type DragonflyStatus struct {
 
 	// Status of the Dragonfly Instance
 	// It can be one of the following:
-	// - "ready": The Dragonfly instance is ready to serve requests
-	// - "configuring-replication": The controller is updating the master of the Dragonfly instance
-	// - "resources-created": The Dragonfly instance resources were created but not yet configured
+	// - "Ready": The Dragonfly instance is ready to serve requests
+	// - "NotReady": The Dragonfly instance was ready but has no healthy master
+	// - "Configuring": The controller is updating the master of the Dragonfly instance
+	// - "RollingUpdate": The Dragonfly instance pods are being updated to a new version
+	// - "ResourcesCreated": The Dragonfly instance resources were created but not yet configured
 	Phase string `json:"phase,omitempty"`
 
 	// TODO: remove this in a future release.
