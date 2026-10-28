@@ -1297,6 +1297,9 @@ var _ = Describe("Dragonfly Dataset Loading Readiness Gate", Ordered, FlakeAttem
 				if err != nil {
 					return err
 				}
+				if restartedPod.UID == masterPod.UID || !restartedPod.DeletionTimestamp.IsZero() {
+					return fmt.Errorf("waiting for replacement of pod %s", masterPod.Name)
+				}
 				if restartedPod.Status.Phase != corev1.PodRunning {
 					return fmt.Errorf("pod not running yet: %s", restartedPod.Status.Phase)
 				}

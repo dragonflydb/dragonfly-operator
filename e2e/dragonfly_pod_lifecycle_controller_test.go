@@ -177,9 +177,13 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			err = k8sClient.Delete(ctx, &pod)
 			Expect(err).To(BeNil())
 
-			// Wait until the loop is reconciled. This is needed as status is ready previously
-			// and the test might move forward even before the reconcile loop is triggered
-			time.Sleep(10 * time.Second)
+			Eventually(func(g Gomega) {
+				var replacement corev1.Pod
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(&pod), &replacement)).To(Succeed())
+				g.Expect(replacement.UID).NotTo(Equal(pod.UID))
+				g.Expect(replacement.DeletionTimestamp.IsZero()).To(BeTrue())
+				g.Expect(replacement.Status.Phase).To(Equal(corev1.PodRunning))
+			}, 1*time.Minute, time.Second).Should(Succeed())
 
 			// Expect a new replica
 			// Wait for Status to be ready
@@ -188,30 +192,28 @@ var _ = Describe("DF Pod Lifecycle Reconciler", Ordered, FlakeAttempts(3), func(
 			err = waitForStatefulSetReady(ctx, k8sClient, name, namespace, 1*time.Minute)
 			Expect(err).To(BeNil())
 
-			// Check if there are relevant pods with expected roles
-			var pods corev1.PodList
-			err = k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-				resources.DragonflyNameLabelKey:    name,
-				resources.KubernetesPartOfLabelKey: "dragonfly",
-			})
-			Expect(err).To(BeNil())
+			// StatefulSet readiness does not guarantee that the operator has assigned roles.
+			Eventually(func(g Gomega) {
+				var pods corev1.PodList
+				g.Expect(k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+					resources.DragonflyNameLabelKey:    name,
+					resources.KubernetesPartOfLabelKey: "dragonfly",
+				})).To(Succeed())
 
-			// 4 pod replicas = 1 master + 3 replicas
-			Expect(pods.Items).To(HaveLen(replicas))
+				// 4 pod replicas = 1 master + 3 replicas
+				g.Expect(pods.Items).To(HaveLen(replicas))
 
-			// Get the pods along with their roles
-			podRoles := make(map[string][]string)
-			for _, pod := range pods.Items {
-				role, ok := pod.Labels[resources.RoleLabelKey]
-				// error if there is no label
-				Expect(ok).To(BeTrue())
-				// verify the role to match the label
-				podRoles[role] = append(podRoles[role], pod.Name)
-			}
+				podRoles := make(map[string][]string)
+				for _, pod := range pods.Items {
+					role, ok := pod.Labels[resources.RoleLabelKey]
+					g.Expect(ok).To(BeTrue())
+					podRoles[role] = append(podRoles[role], pod.Name)
+				}
 
-			// One Master & Three Replicas
-			Expect(podRoles[resources.Master]).To(HaveLen(1))
-			Expect(podRoles[resources.Replica]).To(HaveLen(replicas - 1))
+				// One Master & Three Replicas
+				g.Expect(podRoles[resources.Master]).To(HaveLen(1))
+				g.Expect(podRoles[resources.Replica]).To(HaveLen(replicas - 1))
+			}, 1*time.Minute, time.Second).Should(Succeed())
 		})
 		It("Cleanup", func() {
 			var df dfv1alpha1.Dragonfly
