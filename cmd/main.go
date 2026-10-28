@@ -108,17 +108,11 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "31079dea.dragonflydb.io",
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
+		// Release the lease when the manager stops, so that another replica takes over
+		// without waiting for the lease to expire. This is safe because the manager
+		// releases the lease after the controllers have stopped, and main exits right
+		// after mgr.Start returns.
+		LeaderElectionReleaseOnCancel: true,
 	}
 
 	// Watch namespace taken from the environment variable WATCH_NAMESPACE.
