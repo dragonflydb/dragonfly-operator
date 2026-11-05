@@ -36,6 +36,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -183,7 +184,7 @@ func main() {
 	if watchNamespaces != "" {
 		setupLog.Info(fmt.Sprintf("Watch namespaces: %s", watchNamespaces))
 	} else {
-		setupLog.Info(fmt.Sprintf("Watch all namespaces."))
+		setupLog.Info("Watch all namespaces.")
 	}
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
@@ -202,13 +203,47 @@ func getWatchNamespaceFromEnvVariable() string {
 	return ns
 }
 
+const defaultNamespace = "default"
+
+const serviceAccountNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+// getCurrentNamespace returns the namespace the operator runs in: the pod
+// namespace when in-cluster, otherwise the kubeconfig context namespace.
 func getCurrentNamespace() string {
-	clientCfg, _ := clientcmd.NewDefaultClientConfigLoadingRules().Load()
-	ns := clientCfg.Contexts[clientCfg.CurrentContext].Namespace
-	if ns == "" {
-		ns = "default"
+	if ns := getPodNamespace(); ns != "" {
+		return ns
 	}
-	return ns
+
+	clientCfg, err := clientcmd.NewDefaultClientConfigLoadingRules().Load()
+	if err != nil {
+		setupLog.Error(err, "failed to load kubeconfig, falling back to the default namespace")
+		return defaultNamespace
+	}
+	return resolveCurrentNamespace(clientCfg)
+}
+
+func getPodNamespace() string {
+	if ns := strings.TrimSpace(os.Getenv("POD_NAMESPACE")); ns != "" {
+		return ns
+	}
+	data, err := os.ReadFile(serviceAccountNamespaceFile)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func resolveCurrentNamespace(clientCfg *clientcmdapi.Config) string {
+	if clientCfg == nil {
+		return defaultNamespace
+	}
+
+	kubeContext, ok := clientCfg.Contexts[clientCfg.CurrentContext]
+	if !ok || kubeContext == nil || kubeContext.Namespace == "" {
+		return defaultNamespace
+	}
+
+	return kubeContext.Namespace
 }
 
 // cacheOptions returns the options of the manager cache.
