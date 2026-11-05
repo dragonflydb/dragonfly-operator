@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -508,10 +509,23 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp, "addr", redisClient.Options().Addr)
 	resp, err := redisClient.SlaveOf(ctx, masterIp, strconv.Itoa(resources.DragonflyAdminPort)).Result()
 	if err != nil {
+		// Only a reply from the server proves the demotion did not happen. On a network
+		// error or timeout it may have been applied, so the marker must stay.
+		var redisErr redis.Error
+		if wasMaster && errors.As(err, &redisErr) {
+			if clearErr := dfi.setPendingClientDisconnect(ctx, pod, false); clearErr != nil {
+				dfi.log.Error(clearErr, "could not clear the client disconnect marker", "pod", pod.Name)
+			}
+		}
 		return fmt.Errorf("error running SLAVE OF command: %s", err)
 	}
 
 	if resp != "OK" {
+		if wasMaster {
+			if clearErr := dfi.setPendingClientDisconnect(ctx, pod, false); clearErr != nil {
+				dfi.log.Error(clearErr, "could not clear the client disconnect marker", "pod", pod.Name)
+			}
+		}
 		return fmt.Errorf("response of `SLAVE OF` on replica is not OK: %s", resp)
 	}
 
@@ -598,12 +612,63 @@ func (dfi *DragonflyInstance) disconnectClients(ctx context.Context, pod *corev1
 		return fmt.Errorf("pod %s has no IP address", pod.Name)
 	}
 
+	redisClient := dfi.getRedisClient(pod.Status.PodIP)
 	addr := clientListenerAddress(pod.Status.PodIP)
 	dfi.log.Info("disconnecting clients", "pod", pod.Name, "addr", addr)
 
-	killed, err := dfi.getRedisClient(pod.Status.PodIP).ClientKillByFilter(ctx, "LADDR", addr).Result()
+	killed, err := redisClient.ClientKillByFilter(ctx, "LADDR", addr).Result()
 	if err != nil {
+		// Dragonfly older than v1.14.0 replies with an error for CLIENT KILL LADDR.
+		var redisErr redis.Error
+		if errors.As(err, &redisErr) {
+			dfi.log.Info("CLIENT KILL LADDR is not supported, falling back to per-client kill", "pod", pod.Name, "reason", err.Error())
+			return dfi.disconnectClientsLegacy(ctx, redisClient, pod)
+		}
 		return fmt.Errorf("failed to kill clients on %s: %w", addr, err)
+	}
+
+	dfi.log.Info("disconnected clients", "pod", pod.Name, "clients", killed)
+	return nil
+}
+
+// disconnectClientsLegacy kills the clients one by one for Dragonfly versions without CLIENT KILL LADDR.
+func (dfi *DragonflyInstance) disconnectClientsLegacy(ctx context.Context, redisClient *redis.Client, pod *corev1.Pod) error {
+	clientList, err := redisClient.ClientList(ctx).Result()
+	if err != nil {
+		return fmt.Errorf("failed to get client list from %s: %w", pod.Name, err)
+	}
+
+	var errs []error
+	killed := 0
+	for _, clientInfo := range strings.Split(clientList, "\n") {
+		if clientInfo == "" {
+			continue
+		}
+		// Example clientInfo: "id=2 addr=10.42.1.123:50342 ... name=..."
+		// Avoid killing replication clients, internal clients, or this connection
+		if strings.Contains(clientInfo, "addr=127.0.0.1") ||
+			strings.Contains(clientInfo, "addr=::1") ||
+			strings.Contains(clientInfo, "addr=[::1]") ||
+			strings.Contains(clientInfo, "name=repl_") ||
+			strings.Contains(clientInfo, "name=dragonfly-operator") {
+			continue
+		}
+
+		for _, part := range strings.Split(clientInfo, " ") {
+			if strings.HasPrefix(part, "addr=") {
+				addr := strings.TrimPrefix(part, "addr=")
+				if _, err := redisClient.ClientKill(ctx, addr).Result(); err != nil {
+					errs = append(errs, fmt.Errorf("failed to kill client %s: %w", addr, err))
+				} else {
+					killed++
+				}
+				break
+			}
+		}
+	}
+
+	if err := errors.Join(errs...); err != nil {
+		return err
 	}
 
 	dfi.log.Info("disconnected clients", "pod", pod.Name, "clients", killed)
