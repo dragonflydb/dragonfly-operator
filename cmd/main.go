@@ -184,7 +184,7 @@ func main() {
 	if watchNamespaces != "" {
 		setupLog.Info(fmt.Sprintf("Watch namespaces: %s", watchNamespaces))
 	} else {
-		setupLog.Info(fmt.Sprintf("Watch all namespaces."))
+		setupLog.Info("Watch all namespaces.")
 	}
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
@@ -205,13 +205,32 @@ func getWatchNamespaceFromEnvVariable() string {
 
 const defaultNamespace = "default"
 
+const serviceAccountNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+// getCurrentNamespace returns the namespace the operator runs in: the pod
+// namespace when in-cluster, otherwise the kubeconfig context namespace.
 func getCurrentNamespace() string {
+	if ns := getPodNamespace(); ns != "" {
+		return ns
+	}
+
 	clientCfg, err := clientcmd.NewDefaultClientConfigLoadingRules().Load()
 	if err != nil {
 		setupLog.Error(err, "failed to load kubeconfig, falling back to the default namespace")
 		return defaultNamespace
 	}
 	return resolveCurrentNamespace(clientCfg)
+}
+
+func getPodNamespace() string {
+	if ns := strings.TrimSpace(os.Getenv("POD_NAMESPACE")); ns != "" {
+		return ns
+	}
+	data, err := os.ReadFile(serviceAccountNamespaceFile)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 func resolveCurrentNamespace(clientCfg *clientcmdapi.Config) string {
