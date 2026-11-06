@@ -1228,10 +1228,9 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 // is, promoting a replica with SLAVE OF NO ONE would detach it from the master
 // before the final writes are synced, so the caller should hold promotion back.
 //
-// The hold is bounded: it ends when the hook's maximum runtime has elapsed, when
-// the old master stops answering or is no longer a master, or when a replica
-// already reports itself as master (the hook succeeded; the ordinary promotion
-// then only adopts it, since SLAVE OF NO ONE on a master is a no-op).
+// The hold is bounded: it ends when the hook's maximum runtime has elapsed, or
+// when the old master stops answering or is no longer a master. A hook that
+// succeeded is picked up by preStopTakeoverTarget, which the caller checks first.
 func (dfi *DragonflyInstance) preStopTakeoverInFlight(ctx context.Context) (bool, error) {
 	if !dfi.df.Spec.EnablePreStopTakeover {
 		return false, nil
@@ -1266,21 +1265,46 @@ func (dfi *DragonflyInstance) preStopTakeoverInFlight(ctx context.Context) (bool
 		return false, nil
 	}
 
-	pods, err := dfi.getPods(ctx)
-	if err != nil {
-		return false, fmt.Errorf("failed to list dragonfly pods: %w", err)
-	}
-	for i := range pods.Items {
-		pod := &pods.Items[i]
-		if pod.Name == hookMaster.Name || isTerminating(pod) || !isRunningAndReady(pod) {
-			continue
-		}
-		if role, err := dfi.getRedisRole(ctx, pod); err == nil && role == resources.Master {
-			return false, nil
-		}
+	return true, nil
+}
+
+// preStopTakeoverTarget returns the replica that already reports itself as
+// master, i.e. the one the preStop hook handed the master role to
+// (spec.enablePreStopTakeover). The caller adopts it instead of running the
+// offset-based election: the promoted replica has no slave_repl_offset, so the
+// election would prefer a lagging replica and demote the synchronized master.
+//
+// Only pods labeled as replicas qualify. Pods without a role label (scale-out,
+// replacements) also report master until they are configured. When more than
+// one replica reports master the takeover target is ambiguous and nil is
+// returned, leaving the decision to the ordinary election.
+func (dfi *DragonflyInstance) preStopTakeoverTarget(ctx context.Context) (*corev1.Pod, error) {
+	if !dfi.df.Spec.EnablePreStopTakeover {
+		return nil, nil
 	}
 
-	return true, nil
+	pods, err := dfi.getPods(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list dragonfly pods: %w", err)
+	}
+
+	var target *corev1.Pod
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if !isReplica(pod) || !isHealthy(pod) {
+			continue
+		}
+		role, err := dfi.getRedisRole(ctx, pod)
+		if err != nil || role != resources.Master {
+			continue
+		}
+		if target != nil {
+			return nil, nil
+		}
+		target = pod
+	}
+
+	return target, nil
 }
 
 func (dfi *DragonflyInstance) getRedisRole(ctx context.Context, pod *corev1.Pod) (string, error) {

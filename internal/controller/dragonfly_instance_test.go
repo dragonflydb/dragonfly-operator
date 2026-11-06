@@ -26,6 +26,7 @@ import (
 	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
@@ -36,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -400,4 +402,223 @@ func TestReplTakeover_TimeoutShorterThanReadTimeout(t *testing.T) {
 	assert.Positive(t, timeoutSeconds)
 	assert.Less(t, time.Duration(timeoutSeconds)*time.Second, readTimeout,
 		"REPLTAKEOVER timeout (seconds) must be shorter than the client read timeout")
+}
+
+// fakeInfoServer answers INFO with the given payload. HELLO is rejected so the
+// client falls back to RESP2.
+func fakeInfoServer(t *testing.T, info string) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				r := bufio.NewReader(conn)
+				for {
+					args, err := readRESPArray(r)
+					if err != nil {
+						return
+					}
+					switch strings.ToUpper(args[0]) {
+					case "INFO":
+						_, err = conn.Write([]byte("$" + strconv.Itoa(len(info)) + "\r\n" + info + "\r\n"))
+					case "HELLO":
+						_, err = conn.Write([]byte("-ERR unknown command\r\n"))
+					default:
+						_, err = conn.Write([]byte("+OK\r\n"))
+					}
+					if err != nil {
+						return
+					}
+				}
+			}(conn)
+		}
+	}()
+	return ln.Addr().String()
+}
+
+type preStopPod struct {
+	name        string
+	ip          string
+	role        string // role label; empty means unlabeled
+	redisRole   string // role reported by INFO replication
+	terminating bool
+}
+
+// newPreStopInstance builds an instance whose pods answer INFO replication
+// with the given role, so the preStop takeover helpers can run without a cluster.
+func newPreStopInstance(t *testing.T, enabled bool, pods ...preStopPod) *DragonflyInstance {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, dfv1alpha1.AddToScheme(scheme))
+
+	df := &dfv1alpha1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{Name: "df", Namespace: "default"},
+		Spec:       dfv1alpha1.DragonflySpec{EnablePreStopTakeover: enabled},
+	}
+	objs := []client.Object{df}
+	addrs := map[string]string{}
+	for _, p := range pods {
+		labels := map[string]string{
+			resources.DragonflyNameLabelKey:     "df",
+			resources.KubernetesPartOfLabelKey:  resources.KubernetesPartOf,
+			resources.KubernetesAppNameLabelKey: resources.KubernetesAppName,
+		}
+		if p.role != "" {
+			labels[resources.RoleLabelKey] = p.role
+		}
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: p.name, Namespace: "default", Labels: labels},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+				PodIP: p.ip,
+				Conditions: []corev1.PodCondition{
+					{Type: corev1.ContainersReady, Status: corev1.ConditionTrue},
+				},
+				ContainerStatuses: []corev1.ContainerStatus{
+					{Name: resources.DragonflyContainerName, Ready: true},
+				},
+			},
+		}
+		if p.terminating {
+			// The API server sets the deletion timestamp to the deletion time plus the grace period.
+			deletion := metav1.NewTime(time.Now().Add(30 * time.Second))
+			pod.DeletionTimestamp = &deletion
+			pod.DeletionGracePeriodSeconds = ptr.To(int64(30))
+			pod.Finalizers = []string{"test/hold"}
+		}
+		objs = append(objs, pod)
+		addrs[p.ip] = fakeInfoServer(t, "# Replication\r\nrole:"+p.redisRole+"\r\n")
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+	dfi := &DragonflyInstance{
+		df:            df,
+		client:        c,
+		log:           logr.Discard(),
+		scheme:        scheme,
+		eventRecorder: record.NewFakeRecorder(10),
+		redisClients:  map[string]*redis.Client{},
+	}
+	for ip, addr := range addrs {
+		dfi.redisClients[ip] = redis.NewClient(&redis.Options{Addr: addr, MaxRetries: -1})
+	}
+	t.Cleanup(dfi.Close)
+	return dfi
+}
+
+// Regression: after the hook hands the master role to one of several replicas,
+// the election must not pick a still-lagging replica over the promoted one.
+func TestPreStopTakeoverTarget_AdoptsPromotedReplica(t *testing.T) {
+	dfi := newPreStopInstance(t, true,
+		preStopPod{name: "df-0", ip: "10.0.0.1", role: resources.Master, redisRole: "master", terminating: true},
+		preStopPod{name: "df-1", ip: "10.0.0.2", role: resources.Replica, redisRole: "master"},
+		preStopPod{name: "df-2", ip: "10.0.0.3", role: resources.Replica, redisRole: "replica"},
+	)
+
+	target, err := dfi.preStopTakeoverTarget(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, target)
+	assert.Equal(t, "df-1", target.Name)
+}
+
+func TestPreStopTakeoverTarget_Nil(t *testing.T) {
+	tests := []struct {
+		name    string
+		enabled bool
+		pods    []preStopPod
+	}{
+		{
+			name:    "feature disabled",
+			enabled: false,
+			pods: []preStopPod{
+				{name: "df-1", ip: "10.0.0.2", role: resources.Replica, redisRole: "master"},
+			},
+		},
+		{
+			name:    "no replica reports master",
+			enabled: true,
+			pods: []preStopPod{
+				{name: "df-1", ip: "10.0.0.2", role: resources.Replica, redisRole: "replica"},
+				{name: "df-2", ip: "10.0.0.3", role: resources.Replica, redisRole: "replica"},
+			},
+		},
+		{
+			name:    "unlabeled pod reporting master is not a takeover target",
+			enabled: true,
+			pods: []preStopPod{
+				{name: "df-1", ip: "10.0.0.2", role: resources.Replica, redisRole: "replica"},
+				{name: "df-2", ip: "10.0.0.3", role: "", redisRole: "master"},
+			},
+		},
+		{
+			name:    "ambiguous when two replicas report master",
+			enabled: true,
+			pods: []preStopPod{
+				{name: "df-1", ip: "10.0.0.2", role: resources.Replica, redisRole: "master"},
+				{name: "df-2", ip: "10.0.0.3", role: resources.Replica, redisRole: "master"},
+			},
+		},
+		{
+			name:    "terminating replica is ignored",
+			enabled: true,
+			pods: []preStopPod{
+				{name: "df-1", ip: "10.0.0.2", role: resources.Replica, redisRole: "master", terminating: true},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dfi := newPreStopInstance(t, tt.enabled, tt.pods...)
+			target, err := dfi.preStopTakeoverTarget(context.Background())
+			require.NoError(t, err)
+			assert.Nil(t, target)
+		})
+	}
+}
+
+func TestPreStopTakeoverInFlight(t *testing.T) {
+	t.Run("holds while the terminating master still answers as master", func(t *testing.T) {
+		dfi := newPreStopInstance(t, true,
+			preStopPod{name: "df-0", ip: "10.0.0.1", role: resources.Master, redisRole: "master", terminating: true},
+			preStopPod{name: "df-1", ip: "10.0.0.2", role: resources.Replica, redisRole: "replica"},
+		)
+		inFlight, err := dfi.preStopTakeoverInFlight(context.Background())
+		require.NoError(t, err)
+		assert.True(t, inFlight)
+	})
+	t.Run("an unlabeled pod reporting master does not release the hold", func(t *testing.T) {
+		dfi := newPreStopInstance(t, true,
+			preStopPod{name: "df-0", ip: "10.0.0.1", role: resources.Master, redisRole: "master", terminating: true},
+			preStopPod{name: "df-1", ip: "10.0.0.2", role: resources.Replica, redisRole: "replica"},
+			preStopPod{name: "df-2", ip: "10.0.0.3", role: "", redisRole: "master"},
+		)
+		inFlight, err := dfi.preStopTakeoverInFlight(context.Background())
+		require.NoError(t, err)
+		assert.True(t, inFlight)
+	})
+	t.Run("released once the old master is no longer a master", func(t *testing.T) {
+		dfi := newPreStopInstance(t, true,
+			preStopPod{name: "df-0", ip: "10.0.0.1", role: resources.Master, redisRole: "replica", terminating: true},
+		)
+		inFlight, err := dfi.preStopTakeoverInFlight(context.Background())
+		require.NoError(t, err)
+		assert.False(t, inFlight)
+	})
+	t.Run("no hold when the feature is disabled", func(t *testing.T) {
+		dfi := newPreStopInstance(t, false,
+			preStopPod{name: "df-0", ip: "10.0.0.1", role: resources.Master, redisRole: "master", terminating: true},
+		)
+		inFlight, err := dfi.preStopTakeoverInFlight(context.Background())
+		require.NoError(t, err)
+		assert.False(t, inFlight)
+	})
 }
