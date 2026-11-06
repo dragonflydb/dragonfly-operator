@@ -274,6 +274,16 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		}
 	}
 
+	if df.Spec.EnablePreStopTakeover {
+		statefulset.Spec.Template.Spec.Containers[0].Lifecycle = &corev1.Lifecycle{
+			PreStop: &corev1.LifecycleHandler{
+				Exec: &corev1.ExecAction{
+					Command: []string{"/bin/sh", "-c", defaultPreStopTakeoverScript},
+				},
+			},
+		}
+	}
+
 	if df.Spec.PodManagementPolicy != "" {
 		statefulset.Spec.PodManagementPolicy = appsv1.PodManagementPolicyType(df.Spec.PodManagementPolicy)
 	}

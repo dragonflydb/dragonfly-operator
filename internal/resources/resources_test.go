@@ -529,3 +529,32 @@ func TestGenerateDragonflyResources_ServiceLinksDisabled(t *testing.T) {
 	}
 	t.Fatal("StatefulSet not found in generated resources")
 }
+
+func TestGenerateDragonflyResources_PreStopTakeover(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		df := newTestDragonfly(2)
+		df.Spec.EnablePreStopTakeover = enabled
+
+		resources, err := GenerateDragonflyResources(df, "")
+		require.NoError(t, err)
+
+		found := false
+		for _, obj := range resources {
+			sts, ok := obj.(*appsv1.StatefulSet)
+			if !ok {
+				continue
+			}
+			found = true
+			lc := sts.Spec.Template.Spec.Containers[0].Lifecycle
+			if !enabled {
+				assert.Nil(t, lc, "no lifecycle expected when feature is disabled")
+				continue
+			}
+			require.NotNil(t, lc)
+			require.NotNil(t, lc.PreStop)
+			require.NotNil(t, lc.PreStop.Exec)
+			assert.Contains(t, lc.PreStop.Exec.Command[len(lc.PreStop.Exec.Command)-1], "REPLTAKEOVER")
+		}
+		require.True(t, found, "StatefulSet not found in generated resources")
+	}
+}
