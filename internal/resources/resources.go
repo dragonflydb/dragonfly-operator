@@ -19,6 +19,7 @@ package resources
 import (
 	"fmt"
 	"maps"
+	"strconv"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -278,7 +279,11 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		statefulset.Spec.Template.Spec.Containers[0].Lifecycle = &corev1.Lifecycle{
 			PreStop: &corev1.LifecycleHandler{
 				Exec: &corev1.ExecAction{
-					Command: []string{"/bin/sh", "-c", defaultPreStopTakeoverScript},
+					Command: []string{
+						"/bin/sh", "-c", defaultPreStopTakeoverScript, "prestop",
+						strconv.Itoa(PreStopTakeoverTimeoutSeconds),
+						strconv.Itoa(PreStopCommandTimeoutSeconds),
+					},
 				},
 			},
 		}
