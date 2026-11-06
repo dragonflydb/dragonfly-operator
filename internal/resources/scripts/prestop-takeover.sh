@@ -8,7 +8,7 @@ PORT="${HEALTHCHECK_PORT:-9999}"
 INFO=$(redis-cli -p "$PORT" info replication) || exit 0
 echo "$INFO" | grep -q '^role:master' || exit 0
 
-IP=$(echo "$INFO" | sed -n 's/^slave0:ip=\([^,]*\),.*state=online.*/\1/p')
+IP=$(echo "$INFO" | sed -n 's/^slave[0-9][0-9]*:ip=\([^,]*\),.*state=online.*/\1/p' | sed -n '1p')
 [ -n "$IP" ] || exit 0
 
 redis-cli -h "$IP" -p "$PORT" REPLTAKEOVER 5 || exit 0
