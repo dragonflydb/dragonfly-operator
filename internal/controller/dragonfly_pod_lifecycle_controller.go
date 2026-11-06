@@ -81,6 +81,19 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if isMasterError(err) {
 			log.Info("failed to get master pod", "error", err)
 
+			if errors.Is(err, ErrNoHealthyMaster) {
+				// The master may be running its preStop REPLTAKEOVER hook. Promoting
+				// a replica now would detach it before the final writes are synced.
+				inFlight, hookErr := dfi.preStopTakeoverInFlight(ctx)
+				if hookErr != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to check preStop takeover: %w", hookErr)
+				}
+				if inFlight {
+					log.Info("master is terminating, waiting for its preStop takeover before promoting")
+					return ctrl.Result{RequeueAfter: time.Second}, nil
+				}
+			}
+
 			if errors.Is(err, ErrIncorrectMasters) || errors.Is(err, ErrNoHealthyMaster) {
 				if err = dfi.deleteMasterRoleLabel(ctx); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to delete master role label: %w", err)

@@ -1223,6 +1223,66 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 	return nil
 }
 
+// preStopTakeoverInFlight reports whether a terminating master may still be
+// running its preStop REPLTAKEOVER hook (spec.enablePreStopTakeover). While it
+// is, promoting a replica with SLAVE OF NO ONE would detach it from the master
+// before the final writes are synced, so the caller should hold promotion back.
+//
+// The hold is bounded: it ends when the hook's maximum runtime has elapsed, when
+// the old master stops answering or is no longer a master, or when a replica
+// already reports itself as master (the hook succeeded; the ordinary promotion
+// then only adopts it, since SLAVE OF NO ONE on a master is a no-op).
+func (dfi *DragonflyInstance) preStopTakeoverInFlight(ctx context.Context) (bool, error) {
+	if !dfi.df.Spec.EnablePreStopTakeover {
+		return false, nil
+	}
+
+	var masters corev1.PodList
+	if err := dfi.client.List(ctx, &masters, client.InNamespace(dfi.df.Namespace), client.MatchingLabels{
+		resources.DragonflyNameLabelKey:     dfi.df.Name,
+		resources.KubernetesPartOfLabelKey:  resources.KubernetesPartOf,
+		resources.KubernetesAppNameLabelKey: resources.KubernetesAppName,
+		resources.RoleLabelKey:              resources.Master,
+	}); err != nil {
+		return false, fmt.Errorf("failed to list master pods: %w", err)
+	}
+
+	window := time.Duration(resources.PreStopMaxSeconds) * time.Second
+	var hookMaster *corev1.Pod
+	for i := range masters.Items {
+		since, ok := terminatingSince(&masters.Items[i])
+		if ok && time.Since(since) < window {
+			hookMaster = &masters.Items[i]
+			break
+		}
+	}
+	if hookMaster == nil {
+		return false, nil
+	}
+
+	// A master that no longer answers, or is no longer a master, has finished
+	// (or skipped) the hook: nothing left to wait for.
+	if role, err := dfi.getRedisRole(ctx, hookMaster); err != nil || role != resources.Master {
+		return false, nil
+	}
+
+	pods, err := dfi.getPods(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to list dragonfly pods: %w", err)
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.Name == hookMaster.Name || isTerminating(pod) || !isRunningAndReady(pod) {
+			continue
+		}
+		if role, err := dfi.getRedisRole(ctx, pod); err == nil && role == resources.Master {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
 func (dfi *DragonflyInstance) getRedisRole(ctx context.Context, pod *corev1.Pod) (string, error) {
 	if pod.Status.PodIP == "" {
 		return "", fmt.Errorf("pod IP not available for %s", pod.Name)

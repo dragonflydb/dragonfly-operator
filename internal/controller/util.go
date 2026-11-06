@@ -22,6 +22,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	appsv1 "k8s.io/api/apps/v1"
@@ -124,6 +125,26 @@ func isTerminating(pod *corev1.Pod) bool {
 	}
 
 	return false
+}
+
+// terminatingSince returns when the pod started terminating: the start of its
+// deletion grace period, or the time it became a disruption target.
+func terminatingSince(pod *corev1.Pod) (time.Time, bool) {
+	if !pod.DeletionTimestamp.IsZero() {
+		start := pod.DeletionTimestamp.Time
+		if pod.DeletionGracePeriodSeconds != nil {
+			start = start.Add(-time.Duration(*pod.DeletionGracePeriodSeconds) * time.Second)
+		}
+		return start, true
+	}
+
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.DisruptionTarget && c.Status == corev1.ConditionTrue {
+			return c.LastTransitionTime.Time, true
+		}
+	}
+
+	return time.Time{}, false
 }
 
 // getGVK returns the GroupVersionKind of the given object.
