@@ -2,6 +2,10 @@ package resources
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -528,4 +532,97 @@ func TestGenerateDragonflyResources_ServiceLinksDisabled(t *testing.T) {
 		}
 	}
 	t.Fatal("StatefulSet not found in generated resources")
+}
+
+func TestGenerateDragonflyResources_PreStopTakeover(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		df := newTestDragonfly(2)
+		df.Spec.EnablePreStopTakeover = enabled
+
+		resources, err := GenerateDragonflyResources(df, "")
+		require.NoError(t, err)
+
+		found := false
+		for _, obj := range resources {
+			sts, ok := obj.(*appsv1.StatefulSet)
+			if !ok {
+				continue
+			}
+			found = true
+			lc := sts.Spec.Template.Spec.Containers[0].Lifecycle
+			if !enabled {
+				assert.Nil(t, lc, "no lifecycle expected when feature is disabled")
+				continue
+			}
+			require.NotNil(t, lc)
+			require.NotNil(t, lc.PreStop)
+			require.NotNil(t, lc.PreStop.Exec)
+			assert.Contains(t, lc.PreStop.Exec.Command[2], "REPLTAKEOVER")
+		}
+		require.True(t, found, "StatefulSet not found in generated resources")
+	}
+}
+
+func TestGenerateDragonflyResources_PreStopTakeoverTimeouts(t *testing.T) {
+	df := newTestDragonfly(2)
+	df.Spec.EnablePreStopTakeover = true
+
+	resources, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	for _, obj := range resources {
+		if sts, ok := obj.(*appsv1.StatefulSet); ok {
+			cmd := sts.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command
+			require.Len(t, cmd, 6)
+			assert.Equal(t, "5", cmd[4], "REPLTAKEOVER timeout in seconds")
+			assert.Equal(t, "10", cmd[5], "per-call wall-clock limit in seconds")
+			return
+		}
+	}
+	t.Fatal("StatefulSet not found in generated resources")
+}
+
+// runPreStopScript runs the preStop script with stub redis-cli and timeout
+// binaries and returns the arguments of every redis-cli call.
+func runPreStopScript(t *testing.T, info string) []string {
+	t.Helper()
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls.log")
+	infoFile := filepath.Join(dir, "info.txt")
+	require.NoError(t, os.WriteFile(infoFile, []byte(info), 0o600))
+
+	stubs := map[string]string{
+		"timeout":   "#!/bin/sh\nshift\nexec \"$@\"\n",
+		"redis-cli": "#!/bin/sh\necho \"$@\" >> " + log + "\ncase \"$*\" in *\"info replication\"*) cat " + infoFile + " ;; esac\n",
+	}
+	for name, body := range stubs {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(body), 0o700))
+	}
+
+	cmd := exec.Command("/bin/sh", "-c", defaultPreStopTakeoverScript, "prestop", "5", "10")
+	cmd.Env = []string{"PATH=" + dir + ":/usr/bin:/bin"}
+	require.NoError(t, cmd.Run(), "hook must always exit 0")
+
+	data, err := os.ReadFile(log)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	require.NoError(t, err)
+	return strings.Split(strings.TrimSpace(string(data)), "\n")
+}
+
+func TestPreStopScript(t *testing.T) {
+	t.Run("takes over on the first online replica", func(t *testing.T) {
+		calls := runPreStopScript(t, "role:master\r\nslave0:ip=10.0.0.5,port=6379,state=full_sync,lag=0\r\nslave1:ip=10.0.0.6,port=6379,state=online,lag=0\r\n")
+		require.Len(t, calls, 2)
+		assert.Equal(t, "-h 10.0.0.6 -p 9999 REPLTAKEOVER 5", calls[1])
+	})
+	t.Run("does nothing on a replica", func(t *testing.T) {
+		calls := runPreStopScript(t, "role:replica\r\n")
+		assert.Len(t, calls, 1)
+	})
+	t.Run("does nothing without an online replica", func(t *testing.T) {
+		calls := runPreStopScript(t, "role:master\r\nslave0:ip=10.0.0.5,port=6379,state=full_sync,lag=0\r\n")
+		assert.Len(t, calls, 1)
+	})
 }
