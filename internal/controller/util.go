@@ -112,6 +112,18 @@ func isDragonflyContainerReady(containerStatuses []corev1.ContainerStatus) bool 
 	return false
 }
 
+// dragonflyContainerID returns the ID of the pod's current dragonfly container,
+// or an empty string when it is not known yet.
+func dragonflyContainerID(pod *corev1.Pod) string {
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Name == resources.DragonflyContainerName {
+			return cs.ContainerID
+		}
+	}
+
+	return ""
+}
+
 // isTerminating returns true if the pod is terminating.
 func isTerminating(pod *corev1.Pod) bool {
 	if !pod.DeletionTimestamp.IsZero() {

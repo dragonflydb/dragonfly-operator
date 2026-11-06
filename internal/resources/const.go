@@ -99,6 +99,11 @@ const (
 	DragonflyNameLabelKey = "app"
 
 	MasterIpAnnotationKey = "operator.dragonflydb.io/masterIP"
+	// ReplicaContainerIDAnnotationKey records the ID of the dragonfly container
+	// that was configured as a replica. A restarted container gets a new ID and
+	// comes back as an empty master, so a changed ID means the pod is not a
+	// replica that took over (see spec.enablePreStopTakeover).
+	ReplicaContainerIDAnnotationKey = "operator.dragonflydb.io/replicaContainerID"
 
 	RoleLabelKey = "role"
 

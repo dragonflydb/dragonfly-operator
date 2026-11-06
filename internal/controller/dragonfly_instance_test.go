@@ -444,12 +444,57 @@ func fakeInfoServer(t *testing.T, info string) string {
 	return ln.Addr().String()
 }
 
+// fakeErrorServer rejects every command, like a server that is busy mid-takeover.
+func fakeErrorServer(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				r := bufio.NewReader(conn)
+				for {
+					if _, err := readRESPArray(r); err != nil {
+						return
+					}
+					if _, err := conn.Write([]byte("-ERR server busy\r\n")); err != nil {
+						return
+					}
+				}
+			}(conn)
+		}
+	}()
+	return ln.Addr().String()
+}
+
+// closedAddr returns an address nothing listens on, so dialing it is refused.
+func closedAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	addr := ln.Addr().String()
+	require.NoError(t, ln.Close())
+	return addr
+}
+
 type preStopPod struct {
-	name        string
-	ip          string
-	role        string // role label; empty means unlabeled
-	redisRole   string // role reported by INFO replication
-	terminating bool
+	name             string
+	ip               string
+	role             string // role label; empty means unlabeled
+	redisRole        string // role reported by INFO replication
+	terminating      bool
+	terminatingFor   time.Duration // how long ago deletion was requested; default 1s
+	disruptionTarget bool          // DisruptionTarget condition without a deletion timestamp
+	restarted        bool          // container restarted since it was configured as a replica
+	legacy           bool          // configured before the container ID annotation existed
+	infoError        bool          // INFO fails with a server error instead of answering
 }
 
 // newPreStopInstance builds an instance whose pods answer INFO replication
@@ -475,8 +520,17 @@ func newPreStopInstance(t *testing.T, enabled bool, pods ...preStopPod) *Dragonf
 		if p.role != "" {
 			labels[resources.RoleLabelKey] = p.role
 		}
+		containerID := "containerd://" + p.name
+		annotations := map[string]string{}
+		switch {
+		case p.legacy:
+		case p.restarted:
+			annotations[resources.ReplicaContainerIDAnnotationKey] = containerID + "-before-restart"
+		default:
+			annotations[resources.ReplicaContainerIDAnnotationKey] = containerID
+		}
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: p.name, Namespace: "default", Labels: labels},
+			ObjectMeta: metav1.ObjectMeta{Name: p.name, Namespace: "default", Labels: labels, Annotations: annotations},
 			Status: corev1.PodStatus{
 				Phase: corev1.PodRunning,
 				PodIP: p.ip,
@@ -484,19 +538,34 @@ func newPreStopInstance(t *testing.T, enabled bool, pods ...preStopPod) *Dragonf
 					{Type: corev1.ContainersReady, Status: corev1.ConditionTrue},
 				},
 				ContainerStatuses: []corev1.ContainerStatus{
-					{Name: resources.DragonflyContainerName, Ready: true},
+					{Name: resources.DragonflyContainerName, Ready: true, ContainerID: containerID},
 				},
 			},
 		}
+		if p.disruptionTarget {
+			pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
+				Type:               corev1.DisruptionTarget,
+				Status:             corev1.ConditionTrue,
+				LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Second)),
+			})
+		}
 		if p.terminating {
+			since := p.terminatingFor
+			if since == 0 {
+				since = time.Second
+			}
 			// The API server sets the deletion timestamp to the deletion time plus the grace period.
-			deletion := metav1.NewTime(time.Now().Add(30 * time.Second))
+			deletion := metav1.NewTime(time.Now().Add(30*time.Second - since))
 			pod.DeletionTimestamp = &deletion
 			pod.DeletionGracePeriodSeconds = ptr.To(int64(30))
 			pod.Finalizers = []string{"test/hold"}
 		}
 		objs = append(objs, pod)
-		addrs[p.ip] = fakeInfoServer(t, "# Replication\r\nrole:"+p.redisRole+"\r\n")
+		if p.infoError {
+			addrs[p.ip] = fakeErrorServer(t)
+		} else {
+			addrs[p.ip] = fakeInfoServer(t, "# Replication\r\nrole:"+p.redisRole+"\r\n")
+		}
 	}
 
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
@@ -621,4 +690,106 @@ func TestPreStopTakeoverInFlight(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, inFlight)
 	})
+}
+
+// Regression: a replica container that restarted comes back as an empty master
+// but keeps its replica label. It must not be adopted as the takeover target.
+func TestPreStopTakeoverTarget_RejectsRestartedReplica(t *testing.T) {
+	tests := []struct {
+		name string
+		pods []preStopPod
+	}{
+		{
+			name: "restarted replica alone",
+			pods: []preStopPod{
+				{name: "df-1", ip: "10.0.0.2", role: resources.Replica, redisRole: "master", restarted: true},
+			},
+		},
+		{
+			name: "restarted replica next to a synchronized one",
+			pods: []preStopPod{
+				{name: "df-1", ip: "10.0.0.2", role: resources.Replica, redisRole: "master", restarted: true},
+				{name: "df-2", ip: "10.0.0.3", role: resources.Replica, redisRole: "replica"},
+			},
+		},
+		{
+			name: "replica configured before the container ID annotation existed",
+			pods: []preStopPod{
+				{name: "df-1", ip: "10.0.0.2", role: resources.Replica, redisRole: "master", legacy: true},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dfi := newPreStopInstance(t, true, tt.pods...)
+			target, err := dfi.preStopTakeoverTarget(context.Background())
+			require.NoError(t, err)
+			assert.Nil(t, target)
+		})
+	}
+}
+
+func TestPreStopTakeoverInFlight_INFOErrors(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("holds when INFO fails with a server error", func(t *testing.T) {
+		dfi := newPreStopInstance(t, true,
+			preStopPod{name: "df-0", ip: "10.0.0.1", role: resources.Master, terminating: true, infoError: true},
+		)
+		inFlight, err := dfi.preStopTakeoverInFlight(ctx)
+		require.NoError(t, err)
+		assert.True(t, inFlight)
+	})
+	t.Run("released when nothing listens on the master port any more", func(t *testing.T) {
+		dfi := newPreStopInstance(t, true,
+			preStopPod{name: "df-0", ip: "10.0.0.1", role: resources.Master, redisRole: "master", terminating: true},
+		)
+		dfi.redisClients["10.0.0.1"] = redis.NewClient(&redis.Options{Addr: closedAddr(t), MaxRetries: -1})
+		inFlight, err := dfi.preStopTakeoverInFlight(ctx)
+		require.NoError(t, err)
+		assert.False(t, inFlight)
+	})
+}
+
+func TestPreStopTakeoverInFlight_Window(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("hold expires once the hook window has passed", func(t *testing.T) {
+		dfi := newPreStopInstance(t, true,
+			preStopPod{
+				name: "df-0", ip: "10.0.0.1", role: resources.Master, redisRole: "master",
+				terminating: true, terminatingFor: time.Duration(resources.PreStopMaxSeconds+5) * time.Second,
+			},
+		)
+		inFlight, err := dfi.preStopTakeoverInFlight(ctx)
+		require.NoError(t, err)
+		assert.False(t, inFlight)
+	})
+	t.Run("holds for a master that is only a disruption target", func(t *testing.T) {
+		dfi := newPreStopInstance(t, true,
+			preStopPod{name: "df-0", ip: "10.0.0.1", role: resources.Master, redisRole: "master", disruptionTarget: true},
+		)
+		inFlight, err := dfi.preStopTakeoverInFlight(ctx)
+		require.NoError(t, err)
+		assert.True(t, inFlight)
+	})
+}
+
+// replicaOf records the container it configured, which is what lets the
+// takeover lookup tell a replica that took over from one that restarted.
+func TestReplicaOf_RecordsContainerID(t *testing.T) {
+	dfi := newPreStopInstance(t, true,
+		preStopPod{name: "df-1", ip: "10.0.0.2", role: resources.Replica, redisRole: "master", legacy: true},
+	)
+	ctx := context.Background()
+
+	var pod corev1.Pod
+	require.NoError(t, dfi.client.Get(ctx, client.ObjectKey{Namespace: "default", Name: "df-1"}, &pod))
+	require.NotContains(t, pod.Annotations, resources.ReplicaContainerIDAnnotationKey)
+
+	require.NoError(t, dfi.replicaOf(ctx, &pod, "10.0.0.1"))
+
+	var got corev1.Pod
+	require.NoError(t, dfi.client.Get(ctx, client.ObjectKey{Namespace: "default", Name: "df-1"}, &got))
+	assert.Equal(t, "containerd://df-1", got.Annotations[resources.ReplicaContainerIDAnnotationKey])
 }

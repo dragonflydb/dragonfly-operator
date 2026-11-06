@@ -18,12 +18,14 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -516,6 +518,9 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		pod.Annotations = make(map[string]string)
 	}
 	pod.Annotations[resources.MasterIpAnnotationKey] = masterIp
+	if id := dragonflyContainerID(pod); id != "" {
+		pod.Annotations[resources.ReplicaContainerIDAnnotationKey] = id
+	}
 
 	// for compatibility, to be removed in future version
 	ip := net.ParseIP(masterIp)
@@ -1229,7 +1234,7 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 // before the final writes are synced, so the caller should hold promotion back.
 //
 // The hold is bounded: it ends when the hook's maximum runtime has elapsed, or
-// when the old master stops answering or is no longer a master. A hook that
+// when the old master's process is gone or it is no longer a master. A hook that
 // succeeded is picked up by preStopTakeoverTarget, which the caller checks first.
 func (dfi *DragonflyInstance) preStopTakeoverInFlight(ctx context.Context) (bool, error) {
 	if !dfi.df.Spec.EnablePreStopTakeover {
@@ -1259,9 +1264,18 @@ func (dfi *DragonflyInstance) preStopTakeoverInFlight(ctx context.Context) (bool
 		return false, nil
 	}
 
-	// A master that no longer answers, or is no longer a master, has finished
-	// (or skipped) the hook: nothing left to wait for.
-	if role, err := dfi.getRedisRole(ctx, hookMaster); err != nil || role != resources.Master {
+	// Only a definite answer ends the hold early: the pod has no IP, nothing
+	// listens on its port any more, or it no longer reports master. Any other
+	// error (timeout, busy server) can happen while REPLTAKEOVER is syncing, so
+	// the hold stays until the window expires.
+	if hookMaster.Status.PodIP == "" {
+		return false, nil
+	}
+	role, err := dfi.getRedisRole(ctx, hookMaster)
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return false, nil
+	}
+	if err == nil && role != resources.Master {
 		return false, nil
 	}
 
@@ -1275,9 +1289,12 @@ func (dfi *DragonflyInstance) preStopTakeoverInFlight(ctx context.Context) (bool
 // election would prefer a lagging replica and demote the synchronized master.
 //
 // Only pods labeled as replicas qualify. Pods without a role label (scale-out,
-// replacements) also report master until they are configured. When more than
-// one replica reports master the takeover target is ambiguous and nil is
-// returned, leaving the decision to the ordinary election.
+// replacements) also report master until they are configured. A replica whose
+// container restarted since the operator configured it also keeps its label and
+// comes back as an empty master, so the pod's current container must be the one
+// recorded when it was configured as a replica. When more than one replica
+// reports master the takeover target is ambiguous and nil is returned, leaving
+// the decision to the ordinary election.
 func (dfi *DragonflyInstance) preStopTakeoverTarget(ctx context.Context) (*corev1.Pod, error) {
 	if !dfi.df.Spec.EnablePreStopTakeover {
 		return nil, nil
@@ -1291,7 +1308,7 @@ func (dfi *DragonflyInstance) preStopTakeoverTarget(ctx context.Context) (*corev
 	var target *corev1.Pod
 	for i := range pods.Items {
 		pod := &pods.Items[i]
-		if !isReplica(pod) || !isHealthy(pod) {
+		if !isReplica(pod) || !isHealthy(pod) || !isConfiguredContainer(pod) {
 			continue
 		}
 		role, err := dfi.getRedisRole(ctx, pod)
@@ -1305,6 +1322,14 @@ func (dfi *DragonflyInstance) preStopTakeoverTarget(ctx context.Context) (*corev
 	}
 
 	return target, nil
+}
+
+// isConfiguredContainer reports whether the pod's current dragonfly container is
+// the one the operator configured as a replica. Pods configured before the
+// annotation existed do not qualify, so they fall back to the ordinary election.
+func isConfiguredContainer(pod *corev1.Pod) bool {
+	id := dragonflyContainerID(pod)
+	return id != "" && pod.Annotations[resources.ReplicaContainerIDAnnotationKey] == id
 }
 
 func (dfi *DragonflyInstance) getRedisRole(ctx context.Context, pod *corev1.Pod) (string, error) {
