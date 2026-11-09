@@ -22,6 +22,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	appsv1 "k8s.io/api/apps/v1"
@@ -111,6 +112,18 @@ func isDragonflyContainerReady(containerStatuses []corev1.ContainerStatus) bool 
 	return false
 }
 
+// dragonflyContainerID returns the ID of the pod's current dragonfly container,
+// or an empty string when it is not known yet.
+func dragonflyContainerID(pod *corev1.Pod) string {
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Name == resources.DragonflyContainerName {
+			return cs.ContainerID
+		}
+	}
+
+	return ""
+}
+
 // isTerminating returns true if the pod is terminating.
 func isTerminating(pod *corev1.Pod) bool {
 	if !pod.DeletionTimestamp.IsZero() {
@@ -124,6 +137,26 @@ func isTerminating(pod *corev1.Pod) bool {
 	}
 
 	return false
+}
+
+// terminatingSince returns when the pod started terminating: the start of its
+// deletion grace period, or the time it became a disruption target.
+func terminatingSince(pod *corev1.Pod) (time.Time, bool) {
+	if !pod.DeletionTimestamp.IsZero() {
+		start := pod.DeletionTimestamp.Time
+		if pod.DeletionGracePeriodSeconds != nil {
+			start = start.Add(-time.Duration(*pod.DeletionGracePeriodSeconds) * time.Second)
+		}
+		return start, true
+	}
+
+	for _, c := range pod.Status.Conditions {
+		if c.Type == corev1.DisruptionTarget && c.Status == corev1.ConditionTrue {
+			return c.LastTransitionTime.Time, true
+		}
+	}
+
+	return time.Time{}, false
 }
 
 // getGVK returns the GroupVersionKind of the given object.

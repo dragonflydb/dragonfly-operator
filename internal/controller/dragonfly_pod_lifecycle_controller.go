@@ -81,6 +81,30 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if isMasterError(err) {
 			log.Info("failed to get master pod", "error", err)
 
+			var takeoverTarget *corev1.Pod
+			if errors.Is(err, ErrNoHealthyMaster) {
+				// A replica that already took over in the master's preStop hook is
+				// adopted as is: the election would otherwise prefer a lagging replica.
+				var hookErr error
+				takeoverTarget, hookErr = dfi.preStopTakeoverTarget(ctx)
+				if hookErr != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to look up preStop takeover target: %w", hookErr)
+				}
+
+				if takeoverTarget == nil {
+					// The master may still be running its preStop REPLTAKEOVER hook.
+					// Promoting a replica now would detach it before the final writes are synced.
+					inFlight, hookErr := dfi.preStopTakeoverInFlight(ctx)
+					if hookErr != nil {
+						return ctrl.Result{}, fmt.Errorf("failed to check preStop takeover: %w", hookErr)
+					}
+					if inFlight {
+						log.Info("master is terminating, waiting for its preStop takeover before promoting")
+						return ctrl.Result{RequeueAfter: time.Second}, nil
+					}
+				}
+			}
+
 			if errors.Is(err, ErrIncorrectMasters) || errors.Is(err, ErrNoHealthyMaster) {
 				if err = dfi.deleteMasterRoleLabel(ctx); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to delete master role label: %w", err)
@@ -92,16 +116,19 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 				return ctrl.Result{}, fmt.Errorf("failed to list dragonfly pods: %w", err)
 			}
 
-			masterCandidate := selectMasterCandidate(allPods.Items, func(p *corev1.Pod) bool {
-				ready, err := dfi.isPodReady(ctx, p)
-				if err != nil {
-					log.Error(err, "failed to check readiness for candidate", "pod", p.Name)
-					return false
-				}
-				return ready
-			}, func(p *corev1.Pod) MasterCandidate {
-				return dfi.getMasterCandidate(ctx, p)
-			})
+			masterCandidate := takeoverTarget
+			if masterCandidate == nil {
+				masterCandidate = selectMasterCandidate(allPods.Items, func(p *corev1.Pod) bool {
+					ready, err := dfi.isPodReady(ctx, p)
+					if err != nil {
+						log.Error(err, "failed to check readiness for candidate", "pod", p.Name)
+						return false
+					}
+					return ready
+				}, func(p *corev1.Pod) MasterCandidate {
+					return dfi.getMasterCandidate(ctx, p)
+				})
+			}
 			if masterCandidate == nil {
 				log.Info("no healthy pod available to set up a master")
 				if dfiStatus := dfi.getStatus(); dfiStatus.Phase == PhaseReady || dfiStatus.Phase == PhaseReadyOld {

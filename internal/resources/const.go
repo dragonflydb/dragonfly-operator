@@ -34,6 +34,17 @@ const (
 
 	DragonflyContainerName = "dragonfly"
 
+	// PreStopTakeoverTimeoutSeconds is the REPLTAKEOVER timeout (in seconds) used
+	// by the preStop hook. It matches the timeout used for rolling updates and
+	// stays below PreStopCommandTimeoutSeconds.
+	PreStopTakeoverTimeoutSeconds = 5
+	// PreStopCommandTimeoutSeconds bounds each redis-cli call of the preStop hook.
+	// It matches the operator's Dragonfly client read timeout.
+	PreStopCommandTimeoutSeconds = 10
+	// PreStopMaxSeconds is the longest the preStop hook can run: two bounded
+	// redis-cli calls (INFO, then REPLTAKEOVER).
+	PreStopMaxSeconds = 2 * PreStopCommandTimeoutSeconds
+
 	AclVolumeName = "dragonfly-acl"
 	AclDir        = "/var/lib/dragonfly"
 	AclFileName   = "dragonfly.acl"
@@ -88,6 +99,11 @@ const (
 	DragonflyNameLabelKey = "app"
 
 	MasterIpAnnotationKey = "operator.dragonflydb.io/masterIP"
+	// ReplicaContainerIDAnnotationKey records the ID of the dragonfly container
+	// that was configured as a replica. A restarted container gets a new ID and
+	// comes back as an empty master, so a changed ID means the pod is not a
+	// replica that took over (see spec.enablePreStopTakeover).
+	ReplicaContainerIDAnnotationKey = "operator.dragonflydb.io/replicaContainerID"
 
 	RoleLabelKey = "role"
 
