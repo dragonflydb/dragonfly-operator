@@ -19,6 +19,7 @@ package controller
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -400,4 +401,112 @@ func TestReplTakeover_TimeoutShorterThanReadTimeout(t *testing.T) {
 	assert.Positive(t, timeoutSeconds)
 	assert.Less(t, time.Duration(timeoutSeconds)*time.Second, readTimeout,
 		"REPLTAKEOVER timeout (seconds) must be shorter than the client read timeout")
+}
+
+// fakeInfoServer answers INFO with the given payload and every other command
+// with +OK. HELLO is rejected so the client falls back to RESP2.
+func fakeInfoServer(t *testing.T, info string) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				r := bufio.NewReader(conn)
+				for {
+					args, err := readRESPArray(r)
+					if err != nil {
+						return
+					}
+					switch strings.ToUpper(args[0]) {
+					case "HELLO":
+						_, err = conn.Write([]byte("-ERR unknown command\r\n"))
+					case "INFO":
+						_, err = fmt.Fprintf(conn, "$%d\r\n%s\r\n", len(info), info)
+					default:
+						_, err = conn.Write([]byte("+OK\r\n"))
+					}
+					if err != nil {
+						return
+					}
+				}
+			}(conn)
+		}
+	}()
+	return ln.Addr().String()
+}
+
+// TestCheckReplicaRoleIPv6MasterHost covers an IPv6 master address in
+// INFO replication. Splitting the line on every colon keeps only the first
+// group of the address, so the replica looks misconfigured and the operator
+// re-issues REPLICAOF on every reconcile.
+func TestCheckReplicaRoleIPv6MasterHost(t *testing.T) {
+	ctx := context.Background()
+	const masterIP = "fd00:10:244::5"
+	info := "# Replication\r\n" +
+		"role:replica\r\n" +
+		"master_host:" + masterIP + "\r\n" +
+		"master_port:6379\r\n" +
+		"master_link_status:up\r\n"
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "df-1",
+			Namespace:   "default",
+			Labels:      map[string]string{},
+			Annotations: map[string]string{},
+		},
+		Status: corev1.PodStatus{PodIP: "fd00:10:244::6"},
+	}
+
+	dfi := &DragonflyInstance{log: logr.Discard()}
+	defer dfi.Close()
+	dfi.getRedisClient(pod.Status.PodIP)
+	dfi.redisClients[pod.Status.PodIP] = redis.NewClient(&redis.Options{
+		Addr: fakeInfoServer(t, info), MaxRetries: -1,
+	})
+
+	ok, err := dfi.checkReplicaRole(ctx, pod, masterIP)
+	require.NoError(t, err)
+	assert.True(t, ok, "replica is attached to the expected master but was reported as misconfigured")
+}
+
+// TestCheckReplicaRoleIPv4MasterHost is the control for the IPv6 case above:
+// the same harness, an IPv4 master address, and this one already passes.
+func TestCheckReplicaRoleIPv4MasterHost(t *testing.T) {
+	ctx := context.Background()
+	const masterIP = "10.244.0.5"
+	info := "# Replication\r\n" +
+		"role:replica\r\n" +
+		"master_host:" + masterIP + "\r\n" +
+		"master_port:6379\r\n" +
+		"master_link_status:up\r\n"
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "df-1",
+			Namespace:   "default",
+			Labels:      map[string]string{},
+			Annotations: map[string]string{},
+		},
+		Status: corev1.PodStatus{PodIP: "10.244.0.6"},
+	}
+
+	dfi := &DragonflyInstance{log: logr.Discard()}
+	defer dfi.Close()
+	dfi.getRedisClient(pod.Status.PodIP)
+	dfi.redisClients[pod.Status.PodIP] = redis.NewClient(&redis.Options{
+		Addr: fakeInfoServer(t, info), MaxRetries: -1,
+	})
+
+	ok, err := dfi.checkReplicaRole(ctx, pod, masterIP)
+	require.NoError(t, err)
+	assert.True(t, ok)
 }
