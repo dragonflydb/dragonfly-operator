@@ -4731,15 +4731,6 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              enablePreStopTakeover:
-                description: |-
-                  (Optional) When enabled, adds a preStop hook to the dragonfly container.
-                  If the pod is the master and has an online replica, the hook runs
-                  REPLTAKEOVER on that replica before SIGTERM is delivered, so writes the
-                  master acknowledged are not lost on eviction (e.g. kubectl drain).
-                  The hook time counts towards terminationGracePeriodSeconds.
-                  WARNING: Enabling this on an existing cluster will trigger a rolling update.
-                type: boolean
               enableReplicationReadinessGate:
                 description: |-
                   (Optional) When enabled, adds a custom readiness gate to pods that prevents
