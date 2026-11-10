@@ -40,7 +40,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -90,35 +89,23 @@ func (dfi *DragonflyInstance) Close() {
 	dfi.redisClients = nil
 }
 
-// patchPodMetadata patches a pod's labels/annotations with retry-on-conflict.
+// patchPodMetadata patches a pod's labels/annotations after a fresh Get.
 func (dfi *DragonflyInstance) patchPodMetadata(ctx context.Context, podKey types.NamespacedName, mutate func(*corev1.Pod)) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var pod corev1.Pod
-		if err := dfi.client.Get(ctx, podKey, &pod); err != nil {
-			if apierrors.IsNotFound(err) {
-				dfi.log.Info("pod disappeared before metadata update; skipping", "pod", podKey.String())
-				return nil
-			}
-			return err
-		}
+	var pod corev1.Pod
+	if err := dfi.client.Get(ctx, podKey, &pod); err != nil {
+		return err
+	}
 
-		patch := client.MergeFromWithOptions(pod.DeepCopy(), client.MergeFromWithOptimisticLock{})
-		if pod.Labels == nil {
-			pod.Labels = map[string]string{}
-		}
-		if pod.Annotations == nil {
-			pod.Annotations = map[string]string{}
-		}
-		mutate(&pod)
+	patch := client.MergeFrom(pod.DeepCopy())
+	if pod.Labels == nil {
+		pod.Labels = map[string]string{}
+	}
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	mutate(&pod)
 
-		if err := dfi.client.Patch(ctx, &pod, patch); err != nil {
-			if apierrors.IsNotFound(err) {
-				return nil
-			}
-			return err
-		}
-		return nil
-	})
+	return dfi.client.Patch(ctx, &pod, patch)
 }
 
 // configureReplication configures the given pod as a master and other pods as replicas
@@ -172,6 +159,10 @@ func (dfi *DragonflyInstance) configureReplication(ctx context.Context, master *
 		}
 
 		if err = dfi.configureReplica(ctx, &pod, master.Status.PodIP); err != nil {
+			if isTransientReplicaConfigError(err) {
+				dfi.log.Info("replica not ready for SLAVE OF yet; will retry", "pod", pod.Name, "error", err)
+				continue
+			}
 			dfi.log.Error(err, "failed to configure replica", "pod", pod.Name)
 			return err
 		}
@@ -213,7 +204,7 @@ func (dfi *DragonflyInstance) reconcileReplicaLabel(ctx context.Context, pod *co
 		dfi.log.Info("Dragonfly already replicating from correct master; only patching missing label", "pod", pod.Name, "master", masterIp)
 		sanitized := sanitizeIp(masterIp)
 		podKey := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
-		return dfi.patchPodMetadata(ctx, podKey, func(p *corev1.Pod) {
+		err := dfi.patchPodMetadata(ctx, podKey, func(p *corev1.Pod) {
 			p.Labels[resources.RoleLabelKey] = resources.Replica
 			p.Annotations[resources.MasterIpAnnotationKey] = sanitized
 			if ip := net.ParseIP(sanitized); ip != nil && ip.To4() != nil {
@@ -222,6 +213,7 @@ func (dfi *DragonflyInstance) reconcileReplicaLabel(ctx context.Context, pod *co
 				delete(p.Labels, resources.MasterIpLabelKey)
 			}
 		})
+		return client.IgnoreNotFound(err)
 	}
 	if err != nil {
 		dfi.log.Info("could not inspect Dragonfly replication state; falling back to full configureReplica", "pod", pod.Name, "error", err.Error())
@@ -360,14 +352,22 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 			if !ok {
 				dfi.log.Info("configuring pod as replica to the right master", "pod", pod.Name)
 				if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
+					if isTransientReplicaConfigError(err) {
+						dfi.log.Info("replica not ready for SLAVE OF yet; will retry", "pod", pod.Name, "error", err)
+						continue
+					}
 					return err
 				}
 			}
 		}
 
-		// Configure (SLAVE OF) and label unlabeled pods even while loading a snapshot.
+		// Recover unlabeled pods via label-only path when already replicating correctly.
 		if !roleExists(&pod) && isReachable(&pod) {
-			if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
+			if err := dfi.reconcileReplicaLabel(ctx, &pod, masterIp); err != nil {
+				if isTransientReplicaConfigError(err) {
+					dfi.log.Info("replica not ready for SLAVE OF yet; will retry", "pod", pod.Name, "error", err)
+					continue
+				}
 				return err
 			}
 		}

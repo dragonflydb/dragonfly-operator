@@ -190,6 +190,20 @@ func isReplicationCancelledError(err error) bool {
 	return strings.Contains(err.Error(), "replication cancelled")
 }
 
+// isDatasetLoadingError is true when Dragonfly rejected an admin command because
+// the instance is still loading its own snapshot (reports role:master, LOADING).
+func isDatasetLoadingError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "LOADING")
+}
+
+// isTransientReplicaConfigError covers errors where retrying SLAVE OF later is correct.
+func isTransientReplicaConfigError(err error) bool {
+	return isReplicationCancelledError(err) || isDatasetLoadingError(err)
+}
+
 // sanitizeIp removes surrounding brackets from IPv6 addresses.
 func sanitizeIp(masterIp string) string {
 	return strings.Trim(masterIp, "[]")

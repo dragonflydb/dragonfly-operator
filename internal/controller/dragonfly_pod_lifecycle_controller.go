@@ -111,9 +111,8 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			master = masterCandidate
 
 			if err = dfi.configureReplication(ctx, master); err != nil {
-				// Check for transient replication errors.
-				if isReplicationCancelledError(err) {
-					log.Info("replication cancelled during initial setup (transient), will retry", "error", err)
+				if isTransientReplicaConfigError(err) {
+					log.Info("replication setup deferred (transient), will retry", "error", err)
 					return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
 				}
 				return ctrl.Result{}, fmt.Errorf("failed to configure replication: %w", err)
@@ -151,8 +150,8 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("pod has no role label; reconciling as replica (independent of dataset-load state)", "pod", pod.Name)
 
 		if err = dfi.reconcileReplicaLabel(ctx, &pod, master.Status.PodIP); err != nil {
-			if isReplicationCancelledError(err) {
-				log.Info("replication cancelled (transient), will retry", "error", err)
+			if isTransientReplicaConfigError(err) {
+				log.Info("replica not ready for SLAVE OF yet (transient), will retry", "error", err)
 				return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to configure pod as replica: %w", err)
@@ -173,9 +172,8 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			log.Info("non-deletion event for a pod with an existing role. checking if something is wrong", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
 
 			if err = dfi.checkAndConfigureReplicas(ctx, master.Status.PodIP); err != nil {
-				// Check for transient replication errors
-				if isReplicationCancelledError(err) {
-					log.Info("replication cancelled (transient), will retry", "error", err)
+				if isTransientReplicaConfigError(err) {
+					log.Info("replica not ready for SLAVE OF yet (transient), will retry", "error", err)
 					return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
 				}
 				return ctrl.Result{}, fmt.Errorf("failed to check and configure replicas: %w", err)
