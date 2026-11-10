@@ -192,9 +192,10 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						DragonflyNameLabelKey:     df.Name,
-						KubernetesPartOfLabelKey:  KubernetesPartOf,
-						KubernetesAppNameLabelKey: KubernetesAppName,
+						DragonflyNameLabelKey:         df.Name,
+						KubernetesAppInstanceLabelKey: df.Name,
+						KubernetesPartOfLabelKey:      KubernetesPartOf,
+						KubernetesAppNameLabelKey:     KubernetesAppName,
 					},
 					Annotations: map[string]string{},
 				},

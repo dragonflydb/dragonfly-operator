@@ -169,6 +169,19 @@ func TestGenerateDragonflyResources_PodMetadataLabels(t *testing.T) {
 	assert.Equal(t, "true", sts.Spec.Template.Annotations["prometheus.io/scrape"])
 }
 
+func TestGenerateDragonflyResources_PodTemplateHasInstanceLabel(t *testing.T) {
+	df := newTestDragonfly(1)
+
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	assert.Equal(t, df.Name, sts.Labels[KubernetesAppInstanceLabelKey])
+	assert.Equal(t, df.Name, sts.Spec.Template.Labels[KubernetesAppInstanceLabelKey],
+		"pods must carry the instance label the operator reserves")
+}
+
 func TestGenerateDragonflyResources_PodMetadataWinsOverDeprecated(t *testing.T) {
 	df := newTestDragonfly(1)
 	df.Spec.Labels = map[string]string{"env": "staging"}
