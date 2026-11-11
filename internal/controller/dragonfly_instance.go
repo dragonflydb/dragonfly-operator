@@ -354,7 +354,6 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 				if err := dfi.configureReplica(ctx, &pod, masterIp); err != nil {
 					if isTransientReplicaConfigError(err) {
 						dfi.log.Info("replica not ready for SLAVE OF yet; will retry", "pod", pod.Name, "error", err)
-						continue
 					}
 					return err
 				}
@@ -366,7 +365,6 @@ func (dfi *DragonflyInstance) checkAndConfigureReplicas(ctx context.Context, mas
 			if err := dfi.reconcileReplicaLabel(ctx, &pod, masterIp); err != nil {
 				if isTransientReplicaConfigError(err) {
 					dfi.log.Info("replica not ready for SLAVE OF yet; will retry", "pod", pod.Name, "error", err)
-					continue
 				}
 				return err
 			}
