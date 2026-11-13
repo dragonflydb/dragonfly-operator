@@ -6762,6 +6762,14 @@ spec:
               pdb:
                 description: (Optional) Dragonfly Pod Disruption Budget configuration
                 properties:
+                  enabled:
+                    description: |-
+                      (Optional) Whether the operator creates a PodDisruptionBudget for this
+                      instance. Defaults to true. Set false to manage disruption budgets
+                      outside the operator, for example one budget for the master pod and
+                      another for the replicas: the operator's budget selects every pod, and a
+                      pod selected by more than one budget cannot be evicted at all.
+                    type: boolean
                   maxUnavailable:
                     anyOf:
                     - type: integer

@@ -2,6 +2,8 @@ package resources
 
 import (
 	"fmt"
+	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"testing"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -528,4 +530,53 @@ func TestGenerateDragonflyResources_ServiceLinksDisabled(t *testing.T) {
 		}
 	}
 	t.Fatal("StatefulSet not found in generated resources")
+}
+
+func findPDB(resources []client.Object) *policyv1.PodDisruptionBudget {
+	for _, obj := range resources {
+		if pdb, ok := obj.(*policyv1.PodDisruptionBudget); ok {
+			return pdb
+		}
+	}
+	return nil
+}
+
+func TestGenerateDragonflyResources_PdbEnabledByDefault(t *testing.T) {
+	df := newTestDragonfly(3)
+
+	resources, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	pdb := findPDB(resources)
+	require.NotNil(t, pdb, "a PDB is generated when spec.pdb is unset")
+	assert.Equal(t, intstr.FromInt32(1), *pdb.Spec.MaxUnavailable)
+}
+
+func TestGenerateDragonflyResources_PdbExplicitlyEnabled(t *testing.T) {
+	df := newTestDragonfly(3)
+	enabled := true
+	df.Spec.Pdb = &resourcesv1.PdbSpec{Enabled: &enabled}
+
+	resources, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+	require.NotNil(t, findPDB(resources), "enabled: true keeps the PDB")
+}
+
+func TestGenerateDragonflyResources_PdbDisabled(t *testing.T) {
+	df := newTestDragonfly(3)
+	disabled := false
+	minAvailable := intstr.FromInt32(2)
+	df.Spec.Pdb = &resourcesv1.PdbSpec{Enabled: &disabled, MinAvailable: &minAvailable}
+
+	resources, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+	assert.Nil(t, findPDB(resources), "enabled: false generates no PDB, whatever else spec.pdb sets")
+}
+
+func TestGenerateDragonflyResources_PdbNotGeneratedForSingleReplica(t *testing.T) {
+	df := newTestDragonfly(1)
+
+	resources, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+	assert.Nil(t, findPDB(resources), "a single replica gets no PDB, as before")
 }
