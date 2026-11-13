@@ -681,7 +681,7 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		pdb.Spec.MinAvailable = df.Spec.Pdb.MinAvailable
 	}
 
-	if df.Spec.Replicas > 1 {
+	if df.Spec.Replicas > 1 && df.Spec.Pdb.PdbEnabled() {
 		resources = append(resources, &pdb)
 	}
 
