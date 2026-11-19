@@ -43,6 +43,7 @@ func connect(cfg config, ldapURL string) (*ldap.Conn, error) {
 	}
 	if cfg.UseStartTLS && endpoint.Scheme == "ldap" {
 		if err = connection.StartTLS(tlsConfig); err != nil {
+			connection.Close()
 			return nil, err
 		}
 	}
