@@ -163,6 +163,14 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	PodSecurityContext *corev1.PodSecurityContext `json:"podSecurityContext,omitempty"`
 
+	// (Optional) Duration in seconds the Dragonfly pod needs to terminate gracefully.
+	// Raise it when the shutdown snapshot of a large dataset needs more than the
+	// Kubernetes default of 30 seconds. Defaults to the Kubernetes default when unset.
+	// +optional
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum=0
+	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
+
 	// (Optional) Dragonfly pod service account name
 	// +optional
 	// +kubebuilder:validation:Optional

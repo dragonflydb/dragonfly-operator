@@ -295,6 +295,11 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		statefulset.Spec.Template.Spec.SecurityContext = df.Spec.PodSecurityContext
 	}
 
+	// set terminationGracePeriodSeconds if one is specified
+	if df.Spec.TerminationGracePeriodSeconds != nil {
+		statefulset.Spec.Template.Spec.TerminationGracePeriodSeconds = df.Spec.TerminationGracePeriodSeconds
+	}
+
 	// set containerSecurityContext if one is specified
 	if df.Spec.ContainerSecurityContext != nil {
 		statefulset.Spec.Template.Spec.Containers[0].SecurityContext = df.Spec.ContainerSecurityContext

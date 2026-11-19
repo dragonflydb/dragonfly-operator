@@ -227,6 +227,11 @@ func (in *DragonflySpec) DeepCopyInto(out *DragonflySpec) {
 		*out = new(v1.PodSecurityContext)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.TerminationGracePeriodSeconds != nil {
+		in, out := &in.TerminationGracePeriodSeconds, &out.TerminationGracePeriodSeconds
+		*out = new(int64)
+		**out = **in
+	}
 	if in.TLSSecretRef != nil {
 		in, out := &in.TLSSecretRef, &out.TLSSecretRef
 		*out = new(v1.SecretReference)
