@@ -18,14 +18,21 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-ldap/ldap/v3"
 )
 
+var (
+	errEmptyCredentials   = errors.New("username and password must not be empty")
+	errUserNotFound       = errors.New("user not found")
+	errMultipleUsersFound = errors.New("multiple users found")
+)
+
 func search(ctx context.Context, cfg config, username, password string) (string, error) {
 	if username == "" || password == "" {
-		return "", nil
+		return "", errEmptyCredentials
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -51,8 +58,11 @@ func search(ctx context.Context, cfg config, username, password string) (string,
 	if err != nil {
 		return "", err
 	}
+	if len(searchResult.Entries) == 0 {
+		return "", errUserNotFound
+	}
 	if len(searchResult.Entries) != 1 {
-		return "", nil
+		return "", errMultipleUsersFound
 	}
 
 	dnValues := searchResult.Entries[0].GetEqualFoldAttributeValues(cfg.SearchDNAttribute)

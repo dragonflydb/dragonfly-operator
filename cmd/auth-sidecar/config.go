@@ -85,35 +85,32 @@ type ldapConfig struct {
 
 func loadConfig() (config, error) {
 	cfg := config{
-		httpConfig: httpConfig{
-			Port:              getEnvString("HTTP_PORT", "8080"),
-			ReadHeaderTimeout: time.Duration(getEnvInt("HTTP_READ_HEADER_TIMEOUT", 5)) * time.Second,
-			ReadTimeout:       time.Duration(getEnvInt("HTTP_READ_TIMEOUT", 10)) * time.Second,
-			WriteTimeout:      time.Duration(getEnvInt("HTTP_WRITE_TIMEOUT", 10)) * time.Second,
-			IdleTimeout:       time.Duration(getEnvInt("HTTP_IDLE_TIMEOUT", 10)) * time.Second,
-			ShutdownTimeout:   time.Duration(getEnvInt("HTTP_SHUTDOWN_TIMEOUT", 10)) * time.Second,
-		},
-		ldapConfig: ldapConfig{
-			//general
-			Servers:              []string{os.Getenv("LDAP_SERVERS")},
-			TimeoutConnection:    time.Duration(getEnvInt("LDAP_TIMEOUT_CONNECTION", 10)) * time.Second,
-			TimeoutLDAPOperation: getEnvInt("LDAP_TIMEOUT_LDAP_OPERATION", 10),
+		Port:              getEnvString("HTTP_PORT", "8080"),
+		ReadHeaderTimeout: time.Duration(getEnvInt("HTTP_READ_HEADER_TIMEOUT", 5)) * time.Second,
+		ReadTimeout:       time.Duration(getEnvInt("HTTP_READ_TIMEOUT", 10)) * time.Second,
+		WriteTimeout:      time.Duration(getEnvInt("HTTP_WRITE_TIMEOUT", 10)) * time.Second,
+		IdleTimeout:       time.Duration(getEnvInt("HTTP_IDLE_TIMEOUT", 10)) * time.Second,
+		ShutdownTimeout:   time.Duration(getEnvInt("HTTP_SHUTDOWN_TIMEOUT", 10)) * time.Second,
 
-			// tls
-			UseStartTLS: getEnvBool("LDAP_USE_STARTTLS", false),
-			TLSCACert:   os.Getenv("LDAP_TLS_CA_CERT"),
-			TLSCert:     os.Getenv("LDAP_TLS_CERT"),
-			TLSKey:      os.Getenv("LDAP_TLS_KEY"),
+		//general
+		Servers:              []string{os.Getenv("LDAP_SERVERS")},
+		TimeoutConnection:    time.Duration(getEnvInt("LDAP_TIMEOUT_CONNECTION", 10)) * time.Second,
+		TimeoutLDAPOperation: getEnvInt("LDAP_TIMEOUT_LDAP_OPERATION", 10),
 
-			// search+bind
-			SearchBindDN:       os.Getenv("LDAP_SEARCH_BIND_DN"),
-			SearchBindPassword: os.Getenv("LDAP_SEARCH_BIND_PASSWORD"),
-			SearchBaseDN:       os.Getenv("LDAP_SEARCH_BASE_DN"),
-			SearchFilter:       getEnvString("LDAP_SEARCH_FILTER", "(objectClass=*)"),
-			SearchAttribute:    getEnvString("LDAP_SEARCH_ATTRIBUTE", "uid"),
-			SearchDNAttribute:  getEnvString("LDAP_SEARCH_DN_ATTRIBUTE", "entryDN"),
-			SearchScope:        searchScope(getEnvString("LDAP_SEARCH_SCOPE", string(scopeSub))),
-		},
+		// tls
+		UseStartTLS: getEnvBool("LDAP_USE_STARTTLS", false),
+		TLSCACert:   os.Getenv("LDAP_TLS_CA_CERT"),
+		TLSCert:     os.Getenv("LDAP_TLS_CERT"),
+		TLSKey:      os.Getenv("LDAP_TLS_KEY"),
+
+		// search+bind
+		SearchBindDN:       os.Getenv("LDAP_SEARCH_BIND_DN"),
+		SearchBindPassword: os.Getenv("LDAP_SEARCH_BIND_PASSWORD"),
+		SearchBaseDN:       os.Getenv("LDAP_SEARCH_BASE_DN"),
+		SearchFilter:       getEnvString("LDAP_SEARCH_FILTER", "(objectClass=*)"),
+		SearchAttribute:    getEnvString("LDAP_SEARCH_ATTRIBUTE", "uid"),
+		SearchDNAttribute:  getEnvString("LDAP_SEARCH_DN_ATTRIBUTE", "entryDN"),
+		SearchScope:        searchScope(getEnvString("LDAP_SEARCH_SCOPE", string(scopeSub))),
 	}
 	return cfg, cfg.validate()
 }

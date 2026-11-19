@@ -1,0 +1,39 @@
+dn: ou=people,dc=example,dc=org
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=example,dc=org
+objectClass: organizationalUnit
+ou: groups
+
+dn: uid=alice,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+uid: alice
+cn: Alice Writer
+sn: Writer
+userPassword: alice-demo
+
+dn: uid=bob,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+uid: bob
+cn: Bob Reader
+sn: Reader
+userPassword: bob-demo
+
+dn: uid=carol,ou=people,dc=example,dc=org
+objectClass: inetOrgPerson
+uid: carol
+cn: Carol Outsider
+sn: Outsider
+userPassword: carol-demo
+
+dn: cn=dragonfly-writers,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+cn: dragonfly-writers
+member: uid=alice,ou=people,dc=example,dc=org
+
+dn: cn=dragonfly-readers,ou=groups,dc=example,dc=org
+objectClass: groupOfNames
+cn: dragonfly-readers
+member: uid=alice,ou=people,dc=example,dc=org
+member: uid=bob,ou=people,dc=example,dc=org

@@ -1,0 +1,42 @@
+services:
+  openldap:
+    image: osixia/openldap:1.5.0
+    platform: linux/amd64
+    command: ["--copy-service"]
+    environment:
+      LDAP_ORGANISATION: Dragonfly Demo
+      LDAP_DOMAIN: example.org
+      LDAP_ADMIN_PASSWORD: admin-demo
+    ports:
+      - "127.0.0.1:1389:389"
+    volumes:
+      - ./users.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-users.ldif:ro
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost:389", "-D", "cn=admin,dc=example,dc=org", "-w", "admin-demo", "-b", "uid=alice,ou=people,dc=example,dc=org", "-s", "base", "(objectClass=*)"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  auth-sidecar:
+    build:
+      context: ../..
+      dockerfile: cmd/auth-sidecar/Dockerfile
+    environment:
+      LDAP_SERVERS: ldap://openldap:389
+      LDAP_SEARCH_BIND_DN: cn=admin,dc=example,dc=org
+      LDAP_SEARCH_BIND_PASSWORD: admin-demo
+      LDAP_SEARCH_BASE_DN: ou=people,dc=example,dc=org
+      LDAP_SEARCH_FILTER: (objectClass=inetOrgPerson)
+      LDAP_TIMEOUT_CONNECTION: "3"
+      LDAP_TIMEOUT_LDAP_OPERATION: "3"
+    ports:
+      - "127.0.0.1:18080:8080"
+    depends_on:
+      openldap:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 10

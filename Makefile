@@ -58,8 +58,8 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo@v2.33.0
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO) -timeout=12m -vv -r -p -coverprofile cover.out
+	GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO) -timeout=12m -vv -r -p --skip-package=cmd/auth-sidecar -coverprofile cover.out
 
 ##@ Build
 

@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -30,8 +29,6 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-
-	"github.com/go-ldap/ldap/v3"
 )
 
 type credentials struct {
@@ -93,12 +90,14 @@ func handler(authenticate func(context.Context, string, string) (string, error))
 			return
 		}
 
-		var res result // Defaults to {Valid: false, Username: ""}
+		var res result
 
 		if user, err := authenticate(r.Context(), input.Username, input.Password); err == nil {
 			res = result{Valid: true, Username: user}
-		} else if !ldap.IsErrorWithCode(err, ldap.LDAPResultInvalidCredentials) {
-			log.Printf("LDAP authentication failed: %v", err)
+		} else if errors.Is(err, errEmptyCredentials) || errors.Is(err, errMultipleUsersFound) {
+			w.WriteHeader(http.StatusBadRequest)
+		} else if errors.Is(err, errUserNotFound) {
+			w.WriteHeader(http.StatusUnauthorized)
 		}
 		json.NewEncoder(w).Encode(res)
 	})
