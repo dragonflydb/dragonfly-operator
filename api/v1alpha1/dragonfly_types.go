@@ -242,6 +242,15 @@ type DragonflySpec struct {
 // PdbSpec defines the desired state of the PodDisruptionBudget
 // +kubebuilder:validation:XValidation:rule="!(has(self.minAvailable) && has(self.maxUnavailable))",message="minAvailable and maxUnavailable cannot be both set"
 type PdbSpec struct {
+	// (Optional) Whether the operator creates a PodDisruptionBudget for this
+	// instance. Defaults to true. Set false to manage disruption budgets
+	// outside the operator, for example one budget for the master pod and
+	// another for the replicas: the operator's budget selects every pod, and a
+	// pod selected by more than one budget cannot be evicted at all.
+	// +optional
+	// +kubebuilder:validation:Optional
+	Enabled *bool `json:"enabled,omitempty"`
+
 	// (Optional) Minimum number of Dragonfly pods that must be available during voluntary disruptions.
 	// Accepts an absolute number (e.g. "1") or a percentage of total pods (e.g. "25%").
 	// Cannot be used together with MaxUnavailable; only one of minAvailable or maxUnavailable should be set.
@@ -255,6 +264,12 @@ type PdbSpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
+}
+
+// PdbEnabled reports whether the operator should manage a PodDisruptionBudget
+// for this instance: unset means enabled.
+func (in *PdbSpec) PdbEnabled() bool {
+	return in == nil || in.Enabled == nil || *in.Enabled
 }
 
 type MetadataSpec struct {
