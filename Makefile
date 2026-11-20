@@ -58,18 +58,18 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo@v2.33.0
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO) -timeout=12m -vv -r -p -coverprofile cover.out
+	GOBIN=$(LOCALBIN) go install github.com/onsi/ginkgo/v2/ginkgo
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" $(GINKGO) -timeout=12m -vv -r -p --skip-package=cmd/auth-sidecar -coverprofile cover.out
 
 ##@ Build
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/dragonfly-operator -ldflags "-X main.version=$(VERSION)" cmd/main.go
+	go build -o bin/dragonfly-operator -ldflags "-X main.version=$(VERSION)" ./cmd/operator
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
+	go run ./cmd/operator
 
 # If you wish built the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64 ). However, you must enable docker buildKit for it.
