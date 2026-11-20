@@ -218,6 +218,16 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	EnableReplicationReadinessGate bool `json:"enableReplicationReadinessGate,omitempty"`
 
+	// (Optional) When enabled, adds a preStop hook to the dragonfly container.
+	// If the pod is the master and has an online replica, the hook runs
+	// REPLTAKEOVER on that replica before SIGTERM is delivered, so writes the
+	// master acknowledged are not lost on eviction (e.g. kubectl drain).
+	// The hook time counts towards terminationGracePeriodSeconds.
+	// WARNING: Enabling this on an existing cluster will trigger a rolling update.
+	// +optional
+	// +kubebuilder:validation:Optional
+	EnablePreStopTakeover bool `json:"enablePreStopTakeover,omitempty"`
+
 	// (Optional) Dragonfly Pod Disruption Budget configuration
 	// +optional
 	// +kubebuilder:validation:Optional

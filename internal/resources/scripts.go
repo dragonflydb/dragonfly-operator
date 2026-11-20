@@ -10,3 +10,6 @@ var defaultReadinessScript string
 
 //go:embed scripts/startup-check.sh
 var defaultStartupScript string
+
+//go:embed scripts/prestop-takeover.sh
+var defaultPreStopTakeoverScript string
