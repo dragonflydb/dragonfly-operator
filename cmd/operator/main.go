@@ -90,6 +90,12 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
+	if dragonflyImage == "" {
+		if v := os.Getenv("DRAGONFLY_IMAGE"); v != "" {
+			dragonflyImage = v
+		}
+	}
+
 	if versionFlag {
 		fmt.Println(Version)
 		os.Exit(0)
