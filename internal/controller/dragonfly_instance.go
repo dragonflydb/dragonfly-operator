@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -489,6 +490,12 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 		return fmt.Errorf("failed to determine the current role of the instance: %w", err)
 	}
 
+	if wasMaster {
+		if err := dfi.setPendingClientDisconnect(ctx, pod, true); err != nil {
+			return fmt.Errorf("could not mark pod for client disconnect: %w", err)
+		}
+	}
+
 	// Sanitize masterIp in case ipv6
 	masterIp = sanitizeIp(masterIp)
 
@@ -502,10 +509,23 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	dfi.log.Info("Trying to invoke SLAVE OF command", "pod", pod.Name, "master", masterIp, "addr", redisClient.Options().Addr)
 	resp, err := redisClient.SlaveOf(ctx, masterIp, strconv.Itoa(resources.DragonflyAdminPort)).Result()
 	if err != nil {
+		// Only a reply from the server proves the demotion did not happen. On a network
+		// error or timeout it may have been applied, so the marker must stay.
+		var redisErr redis.Error
+		if wasMaster && errors.As(err, &redisErr) {
+			if clearErr := dfi.setPendingClientDisconnect(ctx, pod, false); clearErr != nil {
+				dfi.log.Error(clearErr, "could not clear the client disconnect marker", "pod", pod.Name)
+			}
+		}
 		return fmt.Errorf("error running SLAVE OF command: %s", err)
 	}
 
 	if resp != "OK" {
+		if wasMaster {
+			if clearErr := dfi.setPendingClientDisconnect(ctx, pod, false); clearErr != nil {
+				dfi.log.Error(clearErr, "could not clear the client disconnect marker", "pod", pod.Name)
+			}
+		}
 		return fmt.Errorf("response of `SLAVE OF` on replica is not OK: %s", resp)
 	}
 
@@ -529,7 +549,16 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 
 	if wasMaster {
 		// Prevent clients from sending commands to this old master
-		dfi.disconnectClients(ctx, redisClient, pod)
+		if err := dfi.disconnectClients(ctx, pod); err != nil {
+			dfi.log.Error(err, "failed to disconnect clients, will retry", "pod", pod.Name)
+			// Returning an error here would abort the caller's loop over the remaining pods.
+			// The annotation stays set, the next reconcile retries.
+			return nil
+		}
+
+		if err := dfi.setPendingClientDisconnect(ctx, pod, false); err != nil {
+			return fmt.Errorf("could not clear the client disconnect marker: %w", err)
+		}
 	}
 
 	return nil
@@ -568,6 +597,7 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 		pod.Annotations = make(map[string]string)
 	}
 	pod.Annotations[resources.MasterIpAnnotationKey] = masterIp
+	delete(pod.Annotations, resources.PendingClientDisconnectAnnotationKey)
 
 	if err := dfi.client.Patch(ctx, pod, patch); err != nil {
 		return err
@@ -577,15 +607,39 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 }
 
 // disconnectClients disconnects all non-replication clients from a pod.
-func (dfi *DragonflyInstance) disconnectClients(ctx context.Context, redisClient *redis.Client, pod *corev1.Pod) {
-	dfi.log.Info("disconnecting clients from replica", "pod", pod.Name)
-	clientList, err := redisClient.ClientList(ctx).Result()
-	if err != nil {
-		dfi.log.Error(err, "failed to get client list from replica", "pod", pod.Name)
-		return
+func (dfi *DragonflyInstance) disconnectClients(ctx context.Context, pod *corev1.Pod) error {
+	if pod.Status.PodIP == "" {
+		return fmt.Errorf("pod %s has no IP address", pod.Name)
 	}
 
-	clients := []string{}
+	redisClient := dfi.getRedisClient(pod.Status.PodIP)
+	addr := clientListenerAddress(pod.Status.PodIP)
+	dfi.log.Info("disconnecting clients", "pod", pod.Name, "addr", addr)
+
+	killed, err := redisClient.ClientKillByFilter(ctx, "LADDR", addr).Result()
+	if err != nil {
+		// Dragonfly older than v1.14.0 replies with an error for CLIENT KILL LADDR.
+		var redisErr redis.Error
+		if errors.As(err, &redisErr) {
+			dfi.log.Info("CLIENT KILL LADDR is not supported, falling back to per-client kill", "pod", pod.Name, "reason", err.Error())
+			return dfi.disconnectClientsLegacy(ctx, redisClient, pod)
+		}
+		return fmt.Errorf("failed to kill clients on %s: %w", addr, err)
+	}
+
+	dfi.log.Info("disconnected clients", "pod", pod.Name, "clients", killed)
+	return nil
+}
+
+// disconnectClientsLegacy kills the clients one by one for Dragonfly versions without CLIENT KILL LADDR.
+func (dfi *DragonflyInstance) disconnectClientsLegacy(ctx context.Context, redisClient *redis.Client, pod *corev1.Pod) error {
+	clientList, err := redisClient.ClientList(ctx).Result()
+	if err != nil {
+		return fmt.Errorf("failed to get client list from %s: %w", pod.Name, err)
+	}
+
+	var errs []error
+	killed := 0
 	for _, clientInfo := range strings.Split(clientList, "\n") {
 		if clientInfo == "" {
 			continue
@@ -600,21 +654,42 @@ func (dfi *DragonflyInstance) disconnectClients(ctx context.Context, redisClient
 			continue
 		}
 
-		parts := strings.Split(clientInfo, " ")
-		for _, part := range parts {
+		for _, part := range strings.Split(clientInfo, " ") {
 			if strings.HasPrefix(part, "addr=") {
 				addr := strings.TrimPrefix(part, "addr=")
 				if _, err := redisClient.ClientKill(ctx, addr).Result(); err != nil {
-					// Log and continue, don't block for a single failed kill
-					dfi.log.Error(err, "failed to kill client", "addr", addr)
+					errs = append(errs, fmt.Errorf("failed to kill client %s: %w", addr, err))
 				} else {
-					clients = append(clients, addr)
+					killed++
 				}
 				break
 			}
 		}
 	}
-	dfi.log.Info("killed clients", "pod", pod.Name, "clients", clients)
+
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+
+	dfi.log.Info("disconnected clients", "pod", pod.Name, "clients", killed)
+	return nil
+}
+
+// setPendingClientDisconnect adds or removes the annotation that carries an unfinished
+// client disconnect over to the next reconcile.
+func (dfi *DragonflyInstance) setPendingClientDisconnect(ctx context.Context, pod *corev1.Pod, pending bool) error {
+	patch := client.MergeFrom(pod.DeepCopy())
+
+	if pending {
+		if pod.Annotations == nil {
+			pod.Annotations = make(map[string]string)
+		}
+		pod.Annotations[resources.PendingClientDisconnectAnnotationKey] = "true"
+	} else {
+		delete(pod.Annotations, resources.PendingClientDisconnectAnnotationKey)
+	}
+
+	return dfi.client.Patch(ctx, pod, patch)
 }
 
 // hasMasterRole returns true if the given pod is a master based on the replication info.
