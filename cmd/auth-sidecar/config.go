@@ -17,13 +17,15 @@ limitations under the License.
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
+	"github.com/sethvargo/go-envconfig/v2"
 )
 
 type searchScope string
@@ -48,69 +50,67 @@ func (scope searchScope) ldapScope() (int, error) {
 }
 
 type config struct {
-	httpConfig
-	ldapConfig
+	HTTPConfig `env:", prefix=HTTP_"`
+	LDAPConfig `env:", prefix=LDAP_"`
 }
 
-type httpConfig struct {
-	Port              string
-	ReadHeaderTimeout time.Duration
-	ReadTimeout       time.Duration
-	WriteTimeout      time.Duration
-	IdleTimeout       time.Duration
-	ShutdownTimeout   time.Duration
+type HTTPConfig struct {
+	Port              string        `env:"PORT,default=8080"`
+	ReadHeaderTimeout time.Duration `env:"READ_HEADER_TIMEOUT,default=5s"`
+	ReadTimeout       time.Duration `env:"READ_TIMEOUT,default=10s"`
+	WriteTimeout      time.Duration `env:"WRITE_TIMEOUT,default=10s"`
+	IdleTimeout       time.Duration `env:"IDLE_TIMEOUT,default=10s"`
+	ShutdownTimeout   time.Duration `env:"SHUTDOWN_TIMEOUT,default=10s"`
 }
 
-type ldapConfig struct {
+type LDAPConfig struct {
 	// general
-	Servers              []string // TODO: Implement support for multiple LDAP servers.
-	TimeoutConnection    time.Duration
-	TimeoutLDAPOperation int
+	Servers              []string      `env:"SERVERS"` // TODO: Implement support for multiple LDAP servers.
+	TimeoutConnection    time.Duration `env:"TIMEOUT_CONNECTION,default=10s"`
+	TimeoutLDAPOperation time.Duration `env:"TIMEOUT_LDAP_OPERATION,default=10s"`
 
 	// tls
-	UseStartTLS bool
-	TLSCACert   string
-	TLSCert     string
-	TLSKey      string
+	UseStartTLS bool   `env:"USE_STARTTLS,default=false"`
+	TLSCACert   string `env:"TLS_CA_CERT"`
+	TLSCert     string `env:"TLS_CERT"`
+	TLSKey      string `env:"TLS_KEY"`
 
 	// search+bind
-	SearchBindDN       string
-	SearchBindPassword string
-	SearchBaseDN       string
-	SearchFilter       string
-	SearchAttribute    string
-	SearchDNAttribute  string
-	SearchScope        searchScope
+	SearchBindDN       string `env:"SEARCH_BIND_DN"`
+	SearchBindPassword string `env:"SEARCH_BIND_PASSWORD"`
+
+	// user search
+	UserSearchBaseDN      string      `env:"USER_SEARCH_BASE_DN"`
+	UserSearchFilter      string      `env:"USER_SEARCH_FILTER,default=(objectClass=*)"`
+	UserSearchAttribute   string      `env:"USER_SEARCH_ATTRIBUTE,default=uid"`
+	UserSearchDNAttribute string      `env:"USER_SEARCH_DN_ATTRIBUTE,default=entryDN"`
+	UserSearchScope       searchScope `env:"USER_SEARCH_SCOPE,default=sub"`
+
+	// group search
+	GroupMappings          groupMappings `env:"GROUP_MAPPINGS"`
+	GroupSearchBaseDN      string        `env:"GROUP_SEARCH_BASE_DN"`
+	GroupSearchFilter      string        `env:"GROUP_SEARCH_FILTER,default=(objectClass=*)"`
+	GroupSearchAttribute   string        `env:"GROUP_SEARCH_ATTRIBUTE,default=member"`
+	GroupSearchDNAttribute string        `env:"GROUP_SEARCH_DN_ATTRIBUTE,default=entryDN"`
+	GroupSearchScope       searchScope   `env:"GROUP_SEARCH_SCOPE,default=sub"`
+}
+
+type groupMapping struct {
+	GroupDN string `json:"group_dn"`
+	ACLUser string `json:"acl_user"`
+}
+
+type groupMappings []groupMapping
+
+func (mappings *groupMappings) EnvDecode(_ context.Context, value string) error {
+	return json.Unmarshal([]byte(value), mappings)
 }
 
 func loadConfig() (config, error) {
-	cfg := config{
-		Port:              getEnvString("HTTP_PORT", "8080"),
-		ReadHeaderTimeout: time.Duration(getEnvInt("HTTP_READ_HEADER_TIMEOUT", 5)) * time.Second,
-		ReadTimeout:       time.Duration(getEnvInt("HTTP_READ_TIMEOUT", 10)) * time.Second,
-		WriteTimeout:      time.Duration(getEnvInt("HTTP_WRITE_TIMEOUT", 10)) * time.Second,
-		IdleTimeout:       time.Duration(getEnvInt("HTTP_IDLE_TIMEOUT", 10)) * time.Second,
-		ShutdownTimeout:   time.Duration(getEnvInt("HTTP_SHUTDOWN_TIMEOUT", 10)) * time.Second,
-
-		//general
-		Servers:              []string{os.Getenv("LDAP_SERVERS")},
-		TimeoutConnection:    time.Duration(getEnvInt("LDAP_TIMEOUT_CONNECTION", 10)) * time.Second,
-		TimeoutLDAPOperation: getEnvInt("LDAP_TIMEOUT_LDAP_OPERATION", 10),
-
-		// tls
-		UseStartTLS: getEnvBool("LDAP_USE_STARTTLS", false),
-		TLSCACert:   os.Getenv("LDAP_TLS_CA_CERT"),
-		TLSCert:     os.Getenv("LDAP_TLS_CERT"),
-		TLSKey:      os.Getenv("LDAP_TLS_KEY"),
-
-		// search+bind
-		SearchBindDN:       os.Getenv("LDAP_SEARCH_BIND_DN"),
-		SearchBindPassword: os.Getenv("LDAP_SEARCH_BIND_PASSWORD"),
-		SearchBaseDN:       os.Getenv("LDAP_SEARCH_BASE_DN"),
-		SearchFilter:       getEnvString("LDAP_SEARCH_FILTER", "(objectClass=*)"),
-		SearchAttribute:    getEnvString("LDAP_SEARCH_ATTRIBUTE", "uid"),
-		SearchDNAttribute:  getEnvString("LDAP_SEARCH_DN_ATTRIBUTE", "entryDN"),
-		SearchScope:        searchScope(getEnvString("LDAP_SEARCH_SCOPE", string(scopeSub))),
+	var cfg config
+	ctx := context.Background()
+	if err := envconfig.Process(ctx, &cfg); err != nil {
+		return cfg, err
 	}
 	return cfg, cfg.validate()
 }
@@ -118,38 +118,38 @@ func loadConfig() (config, error) {
 func (cfg config) validate() error {
 	// http config
 	if port, err := strconv.ParseUint(cfg.Port, 10, 16); err != nil || port == 0 {
-		return errors.New("HTTP_PORT must be an integer between 1 and 65535")
+		return errors.New("http port must be an integer between 1 and 65535")
 	}
 	if cfg.ReadHeaderTimeout <= 0 {
-		return errors.New("HTTP_READ_HEADER_TIMEOUT must be greater than zero")
+		return errors.New("http read header timeout must be greater than zero")
 	}
 	if cfg.ReadTimeout <= 0 {
-		return errors.New("HTTP_READ_TIMEOUT must be greater than zero")
+		return errors.New("http read timeout must be greater than zero")
 	}
 	if cfg.WriteTimeout <= 0 {
-		return errors.New("HTTP_WRITE_TIMEOUT must be greater than zero")
+		return errors.New("http write timeout must be greater than zero")
 	}
 	if cfg.IdleTimeout <= 0 {
-		return errors.New("HTTP_IDLE_TIMEOUT must be greater than zero")
+		return errors.New("http idle timeout must be greater than zero")
 	}
 	if cfg.ShutdownTimeout <= 0 {
-		return errors.New("HTTP_SHUTDOWN_TIMEOUT must be greater than zero")
+		return errors.New("http shutdown timeout must be greater than zero")
 	}
 
 	// ldap config
 
 	// general
 	if len(cfg.Servers) != 1 {
-		return errors.New("LDAP_SERVERS must contain exactly one endpoint")
+		return errors.New("ldap servers must contain exactly one endpoint")
 	}
 	if _, err := parseEndpoint(cfg.Servers[0]); err != nil {
 		return err
 	}
 	if cfg.TimeoutConnection <= 0 {
-		return errors.New("LDAP_TIMEOUT_CONNECTION must be greater than zero")
+		return errors.New("ldap timeout connection must be greater than zero")
 	}
 	if cfg.TimeoutLDAPOperation <= 0 {
-		return errors.New("LDAP_TIMEOUT_LDAP_OPERATION must be greater than zero")
+		return errors.New("ldap timeout ldap operation must be greater than zero")
 	}
 
 	// tls
@@ -159,53 +159,67 @@ func (cfg config) validate() error {
 
 	// search+bind
 	if cfg.SearchBindDN == "" {
-		return errors.New("LDAP_SEARCH_BIND_DN is required")
+		return errors.New("ldap search bind dn is required")
 	}
 	if cfg.SearchBindPassword == "" {
-		return errors.New("LDAP_SEARCH_BIND_PASSWORD is required")
+		return errors.New("ldap search bind password is required")
 	}
-	if cfg.SearchBaseDN == "" {
-		return errors.New("LDAP_SEARCH_BASE_DN is required")
+
+	// user search
+	if cfg.UserSearchBaseDN == "" {
+		return errors.New("ldap search base dn is required")
 	}
-	if cfg.SearchAttribute == "" {
-		return errors.New("LDAP_SEARCH_ATTRIBUTE is required")
+	if cfg.UserSearchAttribute == "" {
+		return errors.New("ldap search attribute is required")
 	}
-	if cfg.SearchDNAttribute == "" {
-		return errors.New("LDAP_SEARCH_DN_ATTRIBUTE is required")
+	if cfg.UserSearchDNAttribute == "" {
+		return errors.New("ldap search dn attribute is required")
 	}
-	if _, err := ldap.CompileFilter(cfg.SearchFilter); err != nil {
-		return fmt.Errorf("invalid LDAP_SEARCH_FILTER: %w", err)
+	if _, err := ldap.CompileFilter(cfg.UserSearchFilter); err != nil {
+		return fmt.Errorf("invalid ldap search filter: %w", err)
 	}
-	if _, err := cfg.SearchScope.ldapScope(); err != nil {
+	if _, err := cfg.UserSearchScope.ldapScope(); err != nil {
 		return err
+	}
+
+	// group search
+	if len(cfg.GroupMappings) == 0 {
+		return nil
+	}
+	if cfg.GroupSearchBaseDN == "" {
+		return errors.New("ldap group search base dn is required")
+	}
+	if cfg.GroupSearchAttribute == "" {
+		return errors.New("ldap group search attribute is required")
+	}
+	if cfg.GroupSearchDNAttribute == "" {
+		return errors.New("ldap group search dn attribute is required")
+	}
+	if _, err := ldap.CompileFilter(cfg.GroupSearchFilter); err != nil {
+		return fmt.Errorf("invalid ldap group search filter: %w", err)
+	}
+	if _, err := cfg.GroupSearchScope.ldapScope(); err != nil {
+		return fmt.Errorf("invalid ldap group search scope: %w", err)
+	}
+	for i, mapping := range cfg.GroupMappings {
+		if mapping.GroupDN == "" {
+			return fmt.Errorf("ldap group mapping %d group dn is required", i)
+		}
+		if _, err := ldap.ParseDN(mapping.GroupDN); err != nil {
+			return fmt.Errorf("invalid ldap group mapping %d group dn: %w", i, err)
+		}
+		if mapping.ACLUser == "" {
+			return fmt.Errorf("ldap group mapping %d acl user is required", i)
+		}
 	}
 
 	return nil
 }
 
 func (cfg config) userFilter(username string) string {
-	return fmt.Sprintf("(&%s(%s=%s))", cfg.SearchFilter, cfg.SearchAttribute, ldap.EscapeFilter(username))
+	return fmt.Sprintf("(&%s(%s=%s))", cfg.UserSearchFilter, cfg.UserSearchAttribute, ldap.EscapeFilter(username))
 }
 
-func getEnvString(key, fallback string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return fallback
-}
-
-func getEnvInt(key string, fallback int) int {
-	strValue := os.Getenv(key)
-	if value, err := strconv.Atoi(strValue); err == nil {
-		return value
-	}
-	return fallback
-}
-
-func getEnvBool(name string, fallback bool) bool {
-	strValue := os.Getenv(name)
-	if value, err := strconv.ParseBool(strValue); err == nil {
-		return value
-	}
-	return fallback
+func (cfg config) groupFilter(userDN string) string {
+	return fmt.Sprintf("(&%s(%s=%s))", cfg.GroupSearchFilter, cfg.GroupSearchAttribute, ldap.EscapeFilter(userDN))
 }

@@ -96,8 +96,10 @@ func handler(authenticate func(context.Context, string, string) (string, error))
 			res = result{Valid: true, Username: user}
 		} else if errors.Is(err, errEmptyCredentials) || errors.Is(err, errMultipleUsersFound) {
 			w.WriteHeader(http.StatusBadRequest)
-		} else if errors.Is(err, errUserNotFound) {
+		} else if errors.Is(err, errUserNotFound) || errors.Is(err, errNoGroupMapping) {
 			w.WriteHeader(http.StatusUnauthorized)
+		} else {
+			slog.Warn("authentication failed", "error", err)
 		}
 		json.NewEncoder(w).Encode(res)
 	})
