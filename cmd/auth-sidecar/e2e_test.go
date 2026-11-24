@@ -38,9 +38,9 @@ func TestAuthSidecarE2E(t *testing.T) {
 		wantStatus int
 		wantBody   string
 	}{
-		{"alice", `{"username":"alice","password":"alice-demo"}`, http.StatusOK, `{"valid":true,"username":"alice"}`},
-		{"bob", `{"username":"bob","password":"bob-demo"}`, http.StatusOK, `{"valid":true,"username":"bob"}`},
-		{"carol without groups", `{"username":"carol","password":"carol-demo"}`, http.StatusOK, `{"valid":true,"username":"carol"}`},
+		{"alice with two groups uses first mapping", `{"username":"alice","password":"alice-demo"}`, http.StatusOK, `{"valid":true,"username":"writer"}`},
+		{"bob", `{"username":"bob","password":"bob-demo"}`, http.StatusOK, `{"valid":true,"username":"reader"}`},
+		{"carol without groups", `{"username":"carol","password":"carol-demo"}`, http.StatusUnauthorized, `{"valid":false}`},
 		{"wrong password", `{"username":"alice","password":"wrong"}`, http.StatusOK, `{"valid":false}`},
 		{"another user's password", `{"username":"bob","password":"alice-demo"}`, http.StatusOK, `{"valid":false}`},
 		{"unknown user", `{"username":"nobody","password":"alice-demo"}`, http.StatusUnauthorized, `{"valid":false}`},
@@ -58,7 +58,7 @@ func TestAuthSidecarE2E(t *testing.T) {
 		{"multiple JSON values", `{"username":"alice","password":"alice-demo"}{}`, http.StatusBadRequest, `{"valid":false}`},
 		{"trailing garbage", `{"username":"alice","password":"alice-demo"}garbage`, http.StatusBadRequest, `{"valid":false}`},
 		{"oversized body", `{"username":"alice","password":"` + strings.Repeat("x", 16384) + `"}`, http.StatusBadRequest, `{"valid":false}`},
-		{"valid after rejection", `{"username":"alice","password":"alice-demo"}`, http.StatusOK, `{"valid":true,"username":"alice"}`},
+		{"valid after rejection", `{"username":"alice","password":"alice-demo"}`, http.StatusOK, `{"valid":true,"username":"writer"}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

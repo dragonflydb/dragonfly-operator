@@ -24,13 +24,18 @@ services:
       dockerfile: cmd/auth-sidecar/Dockerfile
     environment:
       LDAP_SERVERS: ldap://openldap:389
+      LDAP_TIMEOUT_CONNECTION: "3s"
+      LDAP_TIMEOUT_LDAP_OPERATION: "3s"
       LDAP_SEARCH_BIND_DN: cn=admin,dc=example,dc=org
       LDAP_SEARCH_BIND_PASSWORD: admin-demo
-      LDAP_SEARCH_BASE_DN: ou=people,dc=example,dc=org
-      LDAP_SEARCH_FILTER: (objectClass=inetOrgPerson)
-      LDAP_TIMEOUT_CONNECTION: "3"
-      LDAP_TIMEOUT_LDAP_OPERATION: "3"
-    ports:
+      LDAP_USER_SEARCH_BASE_DN: ou=people,dc=example,dc=org
+      LDAP_USER_SEARCH_FILTER: (objectClass=inetOrgPerson)
+      LDAP_GROUP_SEARCH_BASE_DN: ou=groups,dc=example,dc=org
+      LDAP_GROUP_SEARCH_FILTER: (objectClass=groupOfNames)
+      LDAP_GROUP_MAPPINGS: >-
+        [{"group_dn":"cn=dragonfly-writers,ou=groups,dc=example,dc=org","acl_user":"writer"},
+         {"group_dn":"cn=dragonfly-readers,ou=groups,dc=example,dc=org","acl_user":"reader"}]
+    ports: 
       - "127.0.0.1:18080:8080"
     depends_on:
       openldap:
