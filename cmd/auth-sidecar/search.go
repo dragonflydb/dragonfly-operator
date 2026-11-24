@@ -71,6 +71,9 @@ func searchDirectory(ctx context.Context, cfg config, directory ldapDirectory, u
 		return username, nil
 	}
 
+	if err := directory.Bind(cfg.SearchBindDN, cfg.SearchBindPassword); err != nil {
+		return "", fmt.Errorf("group search bind: %w", err)
+	}
 	return searchGroups(cfg, directory, userDN)
 }
 

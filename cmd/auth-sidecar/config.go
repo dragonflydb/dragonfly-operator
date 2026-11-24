@@ -148,8 +148,8 @@ func (cfg config) validate() error {
 	if cfg.TimeoutConnection <= 0 {
 		return errors.New("ldap timeout connection must be greater than zero")
 	}
-	if cfg.TimeoutLDAPOperation <= 0 {
-		return errors.New("ldap timeout ldap operation must be greater than zero")
+	if cfg.TimeoutLDAPOperation < 1*time.Second {
+		return errors.New("ldap timeout ldap operation must be greater than one")
 	}
 
 	// tls
