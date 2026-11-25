@@ -75,8 +75,8 @@ func roleExists(pod *corev1.Pod) bool {
 	return ok
 }
 
-// isRunningAndReady returns true if the pod is running and ready
-func isHealthy(pod *corev1.Pod) bool {
+// isReachable returns true if the Dragonfly admin socket is reachable.
+func isReachable(pod *corev1.Pod) bool {
 	return isRunningAndReady(pod) && !isTerminating(pod)
 }
 
@@ -189,6 +189,20 @@ func isReplicationCancelledError(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "replication cancelled")
+}
+
+// isDatasetLoadingError is true when Dragonfly rejected an admin command because
+// the instance is still loading its own snapshot (reports role:master, LOADING).
+func isDatasetLoadingError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "LOADING")
+}
+
+// isTransientReplicaConfigError covers errors where retrying SLAVE OF later is correct.
+func isTransientReplicaConfigError(err error) bool {
+	return isReplicationCancelledError(err) || isDatasetLoadingError(err)
 }
 
 // sanitizeIp removes surrounding brackets from IPv6 addresses.
