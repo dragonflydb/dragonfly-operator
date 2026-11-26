@@ -1,6 +1,8 @@
 
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
+# Image URL of the auth sidecar
+AUTH_SIDECAR_IMG ?= auth-sidecar:dev
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.30.0
 
@@ -85,6 +87,14 @@ docker-push: ## Push docker image with the manager.
 .PHONY: docker-kind-load
 docker-kind-load: ## Load docker image with the manager into kind cluster.
 	kind load docker-image ${IMG}
+
+.PHONY: docker-build-auth-sidecar
+docker-build-auth-sidecar: ## Build docker image with the auth sidecar.
+	docker build -t ${AUTH_SIDECAR_IMG} -f cmd/auth-sidecar/Dockerfile .
+
+.PHONY: docker-kind-load-auth-sidecar
+docker-kind-load-auth-sidecar: ## Load docker image with the auth sidecar into kind cluster.
+	kind load docker-image ${AUTH_SIDECAR_IMG}
 
 # PLATFORMS defines the target platforms for  the manager image be build to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:

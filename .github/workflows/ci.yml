@@ -26,6 +26,10 @@ jobs:
         run: |
           make docker-build
 
+      - name: Docker Build auth sidecar
+        run: |
+          make docker-build-auth-sidecar
+
       - uses: helm/kind-action@v1.15.2
         with:
           cluster_name: kind
@@ -87,10 +91,19 @@ jobs:
           platforms: |
             linux/amd64
             linux/arm64
-        env:
-          DOCKER_BUILDKIT: 1
-          DOCKER_USERNAME: ${{ github.actor }}
-          DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Publish auth sidecar image into GHCR
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./cmd/auth-sidecar/Dockerfile
+          push: true
+          tags: ghcr.io/dragonflydb/operator-auth-sidecar:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          platforms: |
+            linux/amd64
+            linux/arm64
 
       - name: Push Helm chart as OCI to Github
         run: |
@@ -113,5 +126,6 @@ jobs:
             Release ${{ github.ref_name }}
 
             Docker image: ghcr.io/dragonflydb/operator:${{ github.ref_name }}
+            Auth sidecar image: ghcr.io/dragonflydb/operator-auth-sidecar:${{ github.ref_name }}
             Helm chart: oci://ghcr.io/dragonflydb/dragonfly-operator/helm
           draft: true
