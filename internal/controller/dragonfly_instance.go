@@ -753,7 +753,7 @@ func (dfi *DragonflyInstance) reconcileResources(ctx context.Context) error {
 		}
 		dfi.log.Info("patched resource", "resource", desired.GetName())
 	}
-	if dfi.df.Spec.Replicas < 2 {
+	if dfi.df.Spec.Replicas < 2 || !dfi.df.Spec.Pdb.PdbEnabled() {
 		if err = dfi.client.Delete(ctx, &policyv1.PodDisruptionBudget{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      dfi.df.Name,
