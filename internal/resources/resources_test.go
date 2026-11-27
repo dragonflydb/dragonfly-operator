@@ -565,3 +565,21 @@ func TestGenerateDragonflyResources_MasterPodMetadataValidationAndTemplate(t *te
 	_, err = GenerateDragonflyResources(dfBadAnn, "dragonfly:latest")
 	require.Error(t, err)
 }
+
+func TestValidateMasterPodMetadata_ReservedAndSyntax(t *testing.T) {
+	require.Error(t, ValidateMasterPodMetadata(&resourcesv1.MetadataSpec{
+		Labels: map[string]string{appsv1.StatefulSetRevisionLabel: "rev-1"},
+	}))
+	require.Error(t, ValidateMasterPodMetadata(&resourcesv1.MetadataSpec{
+		Labels: map[string]string{KubernetesAppNameLabelKey: "other"},
+	}))
+	require.Error(t, ValidateMasterPodMetadata(&resourcesv1.MetadataSpec{
+		Labels: map[string]string{"bad key": "val"},
+	}))
+	require.Error(t, ValidateMasterPodMetadata(&resourcesv1.MetadataSpec{
+		Annotations: map[string]string{"bad key": "val"},
+	}))
+	require.Error(t, ValidateMasterPodMetadata(&resourcesv1.MetadataSpec{
+		Annotations: map[string]string{MasterPodMetadataKeysAnnotation: "{}"},
+	}))
+}

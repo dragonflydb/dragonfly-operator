@@ -87,7 +87,8 @@ const (
 	MasterIpLabelKey      = "master-ip"
 	DragonflyNameLabelKey = "app"
 
-	MasterIpAnnotationKey = "operator.dragonflydb.io/masterIP"
+	MasterIpAnnotationKey           = "operator.dragonflydb.io/masterIP"
+	MasterPodMetadataKeysAnnotation = "operator.dragonflydb.io/masterPodMetadataKeys"
 
 	RoleLabelKey = "role"
 

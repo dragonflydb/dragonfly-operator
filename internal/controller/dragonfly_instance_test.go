@@ -527,3 +527,70 @@ func TestMasterPodMetadata_RollingUpdateTransfer(t *testing.T) {
 	assert.Equal(t, "true", gotNew.Annotations["karpenter.sh/do-not-disrupt"])
 	assert.Equal(t, "yes", gotNew.Labels["master-only"])
 }
+
+func TestMasterPodMetadata_RemoveStaleKeysOnSpecUpdate(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, dfv1alpha1.AddToScheme(scheme))
+
+	df := &dfv1alpha1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{Name: "df", Namespace: "default"},
+		Spec: dfv1alpha1.DragonflySpec{
+			PodMetadata: &dfv1alpha1.MetadataSpec{
+				Annotations: map[string]string{"shared": "base"},
+			},
+			MasterPodMetadata: &dfv1alpha1.MetadataSpec{
+				Annotations: map[string]string{
+					"karpenter.sh/do-not-disrupt": "true",
+					"shared":                      "master-override",
+				},
+				Labels: map[string]string{"master-only": "yes"},
+			},
+		},
+	}
+	masterPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "df-0",
+			Namespace: "default",
+			Labels: map[string]string{
+				resources.DragonflyNameLabelKey:     "df",
+				resources.KubernetesPartOfLabelKey:  resources.KubernetesPartOf,
+				resources.KubernetesAppNameLabelKey: resources.KubernetesAppName,
+				resources.RoleLabelKey:              resources.Master,
+			},
+			Annotations: map[string]string{"shared": "base"},
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(df, masterPod).Build()
+	dfi := &DragonflyInstance{
+		df:            df,
+		client:        c,
+		log:           logr.Discard(),
+		scheme:        scheme,
+		eventRecorder: record.NewFakeRecorder(10),
+	}
+	defer dfi.Close()
+
+	require.NoError(t, dfi.syncMasterPodMetadata(ctx))
+
+	// Remove one key and keep another
+	df.Spec.MasterPodMetadata.Annotations = map[string]string{"shared": "master-override"}
+	df.Spec.MasterPodMetadata.Labels = nil
+	require.NoError(t, dfi.syncMasterPodMetadata(ctx))
+
+	var got corev1.Pod
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(masterPod), &got))
+	assert.NotContains(t, got.Annotations, "karpenter.sh/do-not-disrupt")
+	assert.Equal(t, "master-override", got.Annotations["shared"])
+	assert.NotContains(t, got.Labels, "master-only")
+
+	// Clear spec.masterPodMetadata completely
+	df.Spec.MasterPodMetadata = nil
+	require.NoError(t, dfi.syncMasterPodMetadata(ctx))
+
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(masterPod), &got))
+	assert.Equal(t, "base", got.Annotations["shared"])
+	assert.NotContains(t, got.Annotations, resources.MasterPodMetadataKeysAnnotation)
+}
