@@ -7813,8 +7813,8 @@ spec:
             - message: podManagementPolicy is immutable; delete and recreate the Dragonfly
                 instance to change it
               rule: '(has(self.podManagementPolicy) && self.podManagementPolicy !=
-                ” ? self.podManagementPolicy : ''OrderedReady'') == (has(oldSelf.podManagementPolicy)
-                && oldSelf.podManagementPolicy != ” ? oldSelf.podManagementPolicy
+                '''' ? self.podManagementPolicy : ''OrderedReady'') == (has(oldSelf.podManagementPolicy)
+                && oldSelf.podManagementPolicy != '''' ? oldSelf.podManagementPolicy
                 : ''OrderedReady'')'
           status:
             description: DragonflyStatus defines the observed state of Dragonfly
