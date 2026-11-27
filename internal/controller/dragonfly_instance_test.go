@@ -26,6 +26,7 @@ import (
 	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
@@ -369,7 +370,7 @@ func TestReplTakeover_TimeoutShorterThanReadTimeout(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "df", Namespace: "default"},
 	}
 	newMaster := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "df-1", Namespace: "default", Labels: map[string]string{}},
+		ObjectMeta: metav1.ObjectMeta{Name: "df-1", Namespace: "default", Labels: map[string]string{"controller-revision-hash": "rev-2"}},
 		Status:     corev1.PodStatus{PodIP: "10.0.0.2"},
 	}
 	oldMaster := &corev1.Pod{
@@ -400,4 +401,196 @@ func TestReplTakeover_TimeoutShorterThanReadTimeout(t *testing.T) {
 	assert.Positive(t, timeoutSeconds)
 	assert.Less(t, time.Duration(timeoutSeconds)*time.Second, readTimeout,
 		"REPLTAKEOVER timeout (seconds) must be shorter than the client read timeout")
+}
+
+func TestMasterPodMetadata_Lifecycle(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, dfv1alpha1.AddToScheme(scheme))
+
+	df := &dfv1alpha1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{Name: "df", Namespace: "default"},
+		Spec: dfv1alpha1.DragonflySpec{
+			PodMetadata: &dfv1alpha1.MetadataSpec{
+				Annotations: map[string]string{"shared": "base"},
+				Labels:      map[string]string{"shared-lbl": "base"},
+			},
+			MasterPodMetadata: &dfv1alpha1.MetadataSpec{
+				Annotations: map[string]string{
+					"karpenter.sh/do-not-disrupt": "true",
+					"shared":                      "master-override",
+				},
+				Labels: map[string]string{
+					"master-only": "yes",
+					"shared-lbl":  "master-override",
+				},
+			},
+		},
+	}
+
+	masterPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "df-0",
+			Namespace: "default",
+			Labels: map[string]string{
+				resources.DragonflyNameLabelKey:     "df",
+				resources.KubernetesPartOfLabelKey:  resources.KubernetesPartOf,
+				resources.KubernetesAppNameLabelKey: resources.KubernetesAppName,
+				resources.RoleLabelKey:              resources.Master,
+				"shared-lbl":                        "base",
+			},
+			Annotations: map[string]string{
+				"shared": "base",
+			},
+		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			},
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(df, masterPod).Build()
+	dfi := &DragonflyInstance{
+		df:            df,
+		client:        c,
+		log:           logr.Discard(),
+		scheme:        scheme,
+		eventRecorder: record.NewFakeRecorder(10),
+	}
+	defer dfi.Close()
+
+	// 1. syncMasterPodMetadata patches existing master pod
+	require.NoError(t, dfi.syncMasterPodMetadata(ctx))
+	var updated corev1.Pod
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(masterPod), &updated))
+	assert.Equal(t, "true", updated.Annotations["karpenter.sh/do-not-disrupt"])
+	assert.Equal(t, "master-override", updated.Annotations["shared"])
+	assert.Equal(t, "yes", updated.Labels["master-only"])
+	assert.Equal(t, "master-override", updated.Labels["shared-lbl"])
+
+	// 2. deleteRoleLabel removes masterPodMetadata and restores base PodMetadata
+	require.NoError(t, dfi.deleteRoleLabel(ctx, &updated))
+	var demoted corev1.Pod
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(masterPod), &demoted))
+	assert.NotContains(t, demoted.Annotations, "karpenter.sh/do-not-disrupt")
+	assert.Equal(t, "base", demoted.Annotations["shared"])
+	assert.NotContains(t, demoted.Labels, "master-only")
+	assert.Equal(t, "base", demoted.Labels["shared-lbl"])
+	assert.NotContains(t, demoted.Labels, resources.RoleLabelKey)
+}
+
+func TestMasterPodMetadata_RollingUpdateTransfer(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, dfv1alpha1.AddToScheme(scheme))
+
+	df := &dfv1alpha1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{Name: "df", Namespace: "default"},
+		Spec: dfv1alpha1.DragonflySpec{
+			MasterPodMetadata: &dfv1alpha1.MetadataSpec{
+				Annotations: map[string]string{"karpenter.sh/do-not-disrupt": "true"},
+				Labels:      map[string]string{"master-only": "yes"},
+			},
+		},
+	}
+	newMaster := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "df-1", Namespace: "default", Labels: map[string]string{"controller-revision-hash": "rev-2"}},
+		Status:     corev1.PodStatus{PodIP: "10.0.0.2"},
+	}
+	oldMaster := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "df-0", Namespace: "default"},
+		Status:     corev1.PodStatus{PodIP: "10.0.0.1"},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(df, newMaster, oldMaster).Build()
+	dfi := &DragonflyInstance{
+		df:            df,
+		client:        c,
+		log:           logr.Discard(),
+		scheme:        scheme,
+		eventRecorder: record.NewFakeRecorder(10),
+		redisClients:  make(map[string]*redis.Client),
+	}
+	defer dfi.Close()
+
+	addr, takeovers := fakeTakeoverServer(t)
+	dfi.redisClients[newMaster.Status.PodIP] = redis.NewClient(&redis.Options{Addr: addr, MaxRetries: -1})
+
+	require.NoError(t, dfi.updatedMaster(ctx, oldMaster, &corev1.PodList{Items: []corev1.Pod{*newMaster}}, "rev-2"))
+	<-takeovers
+
+	var gotNew corev1.Pod
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(newMaster), &gotNew))
+	assert.Equal(t, resources.Master, gotNew.Labels[resources.RoleLabelKey])
+	assert.Equal(t, "true", gotNew.Annotations["karpenter.sh/do-not-disrupt"])
+	assert.Equal(t, "yes", gotNew.Labels["master-only"])
+}
+
+func TestMasterPodMetadata_RemoveStaleKeysOnSpecUpdate(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, dfv1alpha1.AddToScheme(scheme))
+
+	df := &dfv1alpha1.Dragonfly{
+		ObjectMeta: metav1.ObjectMeta{Name: "df", Namespace: "default"},
+		Spec: dfv1alpha1.DragonflySpec{
+			PodMetadata: &dfv1alpha1.MetadataSpec{
+				Annotations: map[string]string{"shared": "base"},
+			},
+			MasterPodMetadata: &dfv1alpha1.MetadataSpec{
+				Annotations: map[string]string{
+					"karpenter.sh/do-not-disrupt": "true",
+					"shared":                      "master-override",
+				},
+				Labels: map[string]string{"master-only": "yes"},
+			},
+		},
+	}
+	masterPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "df-0",
+			Namespace: "default",
+			Labels: map[string]string{
+				resources.DragonflyNameLabelKey:     "df",
+				resources.KubernetesPartOfLabelKey:  resources.KubernetesPartOf,
+				resources.KubernetesAppNameLabelKey: resources.KubernetesAppName,
+				resources.RoleLabelKey:              resources.Master,
+			},
+			Annotations: map[string]string{"shared": "base"},
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(df, masterPod).Build()
+	dfi := &DragonflyInstance{
+		df:            df,
+		client:        c,
+		log:           logr.Discard(),
+		scheme:        scheme,
+		eventRecorder: record.NewFakeRecorder(10),
+	}
+	defer dfi.Close()
+
+	require.NoError(t, dfi.syncMasterPodMetadata(ctx))
+
+	// Remove one key and keep another
+	df.Spec.MasterPodMetadata.Annotations = map[string]string{"shared": "master-override"}
+	df.Spec.MasterPodMetadata.Labels = nil
+	require.NoError(t, dfi.syncMasterPodMetadata(ctx))
+
+	var got corev1.Pod
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(masterPod), &got))
+	assert.NotContains(t, got.Annotations, "karpenter.sh/do-not-disrupt")
+	assert.Equal(t, "master-override", got.Annotations["shared"])
+	assert.NotContains(t, got.Labels, "master-only")
+
+	// Clear spec.masterPodMetadata completely
+	df.Spec.MasterPodMetadata = nil
+	require.NoError(t, dfi.syncMasterPodMetadata(ctx))
+
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(masterPod), &got))
+	assert.Equal(t, "base", got.Annotations["shared"])
+	assert.NotContains(t, got.Annotations, resources.MasterPodMetadataKeysAnnotation)
 }

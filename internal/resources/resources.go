@@ -19,6 +19,7 @@ package resources
 import (
 	"fmt"
 	"maps"
+	"strings"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -26,6 +27,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -45,6 +47,50 @@ var operatorManagedLabels = map[string]bool{
 	KubernetesPartOfLabelKey:       true,
 	KubernetesManagedByLabelKey:    true,
 	DragonflyNameLabelKey:          true,
+}
+
+// IsReservedMasterPodLabel reports whether key is managed by the operator or StatefulSet
+// and must not be set or removed by spec.masterPodMetadata.
+func IsReservedMasterPodLabel(key string) bool {
+	return operatorManagedLabels[key] ||
+		key == RoleLabelKey ||
+		key == MasterIpLabelKey ||
+		key == appsv1.StatefulSetRevisionLabel ||
+		key == "statefulset.kubernetes.io/pod-name" ||
+		key == "apps.kubernetes.io/pod-index"
+}
+
+// IsReservedMasterPodAnnotation reports whether key is managed by the operator
+// and must not be set or removed by spec.masterPodMetadata.
+func IsReservedMasterPodAnnotation(key string) bool {
+	return key == MasterIpAnnotationKey || key == MasterPodMetadataKeysAnnotation
+}
+
+// ValidateMasterPodMetadata validates spec.masterPodMetadata keys, values, and reserved names.
+func ValidateMasterPodMetadata(meta *resourcesv1.MetadataSpec) error {
+	if meta == nil {
+		return nil
+	}
+	for k, v := range meta.Labels {
+		if IsReservedMasterPodLabel(k) {
+			return fmt.Errorf("spec.masterPodMetadata.labels cannot set reserved key %q", k)
+		}
+		if errs := validation.IsQualifiedName(k); len(errs) > 0 {
+			return fmt.Errorf("spec.masterPodMetadata.labels has invalid key %q: %s", k, strings.Join(errs, "; "))
+		}
+		if errs := validation.IsValidLabelValue(v); len(errs) > 0 {
+			return fmt.Errorf("spec.masterPodMetadata.labels[%q] has invalid value %q: %s", k, v, strings.Join(errs, "; "))
+		}
+	}
+	for k := range meta.Annotations {
+		if IsReservedMasterPodAnnotation(k) {
+			return fmt.Errorf("spec.masterPodMetadata.annotations cannot set reserved key %q", k)
+		}
+		if errs := validation.IsQualifiedName(k); len(errs) > 0 {
+			return fmt.Errorf("spec.masterPodMetadata.annotations has invalid key %q: %s", k, strings.Join(errs, "; "))
+		}
+	}
+	return nil
 }
 
 func checkLabels(field string, labels map[string]string) error {
@@ -136,6 +182,9 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		if err := checkLabels("spec.podMetadata.labels", df.Spec.PodMetadata.Labels); err != nil {
 			return nil, err
 		}
+	}
+	if err := ValidateMasterPodMetadata(df.Spec.MasterPodMetadata); err != nil {
+		return nil, err
 	}
 	if df.Spec.OwnedObjectsMetadata != nil {
 		if err := checkLabels("spec.ownedObjectsMetadata.labels", df.Spec.OwnedObjectsMetadata.Labels); err != nil {

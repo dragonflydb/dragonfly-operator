@@ -6824,6 +6824,20 @@ spec:
                 - OrderedReady
                 - Parallel
                 type: string
+              masterPodMetadata:
+                description: |-
+                  (Optional) Labels and annotations to add only to the Dragonfly master pod.
+                  Applied when a pod is promoted to master and removed when it is demoted.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                type: object
               podMetadata:
                 description: (Optional) Labels and annotations to add to the Dragonfly
                   pods.

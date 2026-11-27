@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"reflect"
@@ -510,7 +511,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	}
 
 	dfi.log.Info("Marking pod role as replica", "pod", pod.Name, "masterIp", masterIp)
-	patch := client.MergeFrom(pod.DeepCopy())
+	patch := client.MergeFromWithOptions(pod.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	pod.Labels[resources.RoleLabelKey] = resources.Replica
 	if pod.Annotations == nil {
 		pod.Annotations = make(map[string]string)
@@ -522,14 +523,15 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	if ip != nil && ip.To4() != nil {
 		pod.Labels[resources.MasterIpLabelKey] = masterIp
 	}
+	dfi.removeMasterPodMetadata(pod)
+
+	if wasMaster {
+		// Prevent clients from sending commands to this old master, even if the metadata patch fails.
+		defer dfi.disconnectClients(ctx, redisClient, pod)
+	}
 
 	if err := dfi.client.Patch(ctx, pod, patch); err != nil {
 		return fmt.Errorf("could not update replica metadata: %w", err)
-	}
-
-	if wasMaster {
-		// Prevent clients from sending commands to this old master
-		dfi.disconnectClients(ctx, redisClient, pod)
 	}
 
 	return nil
@@ -537,6 +539,9 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 
 // replicaOfNoOne configures the pod as a master along while updating other pods to be replicas
 func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Pod) error {
+	if err := resources.ValidateMasterPodMetadata(dfi.df.Spec.MasterPodMetadata); err != nil {
+		return err
+	}
 	redisClient := dfi.getRedisClient(pod.Status.PodIP)
 
 	dfi.log.Info("running SLAVE OF NO ONE command", "pod", pod.Name, "addr", redisClient.Options().Addr)
@@ -568,6 +573,7 @@ func (dfi *DragonflyInstance) replicaOfNoOne(ctx context.Context, pod *corev1.Po
 		pod.Annotations = make(map[string]string)
 	}
 	pod.Annotations[resources.MasterIpAnnotationKey] = masterIp
+	dfi.applyMasterPodMetadata(pod)
 
 	if err := dfi.client.Patch(ctx, pod, patch); err != nil {
 		return err
@@ -1004,8 +1010,9 @@ func (dfi *DragonflyInstance) deleteMasterRoleLabel(ctx context.Context) error {
 func (dfi *DragonflyInstance) deleteRoleLabel(ctx context.Context, pod *corev1.Pod) error {
 	dfi.log.Info("deleting pod role label", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
 
-	patchFrom := client.MergeFrom(pod.DeepCopy())
+	patchFrom := client.MergeFromWithOptions(pod.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	delete(pod.Labels, resources.RoleLabelKey)
+	dfi.removeMasterPodMetadata(pod)
 
 	if err := dfi.client.Patch(ctx, pod, patchFrom); err != nil {
 		dfi.log.Error(err, "failed to update the role label", "pod", pod.Name)
@@ -1135,6 +1142,9 @@ func (dfi *DragonflyInstance) updateReplicas(ctx context.Context, replicas *core
 
 // updatedMaster updates the master to the latest version
 func (dfi *DragonflyInstance) updatedMaster(ctx context.Context, oldMaster *corev1.Pod, replicas *corev1.PodList, updateRevision string) error {
+	if err := resources.ValidateMasterPodMetadata(dfi.df.Spec.MasterPodMetadata); err != nil {
+		return err
+	}
 	if len(replicas.Items) > 0 {
 		newMaster, err := getUpdatedReplica(replicas, updateRevision)
 		if err != nil {
@@ -1208,6 +1218,7 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 		newMaster.Annotations = make(map[string]string)
 	}
 	newMaster.Annotations[resources.MasterIpAnnotationKey] = masterIp
+	dfi.applyMasterPodMetadata(newMaster)
 
 	// update the label on the pod
 	if err := dfi.client.Patch(ctx, newMaster, patch); err != nil {
@@ -1261,4 +1272,237 @@ func (dfi *DragonflyInstance) getMasterCandidate(ctx context.Context, pod *corev
 		}
 	}
 	return c
+}
+
+type appliedMasterPodMetadata struct {
+	Labels      []string `json:"labels,omitempty"`
+	Annotations []string `json:"annotations,omitempty"`
+}
+
+func readAppliedMasterPodMetadata(pod *corev1.Pod) appliedMasterPodMetadata {
+	var out appliedMasterPodMetadata
+	if pod.Annotations == nil {
+		return out
+	}
+	raw, ok := pod.Annotations[resources.MasterPodMetadataKeysAnnotation]
+	if !ok || raw == "" {
+		return out
+	}
+	_ = json.Unmarshal([]byte(raw), &out)
+	return out
+}
+
+func writeAppliedMasterPodMetadata(pod *corev1.Pod, labels, annotations []string) bool {
+	if len(labels) == 0 && len(annotations) == 0 {
+		if pod.Annotations != nil {
+			if _, ok := pod.Annotations[resources.MasterPodMetadataKeysAnnotation]; ok {
+				delete(pod.Annotations, resources.MasterPodMetadataKeysAnnotation)
+				return true
+			}
+		}
+		return false
+	}
+	sort.Strings(labels)
+	sort.Strings(annotations)
+	b, err := json.Marshal(appliedMasterPodMetadata{Labels: labels, Annotations: annotations})
+	if err != nil {
+		return false
+	}
+	encoded := string(b)
+	if pod.Annotations == nil {
+		pod.Annotations = make(map[string]string)
+	}
+	if pod.Annotations[resources.MasterPodMetadataKeysAnnotation] == encoded {
+		return false
+	}
+	pod.Annotations[resources.MasterPodMetadataKeysAnnotation] = encoded
+	return true
+}
+
+func (dfi *DragonflyInstance) restoreOrDeleteLabel(pod *corev1.Pod, k string) bool {
+	if resources.IsReservedMasterPodLabel(k) {
+		return false
+	}
+	if v, ok := dfi.basePodLabel(k); ok {
+		if pod.Labels == nil {
+			pod.Labels = make(map[string]string)
+		}
+		if cur, exists := pod.Labels[k]; !exists || cur != v {
+			pod.Labels[k] = v
+			return true
+		}
+		return false
+	}
+	if pod.Labels != nil {
+		if _, exists := pod.Labels[k]; exists {
+			delete(pod.Labels, k)
+			return true
+		}
+	}
+	return false
+}
+
+func (dfi *DragonflyInstance) restoreOrDeleteAnnotation(pod *corev1.Pod, k string) bool {
+	if resources.IsReservedMasterPodAnnotation(k) {
+		return false
+	}
+	if v, ok := dfi.basePodAnnotation(k); ok {
+		if pod.Annotations == nil {
+			pod.Annotations = make(map[string]string)
+		}
+		if cur, exists := pod.Annotations[k]; !exists || cur != v {
+			pod.Annotations[k] = v
+			return true
+		}
+		return false
+	}
+	if pod.Annotations != nil {
+		if _, exists := pod.Annotations[k]; exists {
+			delete(pod.Annotations, k)
+			return true
+		}
+	}
+	return false
+}
+
+func (dfi *DragonflyInstance) applyMasterPodMetadata(pod *corev1.Pod) bool {
+	prev := readAppliedMasterPodMetadata(pod)
+	changed := false
+
+	var desiredLabels map[string]string
+	var desiredAnnotations map[string]string
+	if dfi.df.Spec.MasterPodMetadata != nil {
+		desiredLabels = dfi.df.Spec.MasterPodMetadata.Labels
+		desiredAnnotations = dfi.df.Spec.MasterPodMetadata.Annotations
+	}
+
+	for _, k := range prev.Labels {
+		if _, stillDesired := desiredLabels[k]; !stillDesired {
+			if dfi.restoreOrDeleteLabel(pod, k) {
+				changed = true
+			}
+		}
+	}
+	for _, k := range prev.Annotations {
+		if _, stillDesired := desiredAnnotations[k]; !stillDesired {
+			if dfi.restoreOrDeleteAnnotation(pod, k) {
+				changed = true
+			}
+		}
+	}
+
+	var appliedLabels []string
+	if len(desiredLabels) > 0 {
+		if pod.Labels == nil {
+			pod.Labels = make(map[string]string)
+		}
+		for k, v := range desiredLabels {
+			if resources.IsReservedMasterPodLabel(k) {
+				continue
+			}
+			appliedLabels = append(appliedLabels, k)
+			if cur, ok := pod.Labels[k]; !ok || cur != v {
+				pod.Labels[k] = v
+				changed = true
+			}
+		}
+	}
+
+	var appliedAnnotations []string
+	if len(desiredAnnotations) > 0 {
+		if pod.Annotations == nil {
+			pod.Annotations = make(map[string]string)
+		}
+		for k, v := range desiredAnnotations {
+			if resources.IsReservedMasterPodAnnotation(k) {
+				continue
+			}
+			appliedAnnotations = append(appliedAnnotations, k)
+			if cur, ok := pod.Annotations[k]; !ok || cur != v {
+				pod.Annotations[k] = v
+				changed = true
+			}
+		}
+	}
+
+	if writeAppliedMasterPodMetadata(pod, appliedLabels, appliedAnnotations) {
+		changed = true
+	}
+	return changed
+}
+
+func (dfi *DragonflyInstance) removeMasterPodMetadata(pod *corev1.Pod) {
+	prev := readAppliedMasterPodMetadata(pod)
+	for _, k := range prev.Labels {
+		dfi.restoreOrDeleteLabel(pod, k)
+	}
+	for _, k := range prev.Annotations {
+		dfi.restoreOrDeleteAnnotation(pod, k)
+	}
+	if dfi.df.Spec.MasterPodMetadata != nil {
+		for k := range dfi.df.Spec.MasterPodMetadata.Labels {
+			dfi.restoreOrDeleteLabel(pod, k)
+		}
+		for k := range dfi.df.Spec.MasterPodMetadata.Annotations {
+			dfi.restoreOrDeleteAnnotation(pod, k)
+		}
+	}
+	if pod.Annotations != nil {
+		delete(pod.Annotations, resources.MasterPodMetadataKeysAnnotation)
+	}
+}
+
+func (dfi *DragonflyInstance) basePodLabel(key string) (string, bool) {
+	if dfi.df.Spec.PodMetadata != nil && dfi.df.Spec.PodMetadata.Labels != nil {
+		if v, ok := dfi.df.Spec.PodMetadata.Labels[key]; ok {
+			return v, true
+		}
+	}
+	if dfi.df.Spec.Labels != nil {
+		if v, ok := dfi.df.Spec.Labels[key]; ok {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+func (dfi *DragonflyInstance) basePodAnnotation(key string) (string, bool) {
+	if dfi.df.Spec.PodMetadata != nil && dfi.df.Spec.PodMetadata.Annotations != nil {
+		if v, ok := dfi.df.Spec.PodMetadata.Annotations[key]; ok {
+			return v, true
+		}
+	}
+	if dfi.df.Spec.Annotations != nil {
+		if v, ok := dfi.df.Spec.Annotations[key]; ok {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+func (dfi *DragonflyInstance) syncMasterPodMetadata(ctx context.Context) error {
+	if err := resources.ValidateMasterPodMetadata(dfi.df.Spec.MasterPodMetadata); err != nil {
+		return err
+	}
+	var masterPods corev1.PodList
+	if err := dfi.client.List(ctx, &masterPods, client.InNamespace(dfi.df.Namespace), client.MatchingLabels{
+		resources.DragonflyNameLabelKey:     dfi.df.Name,
+		resources.KubernetesPartOfLabelKey:  resources.KubernetesPartOf,
+		resources.KubernetesAppNameLabelKey: resources.KubernetesAppName,
+		resources.RoleLabelKey:              resources.Master,
+	}); err != nil {
+		return err
+	}
+	for i := range masterPods.Items {
+		master := &masterPods.Items[i]
+		patch := client.MergeFromWithOptions(master.DeepCopy(), client.MergeFromWithOptimisticLock{})
+		if !dfi.applyMasterPodMetadata(master) {
+			continue
+		}
+		dfi.log.Info("syncing masterPodMetadata on master pod", "pod", master.Name)
+		if err := dfi.client.Patch(ctx, master, patch); err != nil {
+			return err
+		}
+	}
+	return nil
 }

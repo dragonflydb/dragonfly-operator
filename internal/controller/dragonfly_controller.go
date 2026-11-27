@@ -71,6 +71,10 @@ func (r *DragonflyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile dragonfly resources: %w", err)
 	}
 
+	if err = dfi.syncMasterPodMetadata(ctx); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to sync master pod metadata: %w", err)
+	}
+
 	dfiStatus := dfi.getStatus()
 
 	if dfiStatus.Phase == PhaseReady || dfiStatus.Phase == PhaseReadyOld || dfiStatus.Phase == PhaseNotReady {

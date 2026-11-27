@@ -148,6 +148,11 @@ func (in *DragonflySpec) DeepCopyInto(out *DragonflySpec) {
 		*out = new(MetadataSpec)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.MasterPodMetadata != nil {
+		in, out := &in.MasterPodMetadata, &out.MasterPodMetadata
+		*out = new(MetadataSpec)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.Env != nil {
 		in, out := &in.Env, &out.Env
 		*out = make([]v1.EnvVar, len(*in))

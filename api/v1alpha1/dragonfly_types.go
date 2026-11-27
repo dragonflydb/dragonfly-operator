@@ -89,6 +89,12 @@ type DragonflySpec struct {
 	// +kubebuilder:validation:Optional
 	PodMetadata *MetadataSpec `json:"podMetadata,omitempty"`
 
+	// (Optional) Labels and annotations to add only to the Dragonfly master pod.
+	// Applied when a pod is promoted to master and removed when it is demoted.
+	// +optional
+	// +kubebuilder:validation:Optional
+	MasterPodMetadata *MetadataSpec `json:"masterPodMetadata,omitempty"`
+
 	// (Optional) Env variables to add to the Dragonfly pods.
 	// +optional
 	// +kubebuilder:validation:Optional

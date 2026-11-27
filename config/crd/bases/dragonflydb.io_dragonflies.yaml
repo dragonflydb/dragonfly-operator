@@ -6737,6 +6737,20 @@ spec:
                   type: string
                 description: 'Deprecated: use spec.podMetadata.labels instead.'
                 type: object
+              masterPodMetadata:
+                description: |-
+                  (Optional) Labels and annotations to add only to the Dragonfly master pod.
+                  Applied when a pod is promoted to master and removed when it is demoted.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                type: object
               memcachedPort:
                 description: (Optional) Dragonfly memcached port
                 format: int32
