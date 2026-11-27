@@ -18,10 +18,14 @@ package controller
 
 import (
 	"testing"
+	"time"
 
 	"github.com/dragonflydb/dragonfly-operator/internal/resources"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 // makePod is a helper that builds a minimal Pod with the given name and optional labels.
@@ -154,4 +158,35 @@ func TestSelectMasterCandidate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTerminatingSince(t *testing.T) {
+	now := time.Now()
+
+	t.Run("not terminating", func(t *testing.T) {
+		_, ok := terminatingSince(&corev1.Pod{})
+		assert.False(t, ok)
+	})
+
+	t.Run("deletion timestamp minus grace period", func(t *testing.T) {
+		deletion := metav1.NewTime(now.Add(30 * time.Second))
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			DeletionTimestamp:          &deletion,
+			DeletionGracePeriodSeconds: ptr.To(int64(30)),
+		}}
+		since, ok := terminatingSince(pod)
+		require.True(t, ok)
+		assert.WithinDuration(t, now, since, time.Second)
+	})
+
+	t.Run("disruption target condition", func(t *testing.T) {
+		pod := &corev1.Pod{Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{
+			Type:               corev1.DisruptionTarget,
+			Status:             corev1.ConditionTrue,
+			LastTransitionTime: metav1.NewTime(now),
+		}}}}
+		since, ok := terminatingSince(pod)
+		require.True(t, ok)
+		assert.WithinDuration(t, now, since, time.Second)
+	})
 }
