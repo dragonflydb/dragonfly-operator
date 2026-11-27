@@ -191,8 +191,6 @@ func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.
 		return false, err
 	}
 
-	// Split on the first colon only: an IPv6 master_host contains colons of its
-	// own, and splitting on every one of them keeps just the first group.
 	replicationData := parseInfoToMap(resp)
 
 	if replicationData["role"] == resources.Master {
@@ -843,6 +841,9 @@ func resourceSpecsEqual(desired, existing client.Object) bool {
 	return reflect.DeepEqual(desiredSpec.Interface(), existingSpec.Interface())
 }
 
+// parseInfoToMap turns an INFO response into a key/value map. Each line is
+// split on the first colon only: an IPv6 master_host carries colons of its own,
+// and splitting on every one of them keeps just the first group of the address.
 func parseInfoToMap(info string) map[string]string {
 	data := make(map[string]string)
 	for _, line := range strings.Split(info, "\n") {
