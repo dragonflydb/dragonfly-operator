@@ -528,6 +528,15 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 			// pass it as an arg
 			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args, fmt.Sprintf("%s=%s/%s", TLSCACertPathArg, TLSCACertDir, TLSCACertFileName))
 		}
+
+		if df.Spec.Authentication.LDAP != nil {
+			statefulset.Spec.Template.Spec.Containers[0].Args = append(statefulset.Spec.Template.Spec.Containers[0].Args,
+				fmt.Sprintf("%s=true", AuthValidateArg),
+				fmt.Sprintf("%s=http://127.0.0.1:%d/validate", AuthValidateURLArg, AuthSidecarPort),
+			)
+			statefulset.Spec.Template.Spec.Containers = append(statefulset.Spec.Template.Spec.Containers,
+				generateAuthSidecarContainer(df.Spec.Authentication.LDAP))
+		}
 	}
 
 	// When custom probe ConfigMaps are set, switch probes to use mounted scripts
@@ -686,6 +695,81 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 	}
 
 	return resources, nil
+}
+
+func generateAuthSidecarContainer(ldap *resourcesv1.LDAPAuthentication) corev1.Container {
+	env := []corev1.EnvVar{
+		{Name: "HTTP_PORT", Value: fmt.Sprintf("%d", AuthSidecarPort)},
+		{Name: "LDAP_SERVERS", Value: ldap.Server},
+		{Name: "LDAP_SEARCH_BIND_DN", Value: ldap.BindDN},
+		{
+			Name: "LDAP_SEARCH_BIND_PASSWORD",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &ldap.BindPasswordFromSecret,
+			},
+		},
+		{Name: "LDAP_SEARCH_BASE_DN", Value: ldap.SearchBaseDN},
+	}
+	if ldap.StartTLS {
+		env = append(env, corev1.EnvVar{Name: "LDAP_USE_STARTTLS", Value: "true"})
+	}
+	if ldap.CACertSecret != nil {
+		env = append(env, corev1.EnvVar{
+			Name: "LDAP_TLS_CA_CERT",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: ldap.CACertSecret,
+			},
+		})
+	}
+	if ldap.SearchFilter != "" {
+		env = append(env, corev1.EnvVar{Name: "LDAP_SEARCH_FILTER", Value: ldap.SearchFilter})
+	}
+	if ldap.SearchAttribute != "" {
+		env = append(env, corev1.EnvVar{Name: "LDAP_SEARCH_ATTRIBUTE", Value: ldap.SearchAttribute})
+	}
+	if ldap.SearchScope != "" {
+		env = append(env, corev1.EnvVar{Name: "LDAP_SEARCH_SCOPE", Value: ldap.SearchScope})
+	}
+
+	probe := func() *corev1.Probe {
+		return &corev1.Probe{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path: "/healthz",
+				Port: intstr.FromInt32(AuthSidecarPort),
+			},
+			FailureThreshold: 3,
+			PeriodSeconds:    10,
+			SuccessThreshold: 1,
+			TimeoutSeconds:   5,
+		}
+	}
+
+	image := ldap.Image
+	if image == "" {
+		image = fmt.Sprintf("%s:%s", AuthSidecarImage, AuthSidecarVersion)
+	}
+
+	container := corev1.Container{
+		Name:  AuthSidecarContainerName,
+		Image: image,
+		// On a duplicate name the kubelet uses the last entry, so the user's
+		// variables override the ones above.
+		Env:            append(env, ldap.Env...),
+		ReadinessProbe: probe(),
+		LivenessProbe:  probe(),
+		SecurityContext: &corev1.SecurityContext{
+			AllowPrivilegeEscalation: new(false),
+			ReadOnlyRootFilesystem:   new(true),
+			RunAsNonRoot:             new(true),
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{"ALL"},
+			},
+		},
+	}
+	if ldap.Resources != nil {
+		container.Resources = *ldap.Resources
+	}
+	return container
 }
 
 // mergeNamedSlices will merge base into override, override takes precendence

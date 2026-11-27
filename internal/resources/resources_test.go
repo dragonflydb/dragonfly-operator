@@ -2,6 +2,8 @@ package resources
 
 import (
 	"fmt"
+	"os"
+	"regexp"
 	"testing"
 
 	resourcesv1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
@@ -9,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -528,4 +531,150 @@ func TestGenerateDragonflyResources_ServiceLinksDisabled(t *testing.T) {
 		}
 	}
 	t.Fatal("StatefulSet not found in generated resources")
+}
+
+func findContainer(sts *appsv1.StatefulSet, name string) *corev1.Container {
+	for i := range sts.Spec.Template.Spec.Containers {
+		if sts.Spec.Template.Spec.Containers[i].Name == name {
+			return &sts.Spec.Template.Spec.Containers[i]
+		}
+	}
+	return nil
+}
+
+func newLDAPTestDragonfly() *resourcesv1.Dragonfly {
+	df := newTestDragonfly(1)
+	df.Spec.Authentication = &resourcesv1.Authentication{
+		LDAP: &resourcesv1.LDAPAuthentication{
+			Image:  "auth-sidecar:test",
+			Server: "ldaps://ldap.example.org:636",
+			BindDN: "cn=admin,dc=example,dc=org",
+			BindPasswordFromSecret: corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "ldap-bind"},
+				Key:                  "password",
+			},
+			SearchBaseDN: "ou=people,dc=example,dc=org",
+		},
+	}
+	return df
+}
+
+func TestGenerateDragonflyResources_NoAuthSidecarByDefault(t *testing.T) {
+	df := newTestDragonfly(1)
+	df.Spec.Authentication = &resourcesv1.Authentication{}
+
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	assert.Len(t, sts.Spec.Template.Spec.Containers, 1)
+	for _, arg := range sts.Spec.Template.Spec.Containers[0].Args {
+		assert.NotContains(t, arg, AuthValidateArg)
+	}
+}
+
+func TestGenerateDragonflyResources_LDAPAddsAuthSidecar(t *testing.T) {
+	df := newLDAPTestDragonfly()
+
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.NotNil(t, sts)
+	require.Len(t, sts.Spec.Template.Spec.Containers, 2)
+
+	dragonfly := sts.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, DragonflyContainerName, dragonfly.Name)
+	assert.Contains(t, dragonfly.Args, "--auth_validate=true")
+	assert.Contains(t, dragonfly.Args, "--auth_validate_url=http://127.0.0.1:8080/validate")
+
+	sidecar := findContainer(sts, AuthSidecarContainerName)
+	require.NotNil(t, sidecar)
+	assert.Equal(t, "auth-sidecar:test", sidecar.Image)
+	assert.Equal(t, "/healthz", sidecar.ReadinessProbe.HTTPGet.Path)
+	assert.Equal(t, []corev1.EnvVar{
+		{Name: "HTTP_PORT", Value: "8080"},
+		{Name: "LDAP_SERVERS", Value: "ldaps://ldap.example.org:636"},
+		{Name: "LDAP_SEARCH_BIND_DN", Value: "cn=admin,dc=example,dc=org"},
+		{
+			Name: "LDAP_SEARCH_BIND_PASSWORD",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					Name: "ldap-bind",
+					Key:  "password",
+				},
+			},
+		},
+		{Name: "LDAP_SEARCH_BASE_DN", Value: "ou=people,dc=example,dc=org"},
+	}, sidecar.Env)
+}
+
+func TestGenerateDragonflyResources_LDAPDefaultImage(t *testing.T) {
+	df := newLDAPTestDragonfly()
+	df.Spec.Authentication.LDAP.Image = ""
+
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sidecar := findContainer(findStatefulSet(objs), AuthSidecarContainerName)
+	require.NotNil(t, sidecar)
+	assert.Equal(t, "ghcr.io/dragonflydb/operator-auth-sidecar:"+AuthSidecarVersion, sidecar.Image)
+}
+
+// The sidecar image is published under the operator release tag, so the default
+// tag has to follow the operator version, which the chart's appVersion records.
+func TestAuthSidecarVersion_MatchesOperatorVersion(t *testing.T) {
+	raw, err := os.ReadFile("../../charts/dragonfly-operator/Chart.yaml")
+	require.NoError(t, err)
+
+	match := regexp.MustCompile(`(?m)^appVersion:\s*"?([^"\s]+)"?`).FindSubmatch(raw)
+	require.NotNil(t, match, "appVersion not found in Chart.yaml")
+	assert.Equal(t, string(match[1]), AuthSidecarVersion)
+}
+
+func TestGenerateDragonflyResources_LDAPOptionalSettings(t *testing.T) {
+	df := newLDAPTestDragonfly()
+	ldap := df.Spec.Authentication.LDAP
+	ldap.StartTLS = true
+	ldap.CACertSecret = &corev1.SecretKeySelector{
+		Name: "ldap-ca",
+		Key:  "ca.crt",
+	}
+	ldap.SearchFilter = "(objectClass=inetOrgPerson)"
+	ldap.SearchAttribute = "cn"
+	ldap.SearchScope = "one"
+	ldap.Env = []corev1.EnvVar{{Name: "LDAP_TIMEOUT_CONNECTION", Value: "3"}}
+	ldap.Resources = &corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("64Mi")},
+	}
+
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sidecar := findContainer(findStatefulSet(objs), AuthSidecarContainerName)
+	require.NotNil(t, sidecar)
+	assert.Equal(t, *ldap.Resources, sidecar.Resources)
+	assert.Subset(t, sidecar.Env, []corev1.EnvVar{
+		{Name: "LDAP_USE_STARTTLS", Value: "true"},
+		{Name: "LDAP_TLS_CA_CERT", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: ldap.CACertSecret}},
+		{Name: "LDAP_SEARCH_FILTER", Value: "(objectClass=inetOrgPerson)"},
+		{Name: "LDAP_SEARCH_ATTRIBUTE", Value: "cn"},
+		{Name: "LDAP_SEARCH_SCOPE", Value: "one"},
+	})
+	assert.Equal(t, corev1.EnvVar{Name: "LDAP_TIMEOUT_CONNECTION", Value: "3"}, sidecar.Env[len(sidecar.Env)-1])
+}
+
+func TestGenerateDragonflyResources_AdditionalContainerReplacesAuthSidecar(t *testing.T) {
+	df := newLDAPTestDragonfly()
+	df.Spec.AdditionalContainers = []corev1.Container{
+		{Name: AuthSidecarContainerName, Image: "custom-sidecar:1"},
+	}
+
+	objs, err := GenerateDragonflyResources(df, "")
+	require.NoError(t, err)
+
+	sts := findStatefulSet(objs)
+	require.Len(t, sts.Spec.Template.Spec.Containers, 2)
+	assert.Equal(t, "custom-sidecar:1", findContainer(sts, AuthSidecarContainerName).Image)
 }

@@ -57,6 +57,12 @@ const (
 	TLSArg              = "--tls"
 	NoTLSOnAdminPortArg = "--no_tls_on_admin_port"
 
+	AuthSidecarContainerName = "auth-sidecar"
+	AuthSidecarImage         = "ghcr.io/dragonflydb/operator-auth-sidecar"
+	AuthSidecarPort          = 8080
+	AuthValidateArg          = "--auth_validate"
+	AuthValidateURLArg       = "--auth_validate_url"
+
 	// DragonflyOperatorName is the name of the operator
 	DragonflyOperatorName = "dragonfly-operator"
 

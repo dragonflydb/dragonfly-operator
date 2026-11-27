@@ -107,6 +107,38 @@ kubectl patch dragonfly dragonfly-sample --type merge -p '{"spec":{"resources":{
 
 To add authentication to the dragonfly pods, you either set the `DFLY_requirepass` environment variable, or add the `--requirepass` argument.
 
+#### LDAP authentication
+
+Set `spec.authentication.ldap` to authenticate clients against an LDAP directory. The operator adds an auth sidecar container to every Dragonfly pod and starts Dragonfly with `--auth_validate`, so each `AUTH` is checked by the sidecar, which searches the directory for the user and binds as the entry it finds.
+
+```yaml
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: dragonfly-sample
+spec:
+  replicas: 2
+  aclFromSecret:
+    name: dragonfly-acl
+    key: acl
+  authentication:
+    ldap:
+      server: ldaps://ldap.example.org:636
+      bindDN: cn=admin,dc=example,dc=org
+      bindPasswordFromSecret:
+        name: dragonfly-ldap-bind
+        key: password
+      searchBaseDN: ou=people,dc=example,dc=org
+```
+
+- `image` is optional. It defaults to `ghcr.io/dragonflydb/operator-auth-sidecar`, tagged with the operator version, which every operator release publishes. 
+- The Dragonfly image must support the `--auth_validate` and `--auth_validate_url` flags. 
+- The authenticated username must name an active Dragonfly ACL user, so define the users with `spec.aclFromSecret`. Passwords in the ACL file are not used while `AUTH` is delegated.
+- `searchFilter`, `searchAttribute`, `searchScope`, `startTLS` and `caCertSecret` are optional. `env` passes any other setting to the sidecar, and `resources` sets its resource limits.
+- The sidecar listens on port 8080.
+
+See [`config/samples/v1alpha1_dragonfly_ldap.yaml`](config/samples/v1alpha1_dragonfly_ldap.yaml) for a full example.
+
 ### Customising health-check probe scripts
 
 The operator generates default liveness, readiness, and startup probe scripts and mounts them via ConfigMaps. You can replace any probe with your own script using the `custom*ProbeConfigMap` fields.
