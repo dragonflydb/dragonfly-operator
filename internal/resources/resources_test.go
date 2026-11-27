@@ -571,6 +571,12 @@ func TestValidateMasterPodMetadata_ReservedAndSyntax(t *testing.T) {
 		Labels: map[string]string{appsv1.StatefulSetRevisionLabel: "rev-1"},
 	}))
 	require.Error(t, ValidateMasterPodMetadata(&resourcesv1.MetadataSpec{
+		Labels: map[string]string{"statefulset.kubernetes.io/pod-name": "df-0"},
+	}))
+	require.Error(t, ValidateMasterPodMetadata(&resourcesv1.MetadataSpec{
+		Labels: map[string]string{"apps.kubernetes.io/pod-index": "0"},
+	}))
+	require.Error(t, ValidateMasterPodMetadata(&resourcesv1.MetadataSpec{
 		Labels: map[string]string{KubernetesAppNameLabelKey: "other"},
 	}))
 	require.Error(t, ValidateMasterPodMetadata(&resourcesv1.MetadataSpec{

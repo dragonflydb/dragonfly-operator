@@ -511,7 +511,7 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	}
 
 	dfi.log.Info("Marking pod role as replica", "pod", pod.Name, "masterIp", masterIp)
-	patch := client.MergeFrom(pod.DeepCopy())
+	patch := client.MergeFromWithOptions(pod.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	pod.Labels[resources.RoleLabelKey] = resources.Replica
 	if pod.Annotations == nil {
 		pod.Annotations = make(map[string]string)
@@ -1010,7 +1010,7 @@ func (dfi *DragonflyInstance) deleteMasterRoleLabel(ctx context.Context) error {
 func (dfi *DragonflyInstance) deleteRoleLabel(ctx context.Context, pod *corev1.Pod) error {
 	dfi.log.Info("deleting pod role label", "pod", pod.Name, "role", pod.Labels[resources.RoleLabelKey])
 
-	patchFrom := client.MergeFrom(pod.DeepCopy())
+	patchFrom := client.MergeFromWithOptions(pod.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	delete(pod.Labels, resources.RoleLabelKey)
 	dfi.removeMasterPodMetadata(pod)
 

@@ -55,7 +55,9 @@ func IsReservedMasterPodLabel(key string) bool {
 	return operatorManagedLabels[key] ||
 		key == RoleLabelKey ||
 		key == MasterIpLabelKey ||
-		key == appsv1.StatefulSetRevisionLabel
+		key == appsv1.StatefulSetRevisionLabel ||
+		key == "statefulset.kubernetes.io/pod-name" ||
+		key == "apps.kubernetes.io/pod-index"
 }
 
 // IsReservedMasterPodAnnotation reports whether key is managed by the operator
