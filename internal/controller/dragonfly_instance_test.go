@@ -19,6 +19,7 @@ package controller
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	dfv1alpha1 "github.com/dragonflydb/dragonfly-operator/api/v1alpha1"
+	"github.com/dragonflydb/dragonfly-operator/internal/resources"
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
@@ -291,8 +293,9 @@ func drainEvents(recorder *record.FakeRecorder) []string {
 }
 
 // fakeTakeoverServer answers RESP commands with +OK and records the arguments
-// of REPLTAKEOVER. HELLO is rejected so the client falls back to RESP2.
-func fakeTakeoverServer(t *testing.T) (string, <-chan []string) {
+// of REPLTAKEOVER. INFO is answered with the given payload. HELLO is rejected
+// so the client falls back to RESP2.
+func fakeTakeoverServer(t *testing.T, info string) (string, <-chan []string) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -316,6 +319,8 @@ func fakeTakeoverServer(t *testing.T) (string, <-chan []string) {
 					switch strings.ToUpper(args[0]) {
 					case "HELLO":
 						_, err = conn.Write([]byte("-ERR unknown command\r\n"))
+					case "INFO":
+						_, err = fmt.Fprintf(conn, "$%d\r\n%s\r\n", len(info), info)
 					case "REPLTAKEOVER":
 						takeovers <- args[1:]
 						_, err = conn.Write([]byte("+OK\r\n"))
@@ -388,7 +393,7 @@ func TestReplTakeover_TimeoutShorterThanReadTimeout(t *testing.T) {
 
 	readTimeout := dfi.getRedisClient("10.0.0.3").Options().ReadTimeout
 
-	addr, takeovers := fakeTakeoverServer(t)
+	addr, takeovers := fakeTakeoverServer(t, "")
 	dfi.redisClients[newMaster.Status.PodIP] = redis.NewClient(&redis.Options{Addr: addr, MaxRetries: -1})
 
 	require.NoError(t, dfi.replTakeover(ctx, newMaster, oldMaster))
@@ -400,4 +405,93 @@ func TestReplTakeover_TimeoutShorterThanReadTimeout(t *testing.T) {
 	assert.Positive(t, timeoutSeconds)
 	assert.Less(t, time.Duration(timeoutSeconds)*time.Second, readTimeout,
 		"REPLTAKEOVER timeout (seconds) must be shorter than the client read timeout")
+}
+
+// TestCheckReplicaRole covers the master_host comparison in checkReplicaRole.
+// An IPv6 master address carries colons of its own, so a line split on every
+// colon leaves only the first group and the replica reads as misconfigured
+// even when it is attached to the right master.
+func TestCheckReplicaRole(t *testing.T) {
+	const ipv6Master = "fd00:10:244::5"
+
+	tests := []struct {
+		name       string
+		role       string
+		masterHost string
+		expected   string
+		annotation string
+		want       bool
+	}{
+		{
+			name:       "ipv6 master host matches the expected master",
+			role:       resources.Replica,
+			masterHost: ipv6Master,
+			expected:   ipv6Master,
+			want:       true,
+		},
+		{
+			name:       "ipv4 master host matches the expected master",
+			role:       resources.Replica,
+			masterHost: "10.244.0.5",
+			expected:   "10.244.0.5",
+			want:       true,
+		},
+		{
+			name:       "ipv6 replica is attached to a different master",
+			role:       resources.Replica,
+			masterHost: "fd00:10:244::9",
+			expected:   ipv6Master,
+			want:       false,
+		},
+		{
+			name:     "pod reports the master role",
+			role:     resources.Master,
+			expected: ipv6Master,
+			want:     false,
+		},
+		{
+			name:       "mismatching master host is still covered by the annotation",
+			role:       resources.Replica,
+			masterHost: "fd00:10:244::9",
+			expected:   ipv6Master,
+			annotation: ipv6Master,
+			want:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := "# Replication\r\nrole:" + tt.role + "\r\n"
+			if tt.masterHost != "" {
+				info += "master_host:" + tt.masterHost + "\r\n" +
+					"master_port:6379\r\nmaster_link_status:up\r\n"
+			}
+
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "df-1",
+					Namespace:   "default",
+					Labels:      map[string]string{},
+					Annotations: map[string]string{},
+				},
+				Status: corev1.PodStatus{PodIP: "fd00:10:244::6"},
+			}
+			if tt.annotation != "" {
+				pod.Annotations[resources.MasterIpAnnotationKey] = tt.annotation
+			}
+
+			addr, _ := fakeTakeoverServer(t, info)
+			dfi := &DragonflyInstance{
+				log: logr.Discard(),
+				redisClients: map[string]*redis.Client{
+					pod.Status.PodIP: redis.NewClient(&redis.Options{Addr: addr, MaxRetries: -1}),
+				},
+			}
+			defer dfi.Close()
+
+			got, err := dfi.checkReplicaRole(context.Background(), pod, tt.expected)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

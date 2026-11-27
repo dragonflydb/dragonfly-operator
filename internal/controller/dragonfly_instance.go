@@ -191,24 +191,14 @@ func (dfi *DragonflyInstance) checkReplicaRole(ctx context.Context, pod *corev1.
 		return false, err
 	}
 
-	var redisRole string
-	for _, line := range strings.Split(resp, "\n") {
-		if strings.Contains(line, "role") {
-			redisRole = strings.Trim(strings.Split(line, ":")[1], "\r")
-		}
-	}
+	replicationData := parseInfoToMap(resp)
 
-	if redisRole == resources.Master {
+	if replicationData["role"] == resources.Master {
 		return false, nil
 	}
 
-	var redisMasterIp string
 	// check if it is connected to the right master
-	for _, line := range strings.Split(resp, "\n") {
-		if strings.Contains(line, "master_host") {
-			redisMasterIp = strings.Trim(strings.Split(line, ":")[1], "\r")
-		}
-	}
+	redisMasterIp := replicationData["master_host"]
 
 	// for compatibility, label can be removed in future version
 	// check if the masterIp matches either the label (for compatibility) or the annotation
@@ -851,6 +841,9 @@ func resourceSpecsEqual(desired, existing client.Object) bool {
 	return reflect.DeepEqual(desiredSpec.Interface(), existingSpec.Interface())
 }
 
+// parseInfoToMap turns an INFO response into a key/value map. Each line is
+// split on the first colon only: an IPv6 master_host carries colons of its own,
+// and splitting on every one of them keeps just the first group of the address.
 func parseInfoToMap(info string) map[string]string {
 	data := make(map[string]string)
 	for _, line := range strings.Split(info, "\n") {
