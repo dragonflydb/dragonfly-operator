@@ -71,6 +71,17 @@ func (r *DfPodLifeCycleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	defer dfi.Close()
 
+	if needsClientDisconnect(&pod) {
+		if err := dfi.disconnectClients(ctx, &pod); err != nil {
+			log.Error(err, "failed to disconnect clients, will retry", "pod", pod.Name)
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+
+		if err := dfi.setPendingClientDisconnect(ctx, &pod, false); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to clear the client disconnect marker: %w", err)
+		}
+	}
+
 	podReady, readinessErr := dfi.isPodReady(ctx, &pod)
 	if readinessErr != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to verify pod readiness: %w", readinessErr)
