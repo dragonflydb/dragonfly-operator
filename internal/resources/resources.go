@@ -137,6 +137,19 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 			return nil, err
 		}
 	}
+	if df.Spec.MasterPodMetadata != nil {
+		if err := checkLabels("spec.masterPodMetadata.labels", df.Spec.MasterPodMetadata.Labels); err != nil {
+			return nil, err
+		}
+		for _, reserved := range []string{RoleLabelKey, MasterIpLabelKey} {
+			if _, ok := df.Spec.MasterPodMetadata.Labels[reserved]; ok {
+				return nil, fmt.Errorf("spec.masterPodMetadata.labels cannot set reserved key %q", reserved)
+			}
+		}
+		if _, ok := df.Spec.MasterPodMetadata.Annotations[MasterIpAnnotationKey]; ok {
+			return nil, fmt.Errorf("spec.masterPodMetadata.annotations cannot set reserved key %q", MasterIpAnnotationKey)
+		}
+	}
 	if df.Spec.OwnedObjectsMetadata != nil {
 		if err := checkLabels("spec.ownedObjectsMetadata.labels", df.Spec.OwnedObjectsMetadata.Labels); err != nil {
 			return nil, err

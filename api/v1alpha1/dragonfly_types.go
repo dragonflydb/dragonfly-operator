@@ -29,7 +29,7 @@ import (
 // DragonflySpec defines the desired state of Dragonfly.
 // An empty podManagementPolicy is treated as OrderedReady, so updates to an
 // existing instance are still accepted when the field was left unset.
-// +kubebuilder:validation:XValidation:rule="(has(self.podManagementPolicy) && self.podManagementPolicy != '' ? self.podManagementPolicy : 'OrderedReady') == (has(oldSelf.podManagementPolicy) && oldSelf.podManagementPolicy != '' ? oldSelf.podManagementPolicy : 'OrderedReady')",message="podManagementPolicy is immutable; delete and recreate the Dragonfly instance to change it"
+// +kubebuilder:validation:XValidation:rule="(has(self.podManagementPolicy) && self.podManagementPolicy != ” ? self.podManagementPolicy : 'OrderedReady') == (has(oldSelf.podManagementPolicy) && oldSelf.podManagementPolicy != ” ? oldSelf.podManagementPolicy : 'OrderedReady')",message="podManagementPolicy is immutable; delete and recreate the Dragonfly instance to change it"
 type DragonflySpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
@@ -88,6 +88,12 @@ type DragonflySpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	PodMetadata *MetadataSpec `json:"podMetadata,omitempty"`
+
+	// (Optional) Labels and annotations to add only to the Dragonfly master pod.
+	// Applied when a pod is promoted to master and removed when it is demoted.
+	// +optional
+	// +kubebuilder:validation:Optional
+	MasterPodMetadata *MetadataSpec `json:"masterPodMetadata,omitempty"`
 
 	// (Optional) Env variables to add to the Dragonfly pods.
 	// +optional

@@ -529,3 +529,39 @@ func TestGenerateDragonflyResources_ServiceLinksDisabled(t *testing.T) {
 	}
 	t.Fatal("StatefulSet not found in generated resources")
 }
+
+func TestGenerateDragonflyResources_MasterPodMetadataValidationAndTemplate(t *testing.T) {
+	df := newTestDragonfly(3)
+	df.Spec.PodMetadata = &resourcesv1.MetadataSpec{
+		Annotations: map[string]string{"base": "yes"},
+		Labels:      map[string]string{"tier": "cache"},
+	}
+	df.Spec.MasterPodMetadata = &resourcesv1.MetadataSpec{
+		Annotations: map[string]string{"karpenter.sh/do-not-disrupt": "true"},
+		Labels:      map[string]string{"master-only": "true"},
+	}
+
+	objs, err := GenerateDragonflyResources(df, "dragonfly:latest")
+	require.NoError(t, err)
+	for _, obj := range objs {
+		if sts, ok := obj.(*appsv1.StatefulSet); ok {
+			assert.Equal(t, "yes", sts.Spec.Template.Annotations["base"])
+			assert.NotContains(t, sts.Spec.Template.Annotations, "karpenter.sh/do-not-disrupt")
+			assert.NotContains(t, sts.Spec.Template.Labels, "master-only")
+		}
+	}
+
+	dfBadLabel := newTestDragonfly(3)
+	dfBadLabel.Spec.MasterPodMetadata = &resourcesv1.MetadataSpec{
+		Labels: map[string]string{RoleLabelKey: "master"},
+	}
+	_, err = GenerateDragonflyResources(dfBadLabel, "dragonfly:latest")
+	require.Error(t, err)
+
+	dfBadAnn := newTestDragonfly(3)
+	dfBadAnn.Spec.MasterPodMetadata = &resourcesv1.MetadataSpec{
+		Annotations: map[string]string{MasterIpAnnotationKey: "1.2.3.4"},
+	}
+	_, err = GenerateDragonflyResources(dfBadAnn, "dragonfly:latest")
+	require.Error(t, err)
+}

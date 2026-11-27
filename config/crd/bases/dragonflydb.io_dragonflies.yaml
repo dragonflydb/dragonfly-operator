@@ -6737,6 +6737,20 @@ spec:
                   type: string
                 description: 'Deprecated: use spec.podMetadata.labels instead.'
                 type: object
+              masterPodMetadata:
+                description: |-
+                  (Optional) Labels and annotations to add only to the Dragonfly master pod.
+                  Applied when a pod is promoted to master and removed when it is demoted.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    type: object
+                type: object
               memcachedPort:
                 description: (Optional) Dragonfly memcached port
                 format: int32
@@ -7808,8 +7822,8 @@ spec:
             - message: podManagementPolicy is immutable; delete and recreate the Dragonfly
                 instance to change it
               rule: '(has(self.podManagementPolicy) && self.podManagementPolicy !=
-                '''' ? self.podManagementPolicy : ''OrderedReady'') == (has(oldSelf.podManagementPolicy)
-                && oldSelf.podManagementPolicy != '''' ? oldSelf.podManagementPolicy
+                ” ? self.podManagementPolicy : ''OrderedReady'') == (has(oldSelf.podManagementPolicy)
+                && oldSelf.podManagementPolicy != ” ? oldSelf.podManagementPolicy
                 : ''OrderedReady'')'
           status:
             description: DragonflyStatus defines the observed state of Dragonfly
