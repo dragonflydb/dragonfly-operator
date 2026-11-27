@@ -1,0 +1,38 @@
+# Dragonfly instance that authenticates clients against LDAP through the auth
+# sidecar. Replace the LDAP settings and the secrets with your own.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dragonfly-ldap-bind
+stringData:
+  password: admin-demo
+---
+# The username the sidecar authenticates must name an ACL user. Passwords in
+# the ACL file are not used while AUTH is delegated.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dragonfly-ldap-acl
+stringData:
+  acl: |
+    user default off
+    user alice on nopass ~* +@all
+---
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: dragonfly-ldap-sample
+spec:
+  replicas: 2
+  aclFromSecret:
+    name: dragonfly-ldap-acl
+    key: acl
+  authentication:
+    ldap:
+      server: ldap://openldap.default.svc:389
+      bindDN: cn=admin,dc=example,dc=org
+      bindPasswordFromSecret:
+        name: dragonfly-ldap-bind
+        key: password
+      searchBaseDN: ou=people,dc=example,dc=org
+      searchFilter: (objectClass=inetOrgPerson)

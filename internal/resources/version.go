@@ -17,5 +17,6 @@ limitations under the License.
 package resources
 
 const (
-	Version = "v2.0.2"
+	Version            = "v2.0.2"
+	AuthSidecarVersion = "v1.8.0"
 )

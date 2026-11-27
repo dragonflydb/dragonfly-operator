@@ -334,6 +334,72 @@ type Authentication struct {
 	// client certificate is signed by this CA. Server TLS must be enabled for this.
 	// +optional
 	ClientCaCertSecret *corev1.SecretKeySelector `json:"clientCaCertSecret,omitempty"`
+
+	// (Optional) Authenticate clients against an LDAP directory. The operator
+	// adds an auth sidecar container to every Dragonfly pod and makes Dragonfly
+	// delegate AUTH to it. The authenticated username must name an existing
+	// Dragonfly ACL user, see aclFromSecret.
+	// Requires a Dragonfly image that supports the --auth_validate flags.
+	// +optional
+	LDAP *LDAPAuthentication `json:"ldap,omitempty"`
+}
+
+// LDAPAuthentication configures the auth sidecar, which validates credentials
+// by searching the directory for the user and binding as the entry it finds.
+type LDAPAuthentication struct {
+	// (Optional) Image of the auth sidecar container. Defaults to the image
+	// published with the operator release,
+	// ghcr.io/dragonflydb/operator-auth-sidecar:<operator version>.
+	// +optional
+	Image string `json:"image,omitempty"`
+
+	// URL of the LDAP server, using the ldap:// or ldaps:// scheme.
+	// +kubebuilder:validation:Pattern=`^ldaps?://.+`
+	Server string `json:"server"`
+
+	// (Optional) Upgrade ldap:// connections with StartTLS.
+	// +optional
+	StartTLS bool `json:"startTLS,omitempty"`
+
+	// (Optional) PEM encoded CA certificate used to verify the LDAP server,
+	// as a reference to a specific Secret key. It is trusted in addition to
+	// the system roots.
+	// +optional
+	CACertSecret *corev1.SecretKeySelector `json:"caCertSecret,omitempty"`
+
+	// DN the sidecar binds as to search for users.
+	// +kubebuilder:validation:MinLength=1
+	BindDN string `json:"bindDN"`
+
+	// Password of bindDN, as a reference to a specific Secret key.
+	BindPasswordFromSecret corev1.SecretKeySelector `json:"bindPasswordFromSecret"`
+
+	// Base DN of the user search.
+	// +kubebuilder:validation:MinLength=1
+	SearchBaseDN string `json:"searchBaseDN"`
+
+	// (Optional) LDAP filter that user entries must match.
+	// Defaults to (objectClass=*).
+	// +optional
+	SearchFilter string `json:"searchFilter,omitempty"`
+
+	// (Optional) Attribute compared with the username. Defaults to uid.
+	// +optional
+	SearchAttribute string `json:"searchAttribute,omitempty"`
+
+	// (Optional) Scope of the user search. Defaults to sub.
+	// +optional
+	// +kubebuilder:validation:Enum=base;one;sub
+	SearchScope string `json:"searchScope,omitempty"`
+
+	// (Optional) Additional env variables for the auth sidecar container.
+	// They take precedence over the variables the operator sets.
+	// +optional
+	Env []corev1.EnvVar `json:"env,omitempty"`
+
+	// (Optional) Auth sidecar container resource limits.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // DragonflyStatus defines the observed state of Dragonfly
