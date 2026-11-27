@@ -669,11 +669,22 @@ func GenerateDragonflyResources(df *resourcesv1.Dragonfly, defaultDragonflyImage
 		},
 	}
 
+	if df.Spec.Pdb != nil && df.Spec.Pdb.MasterOnly {
+		pdb.Spec.Selector.MatchLabels[RoleLabelKey] = Master
+	}
+
 	// Apply custom PDB configuration
 	if df.Spec.Pdb == nil || (df.Spec.Pdb.MaxUnavailable == nil && df.Spec.Pdb.MinAvailable == nil) {
-		pdb.Spec.MaxUnavailable = &intstr.IntOrString{
-			Type:   intstr.Int,
-			IntVal: 1,
+		if df.Spec.Pdb != nil && df.Spec.Pdb.MasterOnly {
+			pdb.Spec.MinAvailable = &intstr.IntOrString{
+				Type:   intstr.Int,
+				IntVal: 1,
+			}
+		} else {
+			pdb.Spec.MaxUnavailable = &intstr.IntOrString{
+				Type:   intstr.Int,
+				IntVal: 1,
+			}
 		}
 	} else if df.Spec.Pdb.MaxUnavailable != nil {
 		pdb.Spec.MaxUnavailable = df.Spec.Pdb.MaxUnavailable

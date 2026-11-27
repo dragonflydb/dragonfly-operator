@@ -255,6 +255,12 @@ type PdbSpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
+
+	// (Optional) Restrict the PodDisruptionBudget selector to only the active master pod (role=master).
+	// When true and neither minAvailable nor maxUnavailable is specified, minAvailable defaults to 1.
+	// +optional
+	// +kubebuilder:validation:Optional
+	MasterOnly bool `json:"masterOnly,omitempty"`
 }
 
 type MetadataSpec struct {

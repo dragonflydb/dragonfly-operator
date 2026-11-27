@@ -6761,6 +6761,11 @@ spec:
               pdb:
                 description: (Optional) Dragonfly Pod Disruption Budget configuration
                 properties:
+                  masterOnly:
+                    description: |-
+                      (Optional) Restrict the PodDisruptionBudget selector to only the active master pod (role=master).
+                      When true and neither minAvailable nor maxUnavailable is specified, minAvailable defaults to 1.
+                    type: boolean
                   maxUnavailable:
                     anyOf:
                     - type: integer
