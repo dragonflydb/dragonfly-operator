@@ -19,6 +19,7 @@ package controller
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net"
 	"strconv"
 	"strings"
@@ -32,12 +33,14 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func TestCopyDesiredPayload_ConfigMapDataUpdated(t *testing.T) {
@@ -400,4 +403,45 @@ func TestReplTakeover_TimeoutShorterThanReadTimeout(t *testing.T) {
 	assert.Positive(t, timeoutSeconds)
 	assert.Less(t, time.Duration(timeoutSeconds)*time.Second, readTimeout,
 		"REPLTAKEOVER timeout (seconds) must be shorter than the client read timeout")
+}
+
+// TestDeletePod_UIDPrecondition guards against a stale pod object deleting a
+// pod that has since been recreated under the same name.
+func TestDeletePod_UIDPrecondition(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+
+	key := client.ObjectKey{Name: "df-0", Namespace: "default"}
+	current := &corev1.Pod{
+		Name: key.Name, Namespace: key.Namespace, UID: "new-uid",
+	}
+	// The fake client does not enforce UID preconditions, so emulate the API server.
+	enforceUID := interceptor.Funcs{
+		Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+			delOpts := (&client.DeleteOptions{}).ApplyOptions(opts)
+			if delOpts.Preconditions != nil && delOpts.Preconditions.UID != nil {
+				var existing corev1.Pod
+				if err := c.Get(ctx, client.ObjectKeyFromObject(obj), &existing); err != nil {
+					return err
+				}
+				if existing.UID != *delOpts.Preconditions.UID {
+					return apierrors.NewConflict(corev1.Resource("pods"), obj.GetName(), errors.New("uid precondition failed"))
+				}
+			}
+			return c.Delete(ctx, obj, opts...)
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(current).WithInterceptorFuncs(enforceUID).Build()
+	dfi := &DragonflyInstance{client: c, log: logr.Discard()}
+
+	stale := current.DeepCopy()
+	stale.UID = "old-uid"
+	require.NoError(t, dfi.deletePod(ctx, stale))
+	require.NoError(t, c.Get(ctx, key, &corev1.Pod{}), "a recreated pod must not be deleted through a stale object")
+
+	require.NoError(t, dfi.deletePod(ctx, current))
+	assert.True(t, apierrors.IsNotFound(c.Get(ctx, key, &corev1.Pod{})))
+
+	require.NoError(t, dfi.deletePod(ctx, current), "deleting an already deleted pod is not an error")
 }
