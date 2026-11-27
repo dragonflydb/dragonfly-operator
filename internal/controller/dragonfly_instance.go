@@ -525,13 +525,13 @@ func (dfi *DragonflyInstance) replicaOf(ctx context.Context, pod *corev1.Pod, ma
 	}
 	dfi.removeMasterPodMetadata(pod)
 
-	if err := dfi.client.Patch(ctx, pod, patch); err != nil {
-		return fmt.Errorf("could not update replica metadata: %w", err)
+	if wasMaster {
+		// Prevent clients from sending commands to this old master, even if the metadata patch fails.
+		defer dfi.disconnectClients(ctx, redisClient, pod)
 	}
 
-	if wasMaster {
-		// Prevent clients from sending commands to this old master
-		dfi.disconnectClients(ctx, redisClient, pod)
+	if err := dfi.client.Patch(ctx, pod, patch); err != nil {
+		return fmt.Errorf("could not update replica metadata: %w", err)
 	}
 
 	return nil
