@@ -339,6 +339,20 @@ func (dfi *DragonflyInstance) getPods(ctx context.Context) (*corev1.PodList, err
 	return &pods, nil
 }
 
+// deletePod deletes the given pod only if it is still the instance that was observed.
+// Pods are recreated under the same name, so a UID precondition prevents a stale
+// read from deleting a pod that has already been replaced. A pod that is already
+// gone or replaced is not an error: the caller is expected to requeue and re-evaluate.
+func (dfi *DragonflyInstance) deletePod(ctx context.Context, pod *corev1.Pod) error {
+	err := dfi.client.Delete(ctx, pod, client.Preconditions{UID: &pod.UID})
+	if apierrors.IsNotFound(err) || apierrors.IsConflict(err) {
+		dfi.log.Info("pod was already deleted or replaced, skipping deletion", "pod", pod.Name, "uid", pod.UID)
+		return nil
+	}
+
+	return err
+}
+
 // getMaster gets the master pod for the dragonfly instance
 func (dfi *DragonflyInstance) getMaster(ctx context.Context) (*corev1.Pod, error) {
 	var masterPods corev1.PodList
@@ -470,7 +484,7 @@ func (dfi *DragonflyInstance) detectOldMasters(ctx context.Context, updateRevisi
 	for _, pod := range masterPods.Items {
 		if !isPodOnLatestVersion(&pod, updateRevision) {
 			dfi.log.Info("deleting old master pod", "pod", pod.Name, "pod_revision", pod.Labels[appsv1.StatefulSetRevisionLabel], "update_revision", updateRevision)
-			if err := dfi.client.Delete(ctx, &pod); err != nil {
+			if err := dfi.deletePod(ctx, &pod); err != nil {
 				return fmt.Errorf("failed to delete pod: %w", err)
 			}
 		}
@@ -1042,7 +1056,7 @@ func (dfi *DragonflyInstance) allPodsHealthyAndHaveRole(ctx context.Context, upd
 
 		if !isPodOnLatestVersion(&pod, updateRevision) && !isRunningAndReady(&pod) {
 			dfi.log.Info("deleting failed to start pod", "pod", pod.Name)
-			if err := dfi.client.Delete(ctx, &pod); err != nil {
+			if err := dfi.deletePod(ctx, &pod); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to delete pod: %w", err)
 			}
 
@@ -1122,7 +1136,7 @@ func (dfi *DragonflyInstance) updateReplicas(ctx context.Context, replicas *core
 		if !isPodOnLatestVersion(&replica, updateRevision) {
 			dfi.log.Info("deleting replica", "pod", replica.Name)
 			dfi.eventRecorder.Event(dfi.df, corev1.EventTypeNormal, "Rollout", "Deleting replica")
-			if err := dfi.client.Delete(ctx, &replica); err != nil {
+			if err := dfi.deletePod(ctx, &replica); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to delete pod: %w", err)
 			}
 
@@ -1165,7 +1179,7 @@ func (dfi *DragonflyInstance) updatedMaster(ctx context.Context, oldMaster *core
 	} else {
 		// delete the old master, so that it gets recreated with the new version
 		dfi.log.Info("no replicas found to run REPLTAKEOVER on. deleting master", "pod", oldMaster.Name)
-		if err := dfi.client.Delete(ctx, oldMaster); err != nil {
+		if err := dfi.deletePod(ctx, oldMaster); err != nil {
 			return fmt.Errorf("failed to delete pod: %w", err)
 		}
 	}
@@ -1216,7 +1230,7 @@ func (dfi *DragonflyInstance) replTakeover(ctx context.Context, newMaster *corev
 
 	// delete the old master, so that it gets recreated with the new version
 	dfi.log.Info("deleting master", "pod", oldMaster.Name)
-	if err := dfi.client.Delete(ctx, oldMaster); err != nil {
+	if err := dfi.deletePod(ctx, oldMaster); err != nil {
 		return fmt.Errorf("failed to delete pod: %w", err)
 	}
 
