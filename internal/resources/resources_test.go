@@ -9,8 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -528,4 +530,45 @@ func TestGenerateDragonflyResources_ServiceLinksDisabled(t *testing.T) {
 		}
 	}
 	t.Fatal("StatefulSet not found in generated resources")
+}
+
+func TestGenerateDragonflyResources_MasterOnlyPdb(t *testing.T) {
+	df := newTestDragonfly(3)
+	df.Spec.Pdb = &resourcesv1.PdbSpec{
+		MasterOnly: true,
+	}
+
+	objs, err := GenerateDragonflyResources(df, "dragonfly:latest")
+	require.NoError(t, err)
+
+	var found *policyv1.PodDisruptionBudget
+	for _, obj := range objs {
+		if pdb, ok := obj.(*policyv1.PodDisruptionBudget); ok {
+			found = pdb
+			break
+		}
+	}
+	require.NotNil(t, found, "PodDisruptionBudget should be generated")
+	assert.Equal(t, Master, found.Spec.Selector.MatchLabels[RoleLabelKey])
+	require.NotNil(t, found.Spec.MinAvailable)
+	assert.Equal(t, int32(1), found.Spec.MinAvailable.IntVal)
+	assert.Nil(t, found.Spec.MaxUnavailable)
+
+	// Explicit maxUnavailable is respected even when MasterOnly is true
+	dfExplicit := newTestDragonfly(3)
+	zero := intstr.FromInt32(0)
+	dfExplicit.Spec.Pdb = &resourcesv1.PdbSpec{
+		MasterOnly:     true,
+		MaxUnavailable: &zero,
+	}
+	objs, err = GenerateDragonflyResources(dfExplicit, "dragonfly:latest")
+	require.NoError(t, err)
+	for _, obj := range objs {
+		if pdb, ok := obj.(*policyv1.PodDisruptionBudget); ok {
+			assert.Equal(t, Master, pdb.Spec.Selector.MatchLabels[RoleLabelKey])
+			require.NotNil(t, pdb.Spec.MaxUnavailable)
+			assert.Equal(t, int32(0), pdb.Spec.MaxUnavailable.IntVal)
+			assert.Nil(t, pdb.Spec.MinAvailable)
+		}
+	}
 }

@@ -29,7 +29,7 @@ import (
 // DragonflySpec defines the desired state of Dragonfly.
 // An empty podManagementPolicy is treated as OrderedReady, so updates to an
 // existing instance are still accepted when the field was left unset.
-// +kubebuilder:validation:XValidation:rule="(has(self.podManagementPolicy) && self.podManagementPolicy != '' ? self.podManagementPolicy : 'OrderedReady') == (has(oldSelf.podManagementPolicy) && oldSelf.podManagementPolicy != '' ? oldSelf.podManagementPolicy : 'OrderedReady')",message="podManagementPolicy is immutable; delete and recreate the Dragonfly instance to change it"
+// +kubebuilder:validation:XValidation:rule="(has(self.podManagementPolicy) && self.podManagementPolicy != ” ? self.podManagementPolicy : 'OrderedReady') == (has(oldSelf.podManagementPolicy) && oldSelf.podManagementPolicy != ” ? oldSelf.podManagementPolicy : 'OrderedReady')",message="podManagementPolicy is immutable; delete and recreate the Dragonfly instance to change it"
 type DragonflySpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
@@ -255,6 +255,12 @@ type PdbSpec struct {
 	// +optional
 	// +kubebuilder:validation:Optional
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
+
+	// (Optional) Restrict the PodDisruptionBudget selector to only the active master pod (role=master).
+	// When true and neither minAvailable nor maxUnavailable is specified, minAvailable defaults to 1.
+	// +optional
+	// +kubebuilder:validation:Optional
+	MasterOnly bool `json:"masterOnly,omitempty"`
 }
 
 type MetadataSpec struct {
